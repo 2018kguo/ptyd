@@ -320,3 +320,28 @@ func BenchmarkRingSubscribe(b *testing.B) {
 		r.Unsubscribe(id)
 	}
 }
+
+// BenchmarkRestoreGhosts is a daemon start that restores 100 terminals
+// with the rerun policy (each: rebuild the screen, stop the old process
+// group, start the command, checkpoint the restored screen).
+func BenchmarkRestoreGhosts(b *testing.B) {
+	const n = 100
+	pd := b.TempDir()
+	m := NewManagerWithOptions(Options{PersistDir: pd})
+	for i := range n {
+		if _, err := m.Create(CreateConfig{Name: fmt.Sprintf("r%d", i), Command: "cat", Restore: RestoreRerun}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	m.CloseAll()
+	for b.Loop() {
+		m := NewManagerWithOptions(Options{PersistDir: pd})
+		m.RestoreGhosts()
+		b.StopTimer()
+		if live := m.Metrics().LiveTerminals; live != n {
+			b.Fatalf("%d restored", live)
+		}
+		m.CloseAll()
+		b.StartTimer()
+	}
+}

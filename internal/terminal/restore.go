@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,19 +36,31 @@ func (m *Manager) RestoreGhosts() {
 	}
 	m.mu.RUnlock()
 	slices.Sort(ids)
+	// Restores are independent and mostly wait (on fsync, on process
+	// start, on an orphan to exit), so a few run at once.
+	sem := make(chan struct{}, restoreParallelism)
+	var wg sync.WaitGroup
 	for _, id := range ids {
-		if exit, ok := readExit(terminalDir(m.opts.PersistDir, id)); ok && exit.Reason != exitShutdown {
-			continue
-		}
-		info, err := m.Restore(id, "")
-		switch {
-		case err == nil:
-			fmt.Fprintf(os.Stderr, "[ptyd] restored %s (%s): %s\n", id, info.Restore, info.Notice)
-		default:
-			fmt.Fprintf(os.Stderr, "[ptyd] did not restore %s: %v\n", id, err)
-		}
+		sem <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-sem }()
+			if exit, ok := readExit(terminalDir(m.opts.PersistDir, id)); ok && exit.Reason != exitShutdown {
+				return
+			}
+			info, err := m.Restore(id, "")
+			switch {
+			case err == nil:
+				fmt.Fprintf(os.Stderr, "[ptyd] restored %s (%s): %s\n", id, info.Restore, info.Notice)
+			default:
+				fmt.Fprintf(os.Stderr, "[ptyd] did not restore %s: %v\n", id, err)
+			}
+		})
 	}
+	wg.Wait()
 }
+
+// restoreParallelism is how many restores RestoreGhosts runs at once.
+var restoreParallelism = 16
 
 // Restore brings a ghost back under the same id, with policy (or its own
 // policy if empty): rerun starts the same command again, agent resumes
