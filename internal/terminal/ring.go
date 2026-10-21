@@ -172,7 +172,11 @@ func (r *Ring) FlushPending() {
 func (r *Ring) Snapshot(sinceSeq int64, tail int) OutputSnapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.snapshotLocked(sinceSeq, tail)
+	return OutputSnapshot{
+		Lines:     r.linesAfterLocked(sinceSeq, tail),
+		LatestSeq: r.nextSeq - 1,
+		Pending:   stripANSIBytes(r.pending),
+	}
 }
 
 // LatestSeq returns the seq of the last committed line, or -1 if none.
@@ -284,14 +288,6 @@ func (r *Ring) linesAfterLocked(sinceSeq int64, tail int) []Line {
 	out := make([]Line, r.n-start)
 	r.copyLocked(out, start)
 	return out
-}
-
-func (r *Ring) snapshotLocked(sinceSeq int64, tail int) OutputSnapshot {
-	return OutputSnapshot{
-		Lines:     r.linesAfterLocked(sinceSeq, tail),
-		LatestSeq: r.nextSeq - 1,
-		Pending:   stripANSIBytes(r.pending),
-	}
 }
 
 // linesAfter returns the committed lines with Seq > sinceSeq.

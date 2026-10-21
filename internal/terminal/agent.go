@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -159,23 +158,22 @@ func (codexAgent) validate(args []string) error {
 const codexHookTimeout = 10
 
 func codexHookHash(event, cmd string, timeout int) string {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(map[string]any{
+	sum := sha256.Sum256([]byte(plainJSON(map[string]any{
 		"event_name": event,
 		"hooks":      []map[string]any{{"async": false, "command": cmd, "timeout": timeout, "type": "command"}},
-	})
-	sum := sha256.Sum256(bytes.TrimSuffix(buf.Bytes(), []byte("\n")))
+	})))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // tomlString encodes s as a TOML basic string.
-func tomlString(s string) string {
-	var buf bytes.Buffer
+func tomlString(s string) string { return plainJSON(s) }
+
+// plainJSON is v as JSON without HTML escaping.
+func plainJSON(v any) string {
+	var buf strings.Builder
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(s)
+	_ = enc.Encode(v)
 	return strings.TrimSuffix(buf.String(), "\n")
 }
 
@@ -209,7 +207,6 @@ type agentState struct {
 	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
 	CWD            string `json:"cwd"`
-	Source         string `json:"source"`
 }
 
 func readAgentState(stateFile string) (agentState, error) {

@@ -1,8 +1,6 @@
 package terminal
 
 import (
-	"path/filepath"
-
 	"github.com/2018kguo/ptyd/internal/vt"
 )
 
@@ -67,10 +65,10 @@ func (m *Manager) ScreenANSI(id ID, withScrollback bool) ([]byte, error) {
 
 // loadGhostScreen rebuilds a ghost's saved screen from disk.
 func (m *Manager) loadGhostScreen(id ID) (*vt.Terminal, bool) {
-	if _, ok := m.GhostMeta(id); !ok || m.opts.PersistDir == "" {
+	if _, ok := m.GhostMeta(id); !ok {
 		return nil, false
 	}
-	dir := filepath.Join(m.opts.PersistDir, string(id))
+	dir := terminalDir(m.opts.PersistDir, id)
 	meta, err := readMeta(dir)
 	if err != nil {
 		return nil, false

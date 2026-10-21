@@ -233,7 +233,7 @@ func removePersisted(persistDir string, id ID) error {
 	if persistDir == "" {
 		return nil
 	}
-	return os.RemoveAll(filepath.Join(persistDir, string(id)))
+	return os.RemoveAll(terminalDir(persistDir, id))
 }
 
 // writeJSONAtomic writes v to path atomically (see writeFileAtomic).
