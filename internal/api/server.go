@@ -99,6 +99,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /terminals/{id}/resize", s.handleResize)
 	mux.HandleFunc("POST /terminals/{id}/signal", s.handleSignal)
 	mux.HandleFunc("POST /terminals/{id}/restart", s.handleRestart)
+	mux.HandleFunc("POST /terminals/{id}/restore", s.handleRestore)
 	mux.HandleFunc("DELETE /terminals/{id}", s.handleDelete)
 }
 
@@ -505,6 +506,26 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, info)
 }
 
+type restoreRequest struct {
+	Policy terminal.RestorePolicy `json:"policy"`
+}
+
+// handleRestore restores a ghost under the same id with its policy (or
+// the one in the body). A declined restore is 409 with the reason; the
+// terminal stays a ghost.
+func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
+	var req restoreRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	info, err := s.mgr.Restore(terminal.ID(r.PathValue("id")), req.Policy)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, info)
+}
+
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.mgr.Close(terminal.ID(r.PathValue("id"))); err != nil {
 		writeErr(w, err)
@@ -604,7 +625,8 @@ func writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, terminal.ErrNotFound):
 		status = http.StatusNotFound
-	case errors.Is(err, terminal.ErrGhostTerminal), errors.Is(err, terminal.ErrNotRunning):
+	case errors.Is(err, terminal.ErrGhostTerminal), errors.Is(err, terminal.ErrNotRunning),
+		errors.Is(err, terminal.ErrNotGhost), errors.Is(err, terminal.ErrRestoreDeclined):
 		status = http.StatusConflict
 	}
 	writeError(w, status, "%v", err)

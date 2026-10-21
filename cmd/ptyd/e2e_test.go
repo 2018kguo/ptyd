@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -143,7 +144,7 @@ func (d *daemon) waitScreen(id string, cond func(screen) bool) screen {
 			return s
 		}
 		if time.Now().After(deadline) {
-			d.t.Fatalf("screen of %s never matched: %q", id, s.Lines)
+			d.t.Fatalf("screen of %s never matched: %q scrollback %q\n%s", id, s.Lines, s.Scrollback, d.log)
 		}
 	}
 }
@@ -206,5 +207,59 @@ func TestGracefulRestartKeepsScreen(t *testing.T) {
 	d2 := startDaemon(t, addr, "--persist-dir", dir)
 	if s := d2.screen(id); !eqScreen(s, want) {
 		t.Fatalf("after restart:\n got %+v\nwant %+v", s, want)
+	}
+}
+
+// Restore policies across kill -9: rerun terminals come back under the
+// same id (once per restart, also in a crash loop); none stays a ghost
+// until restored explicitly.
+func TestRestorePoliciesAcrossKill9(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "persist")
+	addr := freeAddr(t)
+	d := startDaemon(t, addr, "--persist-dir", dir)
+	var rerun, none info
+	d.do("POST", "/terminals", map[string]any{"name": "r", "command": "sh", "restore": "rerun",
+		"args": []string{"-c", `echo "started $$"; exec cat`}}, &rerun)
+	d.do("POST", "/terminals", map[string]any{"name": "n", "command": "sh",
+		"args": []string{"-c", `echo "plain $$"; exec cat`}}, &none)
+	d.waitScreen(rerun.ID, func(s screen) bool { return strings.Contains(strings.Join(s.Lines, "\n"), "started") })
+	d.waitScreen(none.ID, func(s screen) bool { return strings.Contains(strings.Join(s.Lines, "\n"), "plain") })
+
+	pids := []int{rerun.PID}
+	for round := 1; round <= 2; round++ {
+		d.kill9()
+		waitGone(t, pids[len(pids)-1])
+		d = startDaemon(t, addr, "--persist-dir", dir)
+		var got info
+		d.do("GET", "/terminals/"+rerun.ID, nil, &got)
+		if got.Status != "running" || got.Restored != round {
+			t.Fatalf("round %d: rerun terminal %+v", round, got)
+		}
+		pids = append(pids, got.PID)
+		d.waitScreen(rerun.ID, func(s screen) bool {
+			return len(regexp.MustCompile(`started \d+`).FindAllString(strings.Join(append(s.Scrollback, s.Lines...), "\n"), -1)) == round+1
+		})
+		var g info
+		d.do("GET", "/terminals/"+none.ID, nil, &g)
+		if g.Status != "exited" {
+			t.Fatalf("round %d: none policy terminal %+v", round, g)
+		}
+	}
+	for _, pid := range pids[:len(pids)-1] {
+		if !processGone(pid) {
+			t.Fatalf("an earlier run (pid %d) is still alive", pid)
+		}
+	}
+
+	// Explicit restore of the none ghost, with a policy.
+	if code := d.do("POST", "/terminals/"+none.ID+"/restore", nil, nil); code != 400 {
+		t.Fatalf("restore without a policy: %d", code)
+	}
+	var restored info
+	if code := d.do("POST", "/terminals/"+none.ID+"/restore", map[string]string{"policy": "rerun"}, &restored); code != 201 || restored.Status != "running" || restored.ID != none.ID {
+		t.Fatalf("explicit restore: %d %+v", code, restored)
+	}
+	if code := d.do("POST", "/terminals/"+none.ID+"/restore", map[string]string{"policy": "rerun"}, nil); code != 409 {
+		t.Fatalf("restoring a running terminal: %d", code)
 	}
 }

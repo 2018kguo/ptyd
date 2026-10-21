@@ -182,9 +182,7 @@ func (t *terminal) checkpoint() {
 		_ = old.Close()
 	}
 
-	hdr, _ := json.Marshal(ckptHeader{Version: ckptVersion, Cols: cols, Rows: rows, TailGen: gen, At: time.Now()})
-	data := append(append(hdr, '\n'), body...)
-	if err := writeFileAtomic(filepath.Join(p.dir, ckptFile), data); err != nil {
+	if err := writeCheckpoint(p.dir, cols, rows, gen, body); err != nil {
 		fmt.Fprintf(os.Stderr, "[ptyd] checkpoint %s: %v\n", p.dir, err)
 		return
 	}
@@ -192,6 +190,13 @@ func (t *terminal) checkpoint() {
 	p.lastCkpt = time.Now()
 	p.timerMu.Unlock()
 	removeTailsBefore(p.dir, gen)
+}
+
+// writeCheckpoint writes screen.ckpt: a screen of the given size whose
+// repaint is body, followed by tails from generation gen on.
+func writeCheckpoint(dir string, cols, rows int, gen uint64, body []byte) error {
+	hdr, _ := json.Marshal(ckptHeader{Version: ckptVersion, Cols: cols, Rows: rows, TailGen: gen, At: time.Now()})
+	return writeFileAtomic(filepath.Join(dir, ckptFile), append(append(hdr, '\n'), body...))
 }
 
 // finalCheckpoint checkpoints and stops persisting, so output printed

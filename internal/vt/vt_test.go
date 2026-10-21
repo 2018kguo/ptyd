@@ -111,7 +111,7 @@ func TestResize(t *testing.T) {
 func TestArchiveScreen(t *testing.T) {
 	term := feed(10, 3, "old1\r\nold2\x1b[?1049hALT")
 	term.ArchiveScreen()
-	if got := term.ScrollbackLines(); !slices.Equal(got, []string{"old1", "old2"}) {
+	if got := term.ScrollbackLines(); !slices.Equal(got, []string{"old1", "old2", "", "    ALT"}) {
 		t.Fatalf("scrollback %q", got)
 	}
 	if term.AltScreen() || !slices.Equal(term.Lines(), []string{"", "", ""}) {

@@ -50,6 +50,8 @@ func main() {
 		persistInfo = " persist-dir=" + *persistDir
 	}
 	log.Printf("ptyd listening on %s (auth=%v)%s%s", ln.Addr(), *token != "", logDirInfo, persistInfo)
+	// Bring back terminals whose restore policy asks for it.
+	mgr.RestoreGhosts()
 	if ip := ln.Addr().(*net.TCPAddr).IP; !ip.IsLoopback() && *token == "" {
 		log.Printf("WARNING: listening on a non-loopback address without a token; anyone who can reach it can run commands as this user")
 	}

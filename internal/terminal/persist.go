@@ -8,71 +8,85 @@ import (
 	"time"
 )
 
-// persistedMeta is what we write to disk per terminal at create time.
-// PTY state itself can't survive a daemon restart (children of the
-// daemon get killed), but the metadata can, so the daemon can present
-// "ghost" terminals via the API after a restart instead of pretending
-// nothing happened. Files are owner-only: Env may hold secrets.
+// persistedMeta is what we write to disk per terminal: its config, and
+// which process is running it. The PTY itself can't survive a daemon
+// restart (the children get SIGHUP when the PTY master closes), but the
+// metadata can, so the daemon can present "ghost" terminals after a
+// restart and restore them according to their policy. Files are
+// owner-only: Env may hold secrets.
 //
 // Path: <persist-dir>/<id>/meta.json (one dir per terminal). Deleting a
 // terminal through the API removes its directory.
 type persistedMeta struct {
-	ID        ID                `json:"id"`
-	Name      string            `json:"name"`
-	CWD       string            `json:"cwd"`
-	Command   string            `json:"command"`
-	Args      []string          `json:"args,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	Tags      []string          `json:"tags,omitempty"`
-	Watches   []WatchSpec       `json:"watches,omitempty"`
-	Cols      uint16            `json:"cols"`
-	Rows      uint16            `json:"rows"`
-	PID       int               `json:"pid"`
-	CreatedAt time.Time         `json:"created_at"`
+	ID      ID                `json:"id"`
+	Name    string            `json:"name"`
+	CWD     string            `json:"cwd"`
+	Command string            `json:"command"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	Tags    []string          `json:"tags,omitempty"`
+	Watches []WatchSpec       `json:"watches,omitempty"`
+	Cols    uint16            `json:"cols"`
+	Rows    uint16            `json:"rows"`
+	Restore RestorePolicy     `json:"restore,omitempty"`
+	Agent   string            `json:"agent,omitempty"`
+	PID     int               `json:"pid"`
+	// ProcIdentity identifies the process running the terminal across
+	// pid reuse and reboots (see procIdentity), so a restore can tell its
+	// own orphan from an unrelated process.
+	ProcIdentity string     `json:"proc_identity,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	Restored     int        `json:"restored,omitempty"`
+	RestoredAt   *time.Time `json:"restored_at,omitempty"`
 }
 
-// persistedExit is written when a terminal closes (gracefully or via
-// child exit). The exit_code may be nil if we couldn't determine it.
+func (meta persistedMeta) config() CreateConfig {
+	return CreateConfig{
+		Name: meta.Name, CWD: meta.CWD, Command: meta.Command, Args: meta.Args, Env: meta.Env,
+		Tags: meta.Tags, Watches: meta.Watches, Cols: meta.Cols, Rows: meta.Rows,
+		Restore: meta.Restore, Agent: meta.Agent,
+	}
+}
+
+// Exit reasons recorded in exit.json.
+const (
+	exitChild       = "child_exit"   // the program ended by itself
+	exitShutdown    = "shutdown"     // the daemon stopped it on a graceful shutdown
+	exitNotRestored = "not_restored" // a restore was declined; see Notice
+)
+
+// persistedExit is written when a terminal stops running, or when a
+// restore is declined. The exit_code may be nil if we couldn't determine
+// it.
 type persistedExit struct {
 	ExitedAt time.Time `json:"exited_at"`
 	ExitCode *int      `json:"exit_code,omitempty"`
-	Reason   string    `json:"reason"` // "child_exit" | "shutdown"
+	Reason   string    `json:"reason"`
+	Notice   string    `json:"notice,omitempty"`
 }
 
-// writeMeta serializes the create-time metadata for a terminal. Failures
-// log to stderr but don't fail the create — persistence is best-effort.
-func writeMeta(persistDir string, id ID, cfg CreateConfig, pid int, createdAt time.Time) error {
+func terminalDir(persistDir string, id ID) string {
+	return filepath.Join(persistDir, string(id))
+}
+
+// writeMeta writes a terminal's metadata atomically.
+func writeMeta(persistDir string, meta persistedMeta) error {
 	if persistDir == "" {
 		return nil
 	}
-	dir := filepath.Join(persistDir, string(id))
+	dir := terminalDir(persistDir, meta.ID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
-	}
-	meta := persistedMeta{
-		ID:        id,
-		Name:      cfg.Name,
-		CWD:       cfg.CWD,
-		Command:   cfg.Command,
-		Args:      cfg.Args,
-		Env:       cfg.Env,
-		Tags:      cfg.Tags,
-		Watches:   cfg.Watches,
-		Cols:      cfg.Cols,
-		Rows:      cfg.Rows,
-		PID:       pid,
-		CreatedAt: createdAt,
 	}
 	return writeJSONAtomic(filepath.Join(dir, "meta.json"), meta)
 }
 
-// writeExit records the close event so we know the terminal is dead
-// even before reading meta.json on a future boot.
-func writeExit(persistDir string, id ID, exitCode *int, reason string) error {
+// writeExit records why a terminal is no longer running.
+func writeExit(persistDir string, id ID, exitCode *int, reason, notice string) error {
 	if persistDir == "" {
 		return nil
 	}
-	dir := filepath.Join(persistDir, string(id))
+	dir := terminalDir(persistDir, id)
 	if _, err := os.Stat(dir); err != nil {
 		// Meta wasn't persisted (persist-dir was added later, perhaps);
 		// nothing to update.
@@ -82,18 +96,62 @@ func writeExit(persistDir string, id ID, exitCode *int, reason string) error {
 		ExitedAt: time.Now(),
 		ExitCode: exitCode,
 		Reason:   reason,
+		Notice:   notice,
 	})
 }
 
-// loadGhosts walks the persist directory and returns Info stubs for
-// every terminal whose process is no longer alive. The PTY can't be
-// resurrected (process is gone, fd is dead) but the metadata is
-// preserved so:
+// readMeta reads a terminal directory's meta.json.
+func readMeta(dir string) (persistedMeta, error) {
+	var meta persistedMeta
+	raw, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+	if err != nil {
+		return meta, err
+	}
+	err = json.Unmarshal(raw, &meta)
+	return meta, err
+}
+
+// readExit returns exit.json, and false if there is none (the daemon died
+// while the terminal was running).
+func readExit(dir string) (persistedExit, bool) {
+	var e persistedExit
+	raw, err := os.ReadFile(filepath.Join(dir, "exit.json"))
+	if err != nil || json.Unmarshal(raw, &e) != nil {
+		return e, false
+	}
+	return e, true
+}
+
+// ghostInfo is the Info a ghost presents.
+func ghostInfo(meta persistedMeta, exit persistedExit) Info {
+	return Info{
+		ID:         meta.ID,
+		Name:       meta.Name,
+		CWD:        meta.CWD,
+		Command:    meta.Command,
+		Args:       meta.Args,
+		Tags:       meta.Tags,
+		PID:        meta.PID,
+		Status:     StatusExited,
+		CreatedAt:  meta.CreatedAt,
+		LatestSeq:  -1,
+		Watches:    meta.Watches,
+		ExitCode:   exit.ExitCode,
+		Restore:    meta.Restore,
+		Agent:      meta.Agent,
+		Restored:   meta.Restored,
+		RestoredAt: meta.RestoredAt,
+		Notice:     exit.Notice,
+	}
+}
+
+// loadGhosts walks the persist directory and returns Info stubs for every
+// terminal in it. The PTY can't be resurrected (the process is gone and
+// the fd is dead), but the metadata and the saved screen are preserved so
 //
 //   - GET /terminals lists what existed before the restart
-//   - GET /terminals/{id} returns metadata even after the daemon
-//     forgets the PTY
-//   - clients can tell "existed before the restart" from "never existed"
+//   - GET /terminals/{id} and /screen work for it
+//   - the terminal can be restored according to its policy.
 //
 // Ghosts are returned with Status = StatusExited. Mutations on them
 // (write/keys/signal/resize/wait) return ErrGhostTerminal; DELETE
@@ -114,60 +172,15 @@ func loadGhosts(persistDir string) ([]Info, error) {
 		if !e.IsDir() {
 			continue
 		}
-		id := ID(e.Name())
-		metaPath := filepath.Join(persistDir, e.Name(), "meta.json")
-		raw, err := os.ReadFile(metaPath)
-		if err != nil {
+		dir := filepath.Join(persistDir, e.Name())
+		meta, err := readMeta(dir)
+		if err != nil || meta.ID != ID(e.Name()) {
 			continue
 		}
-		var meta persistedMeta
-		if err := json.Unmarshal(raw, &meta); err != nil {
-			continue
-		}
-		// The PTY master fd died with the previous daemon, so there is
-		// no reattaching; the entry is metadata only.
-		exitCode := readExit(persistDir, id)
-		ghost := Info{
-			ID:        id,
-			Name:      meta.Name,
-			CWD:       meta.CWD,
-			Command:   meta.Command,
-			Args:      meta.Args,
-			Tags:      meta.Tags,
-			PID:       meta.PID,
-			Status:    StatusExited,
-			CreatedAt: meta.CreatedAt,
-			LatestSeq: -1,
-			Watches:   meta.Watches,
-			ExitCode:  exitCode,
-		}
-		ghosts = append(ghosts, ghost)
+		exit, _ := readExit(dir)
+		ghosts = append(ghosts, ghostInfo(meta, exit))
 	}
 	return ghosts, nil
-}
-
-// readMeta reads a terminal directory's meta.json.
-func readMeta(dir string) (persistedMeta, error) {
-	var meta persistedMeta
-	raw, err := os.ReadFile(filepath.Join(dir, "meta.json"))
-	if err != nil {
-		return meta, err
-	}
-	err = json.Unmarshal(raw, &meta)
-	return meta, err
-}
-
-// readExit returns the exit code from exit.json if present, else nil.
-func readExit(persistDir string, id ID) *int {
-	raw, err := os.ReadFile(filepath.Join(persistDir, string(id), "exit.json"))
-	if err != nil {
-		return nil
-	}
-	var e persistedExit
-	if json.Unmarshal(raw, &e) != nil {
-		return nil
-	}
-	return e.ExitCode
 }
 
 // PruneGhosts deletes ghost dirs older than maxAge. Run from boot to

@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -63,7 +64,9 @@ type Manager struct {
 	mu     sync.RWMutex
 	terms  map[ID]*terminal
 	ghosts map[ID]Info // metadata-only entries from prior daemon runs
-	next   atomic.Int64
+	// restoring holds ghosts with a restore in progress.
+	restoring map[ID]bool
+	next      atomic.Int64
 	// startedAt is when this Manager was created; surfaced by /metrics.
 	startedAt time.Time
 	// counters surfaced by /metrics. Atomic so they can be read without
@@ -172,6 +175,7 @@ func NewManagerWithOptions(opts Options) *Manager {
 		opts:      opts,
 		terms:     map[ID]*terminal{},
 		ghosts:    map[ID]Info{},
+		restoring: map[ID]bool{},
 		startedAt: time.Now(),
 	}
 	if opts.PersistDir != "" {
@@ -202,11 +206,24 @@ func NewManagerWithOptions(opts Options) *Manager {
 
 // Create spawns a new terminal.
 func (m *Manager) Create(cfg CreateConfig) (Info, error) {
+	if err := m.normalize(&cfg); err != nil {
+		return Info{}, err
+	}
+	id := ID(fmt.Sprintf("term-%d-%s", m.next.Add(1), randHex(2)))
+	sp := spawnSpec{id: id, createdAt: time.Now(), args: cfg.Args}
+	if cfg.Restore == RestoreAgent {
+		sp.args = agents[cfg.Agent].launch(cfg.Args, agentStateFile(m.opts.PersistDir, id))
+	}
+	return m.spawn(cfg, sp)
+}
+
+// normalize validates cfg and fills in defaults.
+func (m *Manager) normalize(cfg *CreateConfig) error {
 	if cfg.Name == "" {
-		return Info{}, fmt.Errorf("terminal name is required")
+		return fmt.Errorf("terminal name is required")
 	}
 	if len(cfg.Name) > maxNameLen {
-		return Info{}, fmt.Errorf("terminal name too long (max %d)", maxNameLen)
+		return fmt.Errorf("terminal name too long (max %d)", maxNameLen)
 	}
 	if cfg.Command == "" {
 		cfg.Command = os.Getenv("SHELL")
@@ -227,26 +244,83 @@ func (m *Manager) Create(cfg CreateConfig) (Info, error) {
 		}
 		cfg.CWD = cwd
 	}
+	switch cfg.Restore {
+	case "", RestoreNone:
+		cfg.Restore = ""
+		if cfg.Agent != "" {
+			return fmt.Errorf(`agent is only used with "restore": "agent"`)
+		}
+	case RestoreRerun, RestoreAgent:
+		if m.opts.PersistDir == "" {
+			return fmt.Errorf("restore %q needs the daemon to run with --persist-dir", cfg.Restore)
+		}
+	default:
+		return fmt.Errorf("unknown restore policy %q (none, rerun or agent)", cfg.Restore)
+	}
+	if cfg.Restore == RestoreAgent {
+		if cfg.Agent == "" {
+			cfg.Agent = detectAgent(cfg.Command)
+		}
+		a, ok := agents[cfg.Agent]
+		if !ok {
+			return fmt.Errorf("no agent adapter for %q (supported: %s); set \"agent\" or use restore \"rerun\"", cmp.Or(cfg.Agent, cfg.Command), supportedAgents())
+		}
+		if err := a.validate(cfg.Args); err != nil {
+			return fmt.Errorf("%s: %w", cfg.Agent, err)
+		}
+	}
+	_, err := compileWatches(cfg.Watches)
+	return err
+}
 
-	// Pre-compile watches before doing anything irreversible.
-	compiled := make([]*compiledWatch, 0, len(cfg.Watches))
-	for _, w := range cfg.Watches {
+func compileWatches(specs []WatchSpec) ([]*compiledWatch, error) {
+	compiled := make([]*compiledWatch, 0, len(specs))
+	for _, w := range specs {
 		if w.Name == "" {
-			return Info{}, fmt.Errorf("watch with empty name")
+			return nil, fmt.Errorf("watch with empty name")
 		}
 		re, err := regexp.Compile(w.Pattern)
 		if err != nil {
-			return Info{}, fmt.Errorf("watch %q: invalid regex %q: %w", w.Name, w.Pattern, err)
+			return nil, fmt.Errorf("watch %q: invalid regex %q: %w", w.Name, w.Pattern, err)
 		}
 		compiled = append(compiled, &compiledWatch{spec: w, re: re})
 	}
+	return compiled, nil
+}
 
+// spawnSpec is how to start a terminal's process: a new terminal, or a
+// restored one that keeps its id and screen.
+type spawnSpec struct {
+	id        ID
+	createdAt time.Time
+	args      []string // argv after the command (cfg.Args plus any agent flags)
+
+	// For a restore: the saved screen to continue, the next tail
+	// generation, and the restore count and notice to record.
+	screen   *vt.Terminal
+	tailGen  uint64
+	restored int
+	notice   string
+}
+
+// spawn starts the process for cfg as described by sp and registers the
+// terminal.
+func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
+	compiled, err := compileWatches(cfg.Watches)
+	if err != nil {
+		return Info{}, err
+	}
 	bin, err := exec.LookPath(cfg.Command)
 	if err != nil {
 		return Info{}, fmt.Errorf("command %q not found: %w", cfg.Command, err)
 	}
+	if m.opts.PersistDir != "" {
+		// Agent hooks write into this directory as soon as the program
+		// starts.
+		_ = os.MkdirAll(terminalDir(m.opts.PersistDir, sp.id), 0o700)
+	}
 
-	cmd := exec.Command(bin, cfg.Args...)
+	cmd := exec.Command(bin, sp.args...)
 	cmd.Dir = cfg.CWD
 	cmd.Env = mergeEnv(os.Environ(), cfg.Env)
 	// Service managers start us without TERM; programs on a PTY need one.
@@ -254,60 +328,84 @@ func (m *Manager) Create(cfg CreateConfig) (Info, error) {
 		cmd.Env = append(cmd.Env, "TERM=xterm-256color")
 	}
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cfg.Cols, Rows: cfg.Rows})
+	screen := sp.screen
+	if screen == nil {
+		screen = vt.New(int(cfg.Cols), int(cfg.Rows), vt.Options{})
+	}
+	cols, rows := screen.Size()
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 	if err != nil {
 		return Info{}, fmt.Errorf("failed to start pty: %w", err)
 	}
 	ptmx = pollable(ptmx)
-
-	id := ID(fmt.Sprintf("term-%d-%s", m.next.Add(1), randHex(2)))
+	pid := cmd.Process.Pid
+	ident, _ := procIdentity(pid)
 
 	var logFile *os.File
 	if m.opts.LogDir != "" {
-		path := filepath.Join(m.opts.LogDir, string(id)+".log")
+		path := filepath.Join(m.opts.LogDir, string(sp.id)+".log")
 		f, ferr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 		if ferr == nil {
 			logFile = f
 		}
 	}
 
+	now := time.Now()
+	var restoredAt *time.Time
+	if sp.restored > 0 {
+		restoredAt = &now
+	}
 	t := &terminal{
 		mgr: m,
 		info: Info{
-			ID:        id,
-			Name:      cfg.Name,
-			CWD:       cfg.CWD,
-			Command:   cfg.Command,
-			Args:      cfg.Args,
-			Tags:      cfg.Tags,
-			PID:       cmd.Process.Pid,
-			Status:    StatusRunning,
-			CreatedAt: time.Now(),
-			Watches:   cfg.Watches,
+			ID:         sp.id,
+			Name:       cfg.Name,
+			CWD:        cfg.CWD,
+			Command:    cfg.Command,
+			Args:       cfg.Args,
+			Tags:       cfg.Tags,
+			PID:        pid,
+			Status:     StatusRunning,
+			CreatedAt:  sp.createdAt,
+			Watches:    cfg.Watches,
+			Restore:    cfg.Restore,
+			Agent:      cfg.Agent,
+			Restored:   sp.restored,
+			RestoredAt: restoredAt,
+			Notice:     sp.notice,
 		},
 		cfg:     cfg,
 		ptmx:    ptmx,
 		cmd:     cmd,
 		ring:    NewRing(ringCapacity, m.opts.ScrollbackBytes),
-		screen:  vt.New(int(cfg.Cols), int(cfg.Rows), vt.Options{}),
+		screen:  screen,
 		done:    make(chan struct{}),
 		logFile: logFile,
 		watches: compiled,
 	}
 
 	// Persist and register before the goroutines start: a child that
-	// exits immediately must find meta.json in place for its exit.json.
-	if err := writeMeta(m.opts.PersistDir, id, cfg, t.info.PID, t.info.CreatedAt); err != nil {
-		fmt.Fprintf(os.Stderr, "[ptyd] writeMeta(%s) failed: %v\n", id, err)
+	// exits immediately must find meta.json in place for its exit.json,
+	// and a daemon that dies right now must find the new pid.
+	meta := persistedMeta{
+		ID: sp.id, Name: cfg.Name, CWD: cfg.CWD, Command: cfg.Command, Args: cfg.Args, Env: cfg.Env,
+		Tags: cfg.Tags, Watches: cfg.Watches, Cols: cfg.Cols, Rows: cfg.Rows, Restore: cfg.Restore, Agent: cfg.Agent,
+		PID: pid, ProcIdentity: ident, CreatedAt: sp.createdAt, Restored: sp.restored, RestoredAt: restoredAt,
+	}
+	if err := writeMeta(m.opts.PersistDir, meta); err != nil {
+		fmt.Fprintf(os.Stderr, "[ptyd] writeMeta(%s) failed: %v\n", sp.id, err)
 	} else if m.opts.PersistDir != "" {
-		t.persist = &persister{dir: filepath.Join(m.opts.PersistDir, string(id))}
+		dir := terminalDir(m.opts.PersistDir, sp.id)
+		_ = os.Remove(filepath.Join(dir, "exit.json"))
+		t.persist = &persister{dir: dir, gen: sp.tailGen}
+		if sp.screen != nil {
+			// The restored screen is the new baseline on disk.
+			t.checkpoint()
+		}
 	}
 	m.mu.Lock()
-	m.terms[id] = t
-	// Creating an id that previously existed as a ghost (extremely
-	// unlikely with the random suffix, but possible) clears the
-	// ghost entry so List() doesn't show both.
-	delete(m.ghosts, id)
+	m.terms[sp.id] = t
+	delete(m.ghosts, sp.id)
 	m.mu.Unlock()
 	m.totalCreated.Add(1)
 
@@ -675,7 +773,7 @@ func (m *Manager) CloseAll() {
 			// program prints anything on its way out.
 			t.finalCheckpoint()
 			if t.terminate() {
-				if err := writeExit(m.opts.PersistDir, t.info.ID, t.exitCode(), "shutdown"); err != nil {
+				if err := writeExit(m.opts.PersistDir, t.info.ID, t.exitCode(), exitShutdown, ""); err != nil {
 					fmt.Fprintf(os.Stderr, "[ptyd] writeExit(%s) failed: %v\n", t.info.ID, err)
 				}
 			}
@@ -879,6 +977,11 @@ func (t *terminal) snapshot() Info {
 	t.mu.Unlock()
 	info.LatestSeq = t.ring.LatestSeq()
 	info.Pending = t.ring.Pending()
+	if t.cfg.Restore == RestoreAgent && t.persist != nil {
+		if st, err := readAgentState(agentStateFile(t.mgr.opts.PersistDir, info.ID)); err == nil {
+			info.AgentSession = st.SessionID
+		}
+	}
 	return info
 }
 
@@ -1029,7 +1132,7 @@ func (t *terminal) waitLoop() {
 	// final output. A future daemon boot loads it as a ghost.
 	if t.mgr != nil && wasRunning {
 		t.mgr.totalExited.Add(1)
-		if err := writeExit(t.mgr.opts.PersistDir, t.info.ID, exitCode, "child_exit"); err != nil {
+		if err := writeExit(t.mgr.opts.PersistDir, t.info.ID, exitCode, exitChild, ""); err != nil {
 			fmt.Fprintf(os.Stderr, "[ptyd] writeExit(%s) failed: %v\n", t.info.ID, err)
 		}
 	}

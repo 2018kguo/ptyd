@@ -114,7 +114,36 @@ type Info struct {
 	// they have produced and not yet acknowledged (newest 100 kept).
 	Watches   []WatchSpec      `json:"watches,omitempty"`
 	Attention []AttentionEvent `json:"attention,omitempty"`
+
+	// Restore is the terminal's restore policy and Agent the adapter used
+	// by the agent policy. Restored counts how many times the terminal was
+	// brought back after a daemon restart (it keeps its id), RestoredAt is
+	// the last time. Notice explains the last restore decision, such as
+	// why an agent session was not resumed. AgentSession is the agent
+	// session the terminal is known to be in.
+	Restore      RestorePolicy `json:"restore,omitempty"`
+	Agent        string        `json:"agent,omitempty"`
+	Restored     int           `json:"restored,omitempty"`
+	RestoredAt   *time.Time    `json:"restored_at,omitempty"`
+	Notice       string        `json:"notice,omitempty"`
+	AgentSession string        `json:"agent_session,omitempty"`
 }
+
+// RestorePolicy says what happens to a terminal when the daemon comes back
+// after a restart or crash that ended it.
+type RestorePolicy string
+
+const (
+	// RestoreNone keeps the terminal as a ghost showing its saved screen.
+	RestoreNone RestorePolicy = "none"
+	// RestoreRerun starts the same command again (same cwd and env), below
+	// the saved screen and scrollback.
+	RestoreRerun RestorePolicy = "rerun"
+	// RestoreAgent resumes the exact agent session the terminal was in,
+	// or leaves a ghost with a notice if that session cannot be
+	// identified with certainty.
+	RestoreAgent RestorePolicy = "agent"
+)
 
 // CreateConfig is the body of POST /terminals.
 type CreateConfig struct {
@@ -127,6 +156,10 @@ type CreateConfig struct {
 	Watches []WatchSpec       `json:"watches,omitempty"`
 	Cols    uint16            `json:"cols"`
 	Rows    uint16            `json:"rows"`
+	// Restore is the restore policy (default none); Agent names the agent
+	// adapter for the agent policy (default: detected from Command).
+	Restore RestorePolicy `json:"restore,omitempty"`
+	Agent   string        `json:"agent,omitempty"`
 }
 
 // Line is a single captured terminal line with a monotonic sequence number.
