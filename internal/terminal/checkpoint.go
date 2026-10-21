@@ -87,6 +87,10 @@ type persister struct {
 	queued atomic.Bool // a tail-full checkpoint is on its way
 }
 
+// recPool holds tail record buffers, shared by all terminals so an idle
+// one keeps none.
+var recPool = sync.Pool{New: func() any { b := make([]byte, 0, 5+readBufSize); return &b }}
+
 // appendLocked records output (or a resize) in the tail. Caller holds
 // scrMu. It reports whether a checkpoint is due because the tail is full.
 func (p *persister) appendLocked(typ byte, data []byte) bool {
@@ -102,13 +106,14 @@ func (p *persister) appendLocked(typ byte, data []byte) bool {
 		}
 		p.tail = f
 	}
-	var hdr [5]byte
-	hdr[0] = typ
-	binary.BigEndian.PutUint32(hdr[1:], uint32(len(data)))
 	// One write per record keeps a record whole in the page cache.
-	rec := make([]byte, 0, len(hdr)+len(data))
-	rec = append(append(rec, hdr[:]...), data...)
+	bp := recPool.Get().(*[]byte)
+	rec := append((*bp)[:0], typ, 0, 0, 0, 0)
+	binary.BigEndian.PutUint32(rec[1:], uint32(len(data)))
+	rec = append(rec, data...)
 	n, err := p.tail.Write(rec)
+	*bp = rec
+	recPool.Put(bp)
 	p.tailBytes += int64(n)
 	diskStats.bytes.Add(int64(n))
 	if err != nil || p.tailBytes > 2*maxTailBytes {
