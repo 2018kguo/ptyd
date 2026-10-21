@@ -159,6 +159,10 @@ const (
 	// or leaves a ghost with a notice if that session cannot be
 	// identified with certainty.
 	RestoreAgent RestorePolicy = "agent"
+	// RestoreAuto picks agent for a supported agent CLI (refusing args
+	// it cannot resume with, never falling back to rerun), rerun for
+	// anything else, and none when the daemon does not persist.
+	RestoreAuto RestorePolicy = "auto"
 )
 
 // CreateConfig is the body of POST /terminals.

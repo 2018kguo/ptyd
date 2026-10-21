@@ -24,10 +24,12 @@ const usage = `ptyd runs terminals in the background, like tmux, with a local HT
 
 Usage:
   ptyd [flags]                     run the daemon (flags: ptyd -h)
-  ptyd new [-n name] [-d] [--restore none|rerun|agent] [command [args...]]
+  ptyd new [-n name] [-d] [--restore auto|none|rerun|agent] [command [args...]]
                                    start a terminal ($SHELL by default) and attach
   ptyd ls                          list terminals
   ptyd attach [--readonly] <terminal>
+  ptyd restore [--policy auto|rerun|agent] <terminal>
+                                   start a stopped terminal again and attach
   ptyd kill <terminal>...
   ptyd token                       print the token, for curl -H "X-Ptyd-Token: $(ptyd token)"
 
@@ -46,11 +48,12 @@ func defaultAddr() string {
 
 // commands are the subcommands; anything else runs the daemon.
 var commands = map[string]func(args []string) int{
-	"new":    runNew,
-	"ls":     runLs,
-	"attach": runAttach,
-	"kill":   runKill,
-	"token":  runToken,
+	"new":     runNew,
+	"ls":      runLs,
+	"attach":  runAttach,
+	"kill":    runKill,
+	"restore": runRestore,
+	"token":   runToken,
 	"help": func([]string) int {
 		fmt.Print(usage)
 		return 0
@@ -88,14 +91,14 @@ func label(t terminal.Info) string {
 var envPassed = []string{"TERM", "COLORTERM", "LANG", "LC_ALL", "LC_CTYPE"}
 
 func runNew(args []string) int {
-	fs, addr := newFlags("new", "[-n name] [-d] [--restore none|rerun|agent] [command [args...]]",
+	fs, addr := newFlags("new", "[-n name] [-d] [--restore auto|none|rerun|agent] [command [args...]]",
 		"Start a terminal running command ($SHELL by default) in the current directory and\n"+
 			"attach to it. With -d, or when stdout is not a terminal, print its id instead.")
 	var name string
 	fs.StringVar(&name, "n", "", "Name (default: the command, or the directory for a shell)")
 	fs.StringVar(&name, "name", "", "Same as -n")
 	detach := fs.Bool("d", false, "Do not attach; print the new terminal's id")
-	restore := fs.String("restore", "", "What to do after a daemon restart: none (default), rerun or agent (needs ptyd --persist-dir)")
+	restore := fs.String("restore", "auto", "What to do after a daemon restart: rerun the command, resume the exact\nagent session (claude, codex), or none. auto picks agent for a supported agent, else rerun")
 	_ = fs.Parse(args)
 
 	cwd, err := os.Getwd()
@@ -190,6 +193,7 @@ func attach(c client.API, t terminal.Info, readOnly bool) int {
 		if info.Notice != "" {
 			msg += "\n[" + info.Notice + "]"
 		}
+		msg += fmt.Sprintf("\n[start it again: ptyd restore %s]", t.ID)
 		fmt.Fprintln(os.Stderr, msg)
 		return 1
 	case *info.ExitCode < 0:
@@ -305,4 +309,35 @@ func runToken(args []string) int {
 	}
 	fmt.Println(tok)
 	return 0
+}
+
+func runRestore(args []string) int {
+	fs, addr := newFlags("restore", "[--policy auto|rerun|agent] <terminal>",
+		"Start a stopped terminal (a ghost) again under the same id, below its last window,\n"+
+			"and attach. The policy defaults to the terminal's own, else auto.")
+	policy := fs.String("policy", "", "rerun the command, agent to resume the exact agent session, or auto")
+	detach := fs.Bool("d", false, "Do not attach")
+	_ = fs.Parse(args)
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return 2
+	}
+	c := apiAt(*addr)
+	t, err := c.Find(fs.Arg(0))
+	if err != nil {
+		return fail(err)
+	}
+	p := terminal.RestorePolicy(*policy)
+	if p == "" && t.Restore == "" {
+		p = terminal.RestoreAuto
+	}
+	var info terminal.Info
+	if err := c.Do("POST", "/terminals/"+string(t.ID)+"/restore", map[string]any{"policy": p}, &info); err != nil {
+		return fail(err)
+	}
+	if *detach || !term.IsTerminal(int(os.Stdout.Fd())) {
+		fmt.Println(info.ID)
+		return 0
+	}
+	return attach(c, info, false)
 }

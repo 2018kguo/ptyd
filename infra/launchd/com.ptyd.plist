@@ -18,8 +18,6 @@
     <string>__HOME__/go/bin/ptyd</string>
     <string>--bind</string>
     <string>127.0.0.1:4242</string>
-    <string>--persist-dir</string>
-    <string>__HOME__/Library/Application Support/ptyd/terminals</string>
   </array>
 
   <!-- Start at login; restart if it exits. -->

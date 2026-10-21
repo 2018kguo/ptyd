@@ -212,3 +212,31 @@ func TestParallelCreate(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// auto picks agent for a supported agent CLI, rerun otherwise, and none
+// without persistence.
+func TestRestoreAutoPolicy(t *testing.T) {
+	persisted := NewManagerWithOptions(Options{PersistDir: t.TempDir()})
+	plain := NewManagerWithOptions(Options{})
+	for _, tc := range []struct {
+		m       *Manager
+		command string
+		args    []string
+		want    RestorePolicy
+	}{
+		{persisted, "/bin/bash", nil, RestoreRerun},
+		{persisted, "/usr/local/bin/claude", nil, RestoreAgent},
+		{persisted, "codex", []string{"--model=x"}, RestoreAgent},
+		{plain, "claude", nil, ""},
+	} {
+		cfg := CreateConfig{Name: "t", Command: tc.command, Args: tc.args, Restore: RestoreAuto}
+		if err := tc.m.normalize(&cfg); err != nil || cfg.Restore != tc.want {
+			t.Errorf("%s %q: restore %q, err %v; want %q", tc.command, tc.args, cfg.Restore, err, tc.want)
+		}
+	}
+	// Args an agent cannot be resumed with are refused, not rerun.
+	cfg := CreateConfig{Name: "t", Command: "claude", Args: []string{"--resume", "abc"}, Restore: RestoreAuto}
+	if err := persisted.normalize(&cfg); err == nil {
+		t.Errorf("claude --resume under auto: restore %q, want an error", cfg.Restore)
+	}
+}

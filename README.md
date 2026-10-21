@@ -11,11 +11,11 @@ with a JSON API instead of a screen, meant for scripts, test harnesses and
 tools that need to operate interactive programs.
 
 ptyd also keeps track of what each terminal's window shows, so you can
-attach to it from a real terminal (`ptyd new`, `ptyd attach`), and with
-`--persist-dir` the window survives a daemon restart, a `kill -9` of the
-daemon and a reboot. A terminal can be restored afterwards: its command
-started again, or, for Claude Code and Codex, the exact conversation it
-was in resumed.
+attach to it from a real terminal (`ptyd new`, `ptyd attach`), and the
+window survives a daemon restart, a `kill -9` of the daemon and a reboot.
+Afterwards a terminal comes back by itself: its command started again
+below its old window, or, for Claude Code and Codex, the exact
+conversation it was in resumed.
 
 ## Install
 
@@ -36,6 +36,7 @@ ptyd new -d -n build -- make test   # start a command without attaching
 ptyd ls                 # what is running
 ptyd attach build       # by name, id, number (1 for term-1-ab12) or id prefix
 ptyd kill build
+ptyd restore build      # start a stopped terminal again, below its last window
 ```
 
 ```
@@ -45,12 +46,19 @@ term-1-3f2a  ptyd   running  4s    -         zsh
 term-2-9c01  build  exited 0 -     -         make test
 ```
 
-`ptyd new [-n name] [-d] [--restore none|rerun|agent] [command [args...]]`
+`ptyd new [-n name] [-d] [--restore auto|none|rerun|agent] [command [args...]]`
 starts `command` (default `$SHELL`) in the current directory, at the size of
 your window, with your `TERM`, `COLORTERM` and locale on top of the
 daemon's environment, then attaches. With `-d`, or when its output is not
 a terminal, it prints the new id instead. The name defaults to the command,
-or to the directory for a shell.
+or to the directory for a shell. `--restore auto` (the default) brings it
+back after a daemon restart: `claude` and `codex` resume their exact
+conversation, anything else is started again (see
+[Restore](#restore-after-a-restart)).
+
+`ptyd restore [--policy auto|rerun|agent] <terminal>` starts a stopped
+terminal (a ghost) again under the same id, below its last window, and
+attaches. Attaching to a ghost shows its last window and this hint.
 
 Commands find the daemon at `$PTYD_ADDR` (default `127.0.0.1:4242`). The
 daemon always requires a token: `$PTYD_TOKEN` or `--token` if set, otherwise
@@ -124,7 +132,7 @@ Only `name` is required. `command` is looked up in the daemon's `PATH` and
 defaults to `$SHELL` (or `/bin/sh`); `cwd` defaults to the daemon's working
 directory; the environment is the daemon's plus `env` (with `TERM=xterm-256color`
 if neither sets `TERM`); size defaults to
-80x24. `restore` (`none`, `rerun` or `agent`, needs `--persist-dir`) and
+80x24. `restore` (`none`, `rerun`, `agent` or `auto`; default `none`) and
 `agent` are described under [Restore](#restore-after-a-restart).
 
 ### Output model
@@ -243,7 +251,9 @@ two big-endian uint16s.
 
 ## Persistence
 
-With `--persist-dir DIR`, each terminal has a directory `DIR/<id>/`
+The daemon saves terminals under `--persist-dir DIR` (default
+`~/.local/state/ptyd/terminals-<port>`; `--persist-dir=` turns saving off).
+Each terminal has a directory `DIR/<id>/`
 (mode 0700, files 0600):
 
 | File | Contents |
@@ -281,15 +291,16 @@ back after a crash, `kill -9`, graceful stop or reboot:
 
 | Policy | On startup |
 | --- | --- |
-| `none` (default) | Stays a ghost showing its saved window. |
+| `none` (API default) | Stays a ghost showing its saved window. |
 | `rerun` | The same command, args, cwd and env start again under the **same id**, below the saved window, which stays in view (like zellij's resurrection). |
 | `agent` | The exact agent session the terminal was in is resumed under the same id, or, if that cannot be done with certainty, it stays a ghost with a notice on its last screen. |
+| `auto` (`ptyd new` default) | `agent` for `claude` and `codex` (args they cannot be resumed with are refused, never silently rerun), `rerun` for anything else, `none` if the daemon does not save terminals. |
 
 Only terminals that were running when the daemon went away are restored.
 One whose program ended by itself stays a ghost, and so does one whose
 restore was declined, so a crash loop never restores a terminal twice or
 repeats a notice. `POST /terminals/{id}/restore` restores a ghost on
-demand, with its policy or with `{"policy": "rerun"|"agent"}` (which then
+demand (`ptyd restore`), with its policy or with `{"policy": "rerun"|"agent"|"auto"}` (which then
 becomes its policy). A restored terminal keeps its id; `restored` counts
 restores, `restored_at` is the last one, and `notice` says what was done
 (or why not).
@@ -374,7 +385,7 @@ further prompt lands in its transcript. It sends three one-word prompts.
 | --- | --- | --- | --- |
 | `--bind` | `PTYD_ADDR` | `127.0.0.1:4242` | Listen address. |
 | `--token` | `PTYD_TOKEN` | random | Every request except `/healthz` and `/metrics` must send it in the `X-Ptyd-Token` header. Saved for the CLI (see [Security](#security)). |
-| `--persist-dir` | `PTYD_PERSIST_DIR` | none | Keep each terminal's metadata and window here so they survive restarts (see [Persistence](#persistence)), and restore terminals on startup by their policy. |
+| `--persist-dir` | `PTYD_PERSIST_DIR` | `~/.local/state/ptyd/terminals-<port>` | Keep each terminal's metadata and window here (empty: off) so they survive restarts (see [Persistence](#persistence)), and restore terminals on startup by their policy. |
 | `--log-dir` | `PTYD_LOG_DIR` | none | Mirror each live terminal's raw output to `<id>.log` (capped at 32 MiB, wraps; removed when the terminal ends). |
 | `--scrollback-bytes` | | `1048576` | Memory budget per terminal for retained output lines. |
 

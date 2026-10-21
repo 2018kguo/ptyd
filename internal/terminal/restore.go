@@ -105,6 +105,12 @@ func (m *Manager) Restore(id ID, policy RestorePolicy) (Info, error) {
 	if policy != "" {
 		cfg.Restore = policy
 	}
+	if cfg.Restore == RestoreAuto {
+		cfg.Restore, cfg.Agent = RestoreRerun, ""
+		if name := detectAgent(cfg.Command); name != "" {
+			cfg.Restore, cfg.Agent = RestoreAgent, name
+		}
+	}
 	switch cfg.Restore {
 	case RestoreRerun:
 	case RestoreAgent:

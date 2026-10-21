@@ -245,6 +245,19 @@ func (m *Manager) normalize(cfg *CreateConfig) error {
 		}
 		cfg.CWD = cwd
 	}
+	if cfg.Restore == RestoreAuto {
+		cfg.Restore = RestoreRerun
+		if m.opts.PersistDir == "" {
+			cfg.Restore = RestoreNone
+		} else if cmp.Or(cfg.Agent, detectAgent(cfg.Command)) != "" {
+			// An agent's args are validated below: a rerun would lose
+			// the conversation, so never fall back to it silently.
+			cfg.Restore = RestoreAgent
+		}
+		if cfg.Restore != RestoreAgent {
+			cfg.Agent = ""
+		}
+	}
 	switch cfg.Restore {
 	case "", RestoreNone:
 		cfg.Restore = ""
@@ -256,7 +269,7 @@ func (m *Manager) normalize(cfg *CreateConfig) error {
 			return fmt.Errorf("restore %q needs the daemon to run with --persist-dir", cfg.Restore)
 		}
 	default:
-		return fmt.Errorf("unknown restore policy %q (none, rerun or agent)", cfg.Restore)
+		return fmt.Errorf("unknown restore policy %q (none, rerun, agent or auto)", cfg.Restore)
 	}
 	if cfg.Restore == RestoreAgent {
 		if cfg.Agent == "" {
@@ -267,7 +280,7 @@ func (m *Manager) normalize(cfg *CreateConfig) error {
 			return fmt.Errorf("no agent adapter for %q (supported: %s); set \"agent\" or use restore \"rerun\"", cmp.Or(cfg.Agent, cfg.Command), supportedAgents())
 		}
 		if err := a.validate(cfg.Args); err != nil {
-			return fmt.Errorf("%s: %w", cfg.Agent, err)
+			return fmt.Errorf("%s: %w (or start it with restore \"rerun\" or \"none\")", cfg.Agent, err)
 		}
 	}
 	_, err := compileWatches(cfg.Watches)

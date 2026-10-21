@@ -20,7 +20,13 @@ import (
 
 // TokenFile is where the daemon listening on addr keeps its token:
 // $XDG_STATE_HOME/ptyd/token-<port>, by default under ~/.local/state.
-func TokenFile(addr string) (string, error) {
+func TokenFile(addr string) (string, error) { return statePath(addr, "token-") }
+
+// PersistDir is the default --persist-dir of the daemon listening on
+// addr: $XDG_STATE_HOME/ptyd/terminals-<port>.
+func PersistDir(addr string) (string, error) { return statePath(addr, "terminals-") }
+
+func statePath(addr, prefix string) (string, error) {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return "", fmt.Errorf("address %q: %w", addr, err)
@@ -33,7 +39,7 @@ func TokenFile(addr string) (string, error) {
 		}
 		dir = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(dir, "ptyd", "token-"+port), nil
+	return filepath.Join(dir, "ptyd", prefix+port), nil
 }
 
 // NewToken returns a random token.

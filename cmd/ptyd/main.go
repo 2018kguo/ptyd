@@ -31,7 +31,7 @@ func main() {
 	bind := flag.String("bind", defaultAddr(), "Address to bind (host:port; default $PTYD_ADDR or 127.0.0.1:4242). Use 0.0.0.0:4242 to expose on all interfaces.")
 	token := flag.String("token", os.Getenv("PTYD_TOKEN"), "Auth token required as X-Ptyd-Token header (default $PTYD_TOKEN, else a random one); saved for the CLI in ~/.local/state/ptyd/token-<port>")
 	logDir := flag.String("log-dir", os.Getenv("PTYD_LOG_DIR"), "Optional directory to mirror raw PTY output to <id>.log files (default $PTYD_LOG_DIR)")
-	persistDir := flag.String("persist-dir", os.Getenv("PTYD_PERSIST_DIR"), "Optional directory to persist per-terminal metadata sidecars so terminals are recoverable as 'ghosts' across daemon restarts (default $PTYD_PERSIST_DIR)")
+	persistDir := flag.String("persist-dir", os.Getenv("PTYD_PERSIST_DIR"), "Directory where terminals are saved so they survive a daemon restart (default $PTYD_PERSIST_DIR, else ~/.local/state/ptyd/terminals-<port>; --persist-dir= turns saving off)")
 	scrollback := flag.Int("scrollback-bytes", terminal.DefaultScrollbackBytes, "Per-terminal memory budget for retained output lines; worst-case memory is about terminals x this")
 	flag.Parse()
 	if flag.NArg() > 0 {
@@ -41,6 +41,11 @@ func main() {
 	}
 	if *token == "" {
 		*token = client.NewToken()
+	}
+	if _, set := os.LookupEnv("PTYD_PERSIST_DIR"); !set && !flagSet("persist-dir") {
+		if dir, err := client.PersistDir(*bind); err == nil {
+			*persistDir = dir
+		}
 	}
 	if term.IsTerminal(int(os.Stderr.Fd())) {
 		log.SetFlags(0) // started by hand: no timestamps among the user's prompts
@@ -108,4 +113,9 @@ func main() {
 	// and wait for them to be reaped before exiting.
 	mgr.CloseAll()
 	log.Printf("shutdown complete")
+}
+
+func flagSet(name string) (set bool) {
+	flag.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
 }

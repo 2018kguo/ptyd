@@ -263,7 +263,7 @@ func TestCLIDaemonKilledWhileAttached(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "persist")
 	addr := freeAddr(t)
 	d := startDaemon(t, addr, "--persist-dir", dir)
-	if _, stderr, code := d.cli(nil, "new", "-d", "-n", "old", "--", "sh", "-c", "echo old-window; exec cat"); code != 0 {
+	if _, stderr, code := d.cli(nil, "new", "-d", "-n", "old", "--restore", "none", "--", "sh", "-c", "echo old-window; exec cat"); code != 0 {
 		t.Fatal(stderr)
 	}
 	w := d.open(80, 10, "new", "-n", "k", "--restore", "rerun", "--", "sh")
@@ -289,4 +289,15 @@ func TestCLIDaemonKilledWhileAttached(t *testing.T) {
 	}
 	w.waitText("old-window")
 	w.waitText("is not running; this is its last window]")
+	w.waitText("[start it again: ptyd restore ")
+
+	// ptyd restore brings the ghost back below its last window.
+	w = d.open(60, 10, "restore", "old")
+	w.waitText("ptyd: restarted sh after a daemon restart")
+	w.keys("typed-after-restore\r")
+	w.waitText("typed-after-restore\ntyped-after-restore")
+	w.keys("\x1c\x1c")
+	if code := w.waitExit(); code != 0 {
+		t.Fatalf("restore attach exit code %d", code)
+	}
 }
