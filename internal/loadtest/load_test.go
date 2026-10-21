@@ -116,7 +116,9 @@ type Result struct {
 	SSELinesPerSec           float64
 	CPUCores                 float64 // process CPU time / wall time
 	PeakRSSMiB               float64
+	GCPauseP50Us             float64 // stop-the-world pauses (histogram bucket bounds)
 	GCPauseP99Us             float64
+	GCPauseMaxUs             float64
 	GCCycles                 uint64
 	HeapMiB                  float64
 	// Disk writes during the measured window: write amplification is
@@ -279,7 +281,9 @@ func TestLoad(t *testing.T) {
 	cfg.AttachMBps = float64(attachBytes.Load()-att0) / elapsed / 1e6
 	cfg.SSELinesPerSec = float64(sseLines.Load()-sse0) / elapsed
 	ms1 := readMetrics()
+	cfg.GCPauseP50Us = pauseQuantile(ms0.pauses, ms1.pauses, 0.5) * 1e6
 	cfg.GCPauseP99Us = pauseQuantile(ms0.pauses, ms1.pauses, 0.99) * 1e6
+	cfg.GCPauseMaxUs = pauseQuantile(ms0.pauses, ms1.pauses, 1) * 1e6
 	cfg.GCCycles = ms1.cycles - ms0.cycles
 	cfg.HeapMiB = float64(ms1.heap) / (1 << 20)
 	stopProfiles()
