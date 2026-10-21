@@ -165,7 +165,7 @@ var tokens = []string{
 	"\x1b7", "\x1b8", "\x1b[s", "\x1b[u", "\x1bM", "\x1bD", "\x1bE",
 	"\x1b(0", "\x1b(B", "\x1b)0", "\x0e", "\x0f", "lqk",
 	"\x1b]2;t\x07", "\x1b[?1h", "\x1b[?2004h", "\x1b[?1000h", "\x1b[?1006h", "\x1b[?1004h", "\x1b[?25l", "\x1b[?25h",
-	"\x1b[>3u", "\x1b[<u", "\x1b[?45h", "\x1b[?5h", "\x1b[?5l", "\x1b[?1045h", "\x1b[?45l", "\x1b[?1045l", "\x1b[3D", "\x1bH", "\x1b[g", "\x1b[3g", "\x1b[2Z", "\x1b[2I", "\u0301", "e\u0301\u0302", "\u200d", "\x1b*0", "\x1bn", "\x1bN", "\x1b[?1s", "\x1b[?7s", "\x1b[?7r", "\x1b[?1r", "\x1b[=5;1u", "\x1b[2 q", "\x1b=", "\x1b>", "\x1b[!p",
+	"\x1b[>3u", "\x1b[<u", "\x1b[?45h", "\x1b[?69h", "\x1b[?69l", "\x1b[2;4s", "\x1b[3;5s", "\x1b[?5h", "\x1b[?5l", "\x1b[?1045h", "\x1b[?45l", "\x1b[?1045l", "\x1b[3D", "\x1bH", "\x1b[g", "\x1b[3g", "\x1b[2Z", "\x1b[2I", "\u0301", "e\u0301\u0302", "\u200d", "\x1b*0", "\x1bn", "\x1bN", "\x1b[?1s", "\x1b[?7s", "\x1b[?7r", "\x1b[?1r", "\x1b[=5;1u", "\x1b[2 q", "\x1b=", "\x1b>", "\x1b[!p",
 }
 
 func randomStream(rng *rand.Rand, n int) string {
@@ -193,6 +193,7 @@ func stateOf(t *Terminal, withScrollback bool) string {
 				switch {
 				case c.R == wideTail:
 					s = "tail"
+					c = Cell{} // a right half shows its left half's style
 				case c.R != 0 && c.R != ' ':
 					s = strconv.Quote(t.cellString(c))
 				}
@@ -208,14 +209,18 @@ func stateOf(t *Terminal, withScrollback bool) string {
 	if t.alt != nil {
 		dump("alt", t.alt, t.altWrap)
 	}
-	if t.altActive {
-		fmt.Fprintf(&b, "saved1049 %v %d,%d\n", t.saved1049.valid, t.saved1049.x, t.saved1049.y)
+	if t.altActive && t.saved1049.valid {
+		fmt.Fprintf(&b, "saved1049 %d,%d\n", t.saved1049.x, t.saved1049.y)
 	}
 	cur := t.cur
 	if cur.origin {
+		// Repaint positions the cursor with origin mode on, which cannot
+		// reach outside the region (only DECRC can leave it there).
 		cur.wrapPending = false
+		cur.x = min(max(cur.x, t.left), t.right)
+		cur.y = min(max(cur.y, t.top), t.bot)
 	}
-	fmt.Fprintf(&b, "cur %+v region %d-%d ss %d\n", cur, t.top, t.bot, t.ss)
+	fmt.Fprintf(&b, "cur %+v region %d-%d margins %v %d-%d ss %d\n", cur, t.top, t.bot, t.lrmm, t.left, t.right, t.ss)
 	slot := 0
 	if t.altActive {
 		slot = 1
@@ -223,9 +228,6 @@ func stateOf(t *Terminal, withScrollback bool) string {
 	s := t.saved[slot]
 	if s.valid {
 		s.wrapPending = false
-		if s.origin { // restoring clamps into the region
-			s.y = min(max(s.y, t.top), t.bot)
-		}
 	}
 	fmt.Fprintf(&b, "saved %+v\n", s)
 	fmt.Fprintf(&b, "modes %v %v %v %v %v %v %v %v %d %d %d %v %q\n", t.autowrap, t.insert, t.newline, t.cursorHidden,
@@ -242,7 +244,8 @@ func stateOf(t *Terminal, withScrollback bool) string {
 	}
 	fmt.Fprintf(&b, "tabs %v xtsave %v revwrap %v %v reverse %v\n", tabs, saved, t.revWrap, t.revWrapExt, t.reverseVideo)
 	if withScrollback {
-		fmt.Fprintf(&b, "scrollback %q open %v\n", bytes.Join(t.sb[t.sbStart:], []byte("\n")), t.sbOpen)
+		sb := bytes.Join(t.sb[t.sbStart:], []byte("\n"))
+		fmt.Fprintf(&b, "scrollback %q open %v\n", sb, t.sbOpen)
 	}
 	return b.String()
 }

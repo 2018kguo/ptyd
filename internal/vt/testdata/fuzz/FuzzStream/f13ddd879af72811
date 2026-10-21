@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("0字\x1b[11;10H00\x1b[8C00\x00\x0100")
+byte('m')
+byte('\v')

@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("0700000000000000000000010\xe9&00U0A$00\xca00A")
+byte('\x1b')
+byte('\x04')

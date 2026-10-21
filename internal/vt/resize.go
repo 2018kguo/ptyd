@@ -51,6 +51,10 @@ func (t *Terminal) Resize(cols, rows int) {
 		pts[i] = point{c.x, c.y, c.wrapPending}
 	}
 	scr, wrap := t.main, t.mainWrap
+	if cols != oldCols && !t.autowrap {
+		// Nothing rewraps: the scrollback's last line ends where it is.
+		t.sbOpen = false
+	}
 	if cols != oldCols && t.autowrap && t.sbOpen {
 		// The line the screen starts with began in the scrollback: take it
 		// back so it is rewrapped whole.
@@ -135,13 +139,21 @@ func (t *Terminal) Resize(cols, rows int) {
 			t.place(c, p)
 		}
 	}
+	if !t.altActive && t.alt != nil && t.altBlank() {
+		t.alt, t.altWrap = nil, nil // a kept alternate screen cut to nothing
+	}
 	if t.altWrap != nil && !t.anyWrap(t.altWrap) {
 		t.altWrap = nil
 	}
 	if t.mainWrap != nil && !t.anyWrap(t.mainWrap) {
 		t.mainWrap = nil
 	}
-	t.top, t.bot = 0, rows-1
+	t.top, t.bot, t.left, t.right = 0, rows-1, 0, cols-1
+	// Saved cursors of a screen not in use (the alternate one's DECSC
+	// slot) are just kept in bounds.
+	for _, c := range []*cursor{&t.saved[0].cursor, &t.saved[1].cursor, &t.saved1049.cursor} {
+		t.place(c, point{c.x, c.y, c.wrapPending})
+	}
 	t.resizeTabs(oldCols)
 }
 

@@ -508,7 +508,9 @@ var ghostty2Cases = []confCase{
 		screen: scr("  X A"),
 		gap:    "DECLRMM left/right margins"},
 	{name: "insertBlanks outside left/right scroll region", cols: 6, rows: 10,
-		in:     "\x1b[1;4HABC\x1b[?69h\x1b[3;5s\x1b[2@X",
+		// Upstream sets the margins directly; DECSLRM homes the cursor, so
+		// put it back on the last column.
+		in:     "\x1b[1;4HABC\x1b[?69h\x1b[3;5s\x1b[1;6H\x1b[2@X",
 		screen: scr("   ABX"),
 		gap:    "DECLRMM left/right margins"},
 	{name: "insertBlanks left/right scroll region large count", cols: 10, rows: 10,

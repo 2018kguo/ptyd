@@ -69,7 +69,7 @@ func (t *Terminal) checkInvariants() string {
 		}
 	}
 	inBounds("cursor", t.cur)
-	if t.cur.wrapPending && (t.cur.x != t.cols-1 || !t.autowrap) {
+	if t.cur.wrapPending && (t.cur.x != t.cols-1 && t.cur.x != t.right || !t.autowrap) {
 		fail("pending wrap at x=%d (autowrap %v)", t.cur.x, t.autowrap)
 	}
 	for i, s := range t.saved {
@@ -82,6 +82,9 @@ func (t *Terminal) checkInvariants() string {
 	}
 	if t.top < 0 || t.top > t.bot || t.bot >= t.rows {
 		fail("region %d-%d", t.top, t.bot)
+	}
+	if t.left < 0 || t.left > t.right || t.right >= t.cols || !t.lrmm && !t.fullWidth() {
+		fail("margins %d-%d (enabled %v)", t.left, t.right, t.lrmm)
 	}
 	n := 0
 	for _, line := range t.sb[t.sbStart:] {
@@ -127,6 +130,7 @@ func FuzzStream(f *testing.F) {
 	f.Add([]byte("\x1b[2;4r\x1b[?1049h漢\x1b[3M\x1b[?6h\x1b[5;5H"), uint8(10), uint8(4))
 	f.Add([]byte("hello world this wraps\x00\x05\x03more text é\x00\x0c\x05"), uint8(8), uint8(3))
 	f.Add([]byte("\x1b[41mcolored line that wraps around\r\n\x1b[0mnext\x00\x03\x09\x1b[3g\x1bH\tX"), uint8(9), uint8(2))
+	f.Add([]byte("\x1b[?69h\x1b[2;5s\x1b[2;4rabcdefgh\x1bD\x1bM\x1b[L\x1b[2M\x1b[@\x1b[2P\x1b[S\x1b[T\x1b[?6h\x1b[1;1HX\x1b[?69l"), uint8(8), uint8(6))
 	f.Add([]byte("\x1b[?45h\x1b[?7h0123456789\b\b\x1b[5D\x1b(0lqk\x1bN`\x1b[?47h47\x1b[?47l"), uint8(6), uint8(3))
 	for _, seed := range []string{"vim.raw", "less.raw"} {
 		if b, err := readTestdata(seed); err == nil && len(b) > 0 {
@@ -147,16 +151,63 @@ func FuzzStream(f *testing.F) {
 				t.Fatalf("after resize to %dx%d: %s", c, r, msg)
 			}
 		})
-		cols, rows = src.Size()
+		checkRepaint(t, src)
+	})
+}
+
+// FuzzTokens is FuzzStream over the alphabet of TestRepaintRoundTrip (one
+// token per input byte), which reaches deep states much faster than raw
+// bytes do. Bytes 0xf0 and up resize the terminal.
+func FuzzTokens(f *testing.F) {
+	f.Add([]byte{1, 2, 3, 0xf3, 40, 50, 60}, uint8(10), uint8(4))
+	f.Fuzz(func(t *testing.T, sel []byte, c, r uint8) {
+		cols, rows := 1+int(c%40), 1+int(r%12)
+		src := New(cols, rows, Options{ScrollbackLines: 20})
+		resized := false
+		for i, b := range sel {
+			if b >= 0xf0 {
+				src.Resize(1+int(b-0xf0)*3+i%3, 1+(int(b)+i)%12)
+				resized = true
+			} else {
+				src.Write([]byte(tokens[int(b)%len(tokens)]))
+			}
+			if msg := src.checkInvariants(); msg != "" {
+				t.Fatalf("after op %d: %s", i, msg)
+			}
+		}
+		checkRepaint(t, src)
+		if !resized {
+			// Without resizes the scrollback must come back byte for byte.
+			dst := New(src.cols, src.rows, Options{ScrollbackLines: 20})
+			dst.Write(src.Repaint(true))
+			if got, want := state(dst), state(src); got != want {
+				t.Fatalf("repaint state differs:\n%s", lineDiff(got, want))
+			}
+		}
+	})
+}
+
+// checkRepaint checks that Repaint, with and without the scrollback,
+// reproduces src on a fresh terminal of its size.
+func checkRepaint(t *testing.T, src *Terminal) {
+	t.Helper()
+	cols, rows := src.Size()
+	{
 		for _, sb := range []bool{false, true} {
 			rep := src.Repaint(sb)
-			dst := New(cols, rows, Options{ScrollbackLines: 50})
+			dst := New(cols, rows, Options{ScrollbackLines: max(src.sbMaxLines, 1)})
 			dst.Write(rep)
 			if got, want := stateOf(dst, false), stateOf(src, false); got != want {
 				t.Fatalf("repaint(%v) state differs:\n%s\nrepaint %q", sb, lineDiff(got, want), rep)
 			}
-			if sb {
-				if got, want := dst.ScrollbackLines(), src.ScrollbackLines(); !slices.Equal(got, want) {
+			// (A one-column terminal cannot show the wide characters of
+			// lines it scrolled away when wider.)
+			if sb && cols > 1 {
+				// Lines scrolled away at another width rewrap on replay, and
+				// a wide character that wraps leaves a blank at the end of
+				// the row (kept in the line as a space): compare the text
+				// without spaces.
+				if got, want := noSpaces(dst.ScrollbackLines()), noSpaces(src.ScrollbackLines()); !slices.Equal(got, want) {
 					t.Fatalf("repaint scrollback\n got  %q\n want %q", got, want)
 				}
 				if dst.sbOpen != src.sbOpen {
@@ -164,7 +215,7 @@ func FuzzStream(f *testing.F) {
 				}
 			}
 		}
-	})
+	}
 }
 
 // FuzzChunking checks that how output is split into writes does not
@@ -185,6 +236,14 @@ func FuzzChunking(f *testing.F) {
 			t.Fatalf("chunking by %d changed the result:\n%s", n, lineDiff(b, a))
 		}
 	})
+}
+
+func noSpaces(lines []string) []string {
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = strings.ReplaceAll(l, " ", "")
+	}
+	return out
 }
 
 func readTestdata(name string) ([]byte, error) { return os.ReadFile(filepath.Join("testdata", name)) }

@@ -49,6 +49,12 @@ type confCase struct {
 	gap string
 }
 
+// supported lists gap reasons the translators used for features that are
+// now modeled: those cases are checked like any other.
+var supported = map[string]bool{
+	"DECLRMM left/right margins": true,
+}
+
 type confSuite struct {
 	name  string
 	cases []confCase
@@ -204,7 +210,7 @@ func TestConformance(t *testing.T) {
 			gaps[s.name] = map[string]int{}
 		}
 		for _, c := range s.cases {
-			if c.gap != "" {
+			if c.gap != "" && !supported[c.gap] {
 				n.gap++
 				gaps[s.name][c.gap]++
 				continue

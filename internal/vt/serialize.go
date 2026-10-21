@@ -156,7 +156,7 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 	b := make([]byte, 0, 256+t.rows*(t.cols+16))
 	// Synchronized update, normalize the receiving terminal, hide the
 	// cursor while painting.
-	b = append(b, "\x1b[?2026h\x1b[?1049l\x1b[?5l\x1b[0m\x1b[r\x1b[?6l\x1b[?7h\x1b[4l\x1b(B\x1b)B\x1b*B\x1b+B\x0f\x1b[?25l\x1b[H\x1b[2J"...)
+	b = append(b, "\x1b[?2026h\x1b[?1049l\x1b[?5l\x1b[?69l\x1b[0m\x1b[r\x1b[?6l\x1b[?7h\x1b[4l\x1b(B\x1b)B\x1b*B\x1b+B\x0f\x1b[?25l\x1b[H\x1b[2J"...)
 	sbOpen := false
 	if withScrollback {
 		lines := t.sb[t.sbStart:]
@@ -212,23 +212,17 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 		on, _ := t.modeValue(m.mode)
 		b = appendMode(b, m.mode, on && m.mode != 25)
 	}
-	if t.top != 0 || t.bot != t.rows-1 {
-		b = append(b, "\x1b["...)
-		b = strconv.AppendInt(b, int64(t.top+1), 10)
-		b = append(b, ';')
-		b = strconv.AppendInt(b, int64(t.bot+1), 10)
-		b = append(b, 'r')
-	}
 	slot := 0
 	if t.altActive {
 		slot = 1
 	}
 	if s := t.saved[slot]; s.valid {
-		// Origin mode homes the cursor, so it goes first and the position
-		// is given relative to the region.
+		// Origin mode homes the cursor, so it goes first. The region and
+		// margins are not set yet, so the position is absolute even then
+		// (a saved cursor may lie outside the region set since).
 		if s.origin {
 			b = append(b, "\x1b[?6h"...)
-			b = appendCUP(b, s.y-t.top, s.x)
+			b = appendCUP(b, s.y, s.x)
 		} else {
 			b = appendCUP(b, s.y, s.x)
 		}
@@ -240,13 +234,30 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 		}
 		b = append(b, "\x1b(B\x1b)B\x1b*B\x1b+B\x0f"...)
 	}
+	if t.top != 0 || t.bot != t.rows-1 {
+		b = append(b, "\x1b["...)
+		b = strconv.AppendInt(b, int64(t.top+1), 10)
+		b = append(b, ';')
+		b = strconv.AppendInt(b, int64(t.bot+1), 10)
+		b = append(b, 'r')
+	}
+	if t.lrmm {
+		b = appendMode(b, 69, true)
+		if !t.fullWidth() {
+			b = append(b, "\x1b["...)
+			b = strconv.AppendInt(b, int64(t.left+1), 10)
+			b = append(b, ';')
+			b = strconv.AppendInt(b, int64(t.right+1), 10)
+			b = append(b, 's')
+		}
+	}
 	// Cursor. Origin mode homes the cursor when switched on, so it is
 	// enabled first and followed by a region-relative CUP.
 	x, y := t.cur.x, t.cur.y
 	if t.cur.wrapPending {
 		// Reprint the last cell to recreate the pending wrap.
 		row := t.screen()[y]
-		cx := t.cols - 1
+		cx, end := x, x+1
 		if row != nil && cx > 0 && row[cx].R == wideTail {
 			cx--
 		}
@@ -255,17 +266,17 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 		if row == nil {
 			b = append(b, ' ')
 		} else {
-			b = t.appendRow(b, row[cx:], false)
+			b = t.appendRow(b, row[cx:end], false)
 		}
 		if t.cur.origin {
 			b = append(b, "\x1b[?6h"...)
 			// Origin mode homes the cursor; the pending wrap cannot be
 			// recreated in that combination, so land on the last column.
-			b = appendCUP(b, y-t.top, t.cols-1)
+			b = appendCUP(b, y-t.top, x-t.left)
 		}
 	} else if t.cur.origin {
 		b = append(b, "\x1b[?6h"...)
-		b = appendCUP(b, y-t.top, x)
+		b = appendCUP(b, y-t.top, x-t.left)
 	} else {
 		b = appendCUP(b, y, x)
 	}
