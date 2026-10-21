@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -188,5 +189,26 @@ func TestDefaultTERMWhenUnset(t *testing.T) {
 	defer cancel()
 	if _, _, err := m.Wait(ctx, info.ID, "term=xterm-256color", -1, 0); err != nil {
 		t.Fatalf("wait: %v", err)
+	}
+}
+
+// Terminals created at the same time (parallel API calls, or restores at
+// startup) all start.
+func TestParallelCreate(t *testing.T) {
+	m := NewManager()
+	defer m.CloseAll()
+	var wg sync.WaitGroup
+	errs := make(chan error, 100)
+	for i := range 100 {
+		wg.Go(func() {
+			if _, err := m.Create(CreateConfig{Name: fmt.Sprint(i), Command: "cat"}); err != nil {
+				errs <- err
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }

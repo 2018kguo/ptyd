@@ -303,6 +303,12 @@ type spawnSpec struct {
 	notice   string
 }
 
+// ptyStartMu serializes opening a PTY and starting its process. On
+// macOS, concurrent starts fail now and then with "errno -6" (about 1 in
+// 100 of 100 parallel creates); forks are serialized by the runtime's
+// ForkLock anyway, so this costs little.
+var ptyStartMu sync.Mutex
+
 // spawn starts the process for cfg as described by sp and registers the
 // terminal.
 func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
@@ -333,7 +339,9 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 		screen = vt.New(int(cfg.Cols), int(cfg.Rows), vt.Options{})
 	}
 	cols, rows := screen.Size()
+	ptyStartMu.Lock()
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	ptyStartMu.Unlock()
 	if err != nil {
 		return Info{}, fmt.Errorf("failed to start pty: %w", err)
 	}
