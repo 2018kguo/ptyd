@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"bytes"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -61,7 +62,7 @@ func appendColor(b []byte, c Color, base int) []byte {
 	return strconv.AppendInt(b, int64(n), 10)
 }
 
-func styleOf(c Cell) Cell { return Cell{Fg: c.Fg, Bg: c.Bg, A: c.A} }
+func styleOf(c Cell) Cell { return Cell{Fg: c.Fg, Bg: c.Bg, A: c.A, L: c.L} }
 
 // appendRow appends one row's characters with the escape sequences for
 // their styles, starting and ending in the default style. With trim,
@@ -93,6 +94,9 @@ func (t *Terminal) appendRow(b []byte, row []Cell, trim bool) []byte {
 			if (s.A^style.A)&^attrProtected != 0 || s.Fg != style.Fg || s.Bg != style.Bg {
 				b = appendSGR(b, s)
 			}
+			if s.L != style.L {
+				b = t.appendLink(b, s.L)
+			}
 			style = s
 		}
 		switch {
@@ -107,10 +111,24 @@ func (t *Terminal) appendRow(b []byte, row []Cell, trim bool) []byte {
 	if style.A&attrProtected != 0 {
 		b = appendProtect(b, false)
 	}
+	if style.L != 0 {
+		b = t.appendLink(b, 0)
+	}
 	if style.A&^attrProtected != 0 || style.Fg != 0 || style.Bg != 0 {
 		b = append(b, "\x1b[0m"...)
 	}
 	return b
+}
+
+// appendLink appends OSC 8 starting hyperlink l, or ending one (0).
+func (t *Terminal) appendLink(b []byte, l uint16) []byte {
+	b = append(b, "\x1b]8;"...)
+	if l == 0 {
+		b = append(b, ';')
+	} else {
+		b = append(b, t.link(l)...)
+	}
+	return append(b, "\x1b\\"...)
 }
 
 // appendProtect appends DECSCA, turning character protection on or off.
@@ -244,9 +262,15 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 		}
 		b = appendSGR(b, s.pen)
 		b = appendProtect(b, s.pen.A&attrProtected != 0)
+		if s.pen.L != 0 {
+			b = t.appendLink(b, s.pen.L)
+		}
 		b = appendCharsets(b, s.cursor)
 		b = append(b, "\x1b7"...)
 		b = appendProtect(b, false)
+		if s.pen.L != 0 {
+			b = t.appendLink(b, 0)
+		}
 		if s.origin {
 			b = append(b, "\x1b[?6l"...)
 		}
@@ -299,6 +323,9 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 		b = appendCUP(b, y, x)
 	}
 	b = appendSGR(b, t.cur.pen)
+	if t.cur.pen.L != 0 {
+		b = t.appendLink(b, t.cur.pen.L)
+	}
 	switch prot := t.cur.pen.A&attrProtected != 0; {
 	case t.protISO && prot:
 		b = append(b, "\x1bV"...)
@@ -448,11 +475,19 @@ func (t *Terminal) ScrollbackLines() []string {
 	return out
 }
 
-// stripSGR removes the escape sequences (SGR and EL) a scrollback line
-// holds.
+// stripSGR removes the escape sequences (SGR, EL, DECSCA, OSC 8) a
+// scrollback line holds.
 func stripSGR(line []byte) string {
 	var sb strings.Builder
 	for i := 0; i < len(line); i++ {
+		if line[i] == 0x1b && i+1 < len(line) && line[i+1] == ']' {
+			end := bytes.Index(line[i:], []byte("\x1b\\"))
+			if end < 0 {
+				break
+			}
+			i += end + 1
+			continue
+		}
 		if line[i] == 0x1b {
 			for i++; i < len(line) && (line[i] < 0x40 || line[i] > 0x7e || line[i] == '['); i++ {
 			}

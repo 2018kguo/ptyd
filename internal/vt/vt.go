@@ -15,6 +15,7 @@
 package vt
 
 import (
+	"strings"
 	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
@@ -59,6 +60,7 @@ type Cell struct {
 	Fg Color
 	Bg Color
 	A  Attr
+	L  uint16 // hyperlink (OSC 8): 0 for none, else the Terminal's links[L-1]
 }
 
 const (
@@ -164,6 +166,9 @@ type extra struct {
 	// characters with combining marks, referenced by cells
 	clusters   []string
 	clusterCap int
+	// hyperlink targets ("params;uri"), referenced by cells
+	links   []string
+	linkCap int
 }
 
 // ext returns t.x, allocating it.
@@ -1796,7 +1801,7 @@ func (t *Terminal) resizeTabs(oldCols int) {
 
 func (t *Terminal) sgr() {
 	if t.nparams == 0 {
-		t.cur.pen = Cell{A: t.cur.pen.A & attrProtected}
+		t.cur.pen = Cell{A: t.cur.pen.A & attrProtected, L: t.cur.pen.L}
 		return
 	}
 	p := &t.cur.pen
@@ -1809,7 +1814,7 @@ func (t *Terminal) sgr() {
 		}
 		switch {
 		case v == 0:
-			*p = Cell{A: p.A & attrProtected}
+			*p = Cell{A: p.A & attrProtected, L: p.L}
 		case v == 1:
 			p.A |= attrBold
 		case v == 2:
@@ -1921,7 +1926,78 @@ func (t *Terminal) oscDispatch() {
 	switch {
 	case len(s) >= 2 && (s[0] == '0' || s[0] == '2') && s[1] == ';':
 		t.title = string(s[2:])
+	case len(s) >= 2 && s[0] == '8' && s[1] == ';':
+		// OSC 8 ; params ; uri: start a hyperlink, or end it (no uri).
+		params, uri, ok := strings.Cut(string(s[2:]), ";")
+		if !ok || uri == "" {
+			t.cur.pen.L = 0
+		} else {
+			t.cur.pen.L = t.internLink(params + ";" + uri)
+		}
 	}
+}
+
+// internLink returns the cell link index for a hyperlink target. Recent
+// entries are reused; when the table is full, links no cell refers to are
+// dropped. Past 65535 live links, new ones are not recorded.
+func (t *Terminal) internLink(target string) uint16 {
+	x := t.ext()
+	for i := len(x.links) - 1; i >= max(len(x.links)-16, 0); i-- {
+		if x.links[i] == target {
+			return uint16(i + 1)
+		}
+	}
+	if len(x.links) >= x.linkCap {
+		t.compactLinks()
+	}
+	if len(x.links) >= 0xffff {
+		return 0
+	}
+	x.links = append(x.links, target)
+	return uint16(len(x.links))
+}
+
+// compactLinks drops the links no cell or cursor refers to, renumbering
+// the rest, and sets the next compaction point.
+func (t *Terminal) compactLinks() {
+	x := t.x
+	if len(x.links) > 0 {
+		remap := make([]uint16, len(x.links))
+		var kept []string
+		ref := func(l *uint16) {
+			if *l == 0 {
+				return
+			}
+			i := *l - 1
+			if remap[i] == 0 {
+				kept = append(kept, x.links[i])
+				remap[i] = uint16(len(kept))
+			}
+			*l = remap[i]
+		}
+		for _, scr := range [][][]Cell{t.main, t.alt} {
+			for _, row := range scr {
+				for i := range row {
+					ref(&row[i].L)
+				}
+			}
+		}
+		ref(&t.cur.pen.L)
+		for i := range t.saved {
+			ref(&t.saved[i].pen.L)
+		}
+		ref(&t.saved1049.pen.L)
+		x.links = kept
+	}
+	x.linkCap = max(16, 2*len(x.links))
+}
+
+// link returns a cell's hyperlink target ("params;uri"), or "".
+func (t *Terminal) link(l uint16) string {
+	if l == 0 {
+		return ""
+	}
+	return t.x.links[l-1]
 }
 
 // --- characters with combining marks ---

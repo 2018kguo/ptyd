@@ -390,6 +390,9 @@ func (t *Terminal) parseLine(line []byte) ([][]Cell, []bool) {
 			if r := row[x].R; r >= clusterBase {
 				row[x].R = t.intern(tmp.x.clusters[r-clusterBase])
 			}
+			if l := row[x].L; l != 0 {
+				row[x].L = t.internLink(tmp.link(l))
+			}
 		}
 		rows[y] = row
 		if tmp.mainWrap != nil {
@@ -427,9 +430,10 @@ func (t *Terminal) ArchiveScreen() {
 	sbOpen, x := t.sbOpen, t.x
 	t.reset()
 	t.sbOpen = sbOpen
-	if x != nil && x.clusters != nil {
-		// The kept rows may refer to characters with combining marks.
-		t.x = &extra{clusters: x.clusters, clusterCap: x.clusterCap}
+	if x != nil && (x.clusters != nil || x.links != nil) {
+		// The kept rows may refer to characters with combining marks and
+		// to hyperlinks.
+		t.x = &extra{clusters: x.clusters, clusterCap: x.clusterCap, links: x.links, linkCap: x.linkCap}
 	}
 	if over := len(old) - (t.rows - 1); over > 0 {
 		for i, row := range old[:over] {
