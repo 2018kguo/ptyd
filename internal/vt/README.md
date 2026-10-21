@@ -129,7 +129,7 @@ movecursor...) test libvterm internals and are not counted (307).
   exact screen, scrollback and cursor.
 - `TestRedrawDoesNotAllocate` pins zero allocations for a redraw frame.
 
-Fuzzing time so far, about 2.2 hours on 4-6 workers: FuzzTokens about 55
+Fuzzing time so far, about 2.3 hours on 4-6 workers: FuzzTokens about 55
 minutes (it found every bug fixed in the margins and spacer-head commits:
 stale saved cursors after resize, the scrollback staying joined to a row
 it no longer continued, pending wraps left away from the edge), FuzzStream
@@ -139,7 +139,32 @@ FuzzChunking 10 minutes (9.2M runs, clean). Crashers are kept under
 
 ## Performance and memory
 
-PERF-RESULTS
+Apple M5 Pro, `bench/ab.sh b898437 ./internal/vt` (10 alternating runs,
+baseline = before this work):
+
+| Benchmark | Before | After | |
+|---|---|---|---|
+| WriteStream/claude (agent TUI, 1 MiB) | 2.32 ms | 2.33 ms | same |
+| WriteStream/logs (1 MiB, scrolling) | 2.86 ms | 2.54 ms | -11% |
+| WriteStream/vim, less, progress | | | same to -2% |
+| WriteLines | 235 µs | 200 µs | -15% |
+| Repaint (100x30) | 4.32 µs | 4.18 µs | same |
+| RepaintScreen (120x40) | 9.6 µs | 8.9 µs | -8% |
+| RepaintScrollback (full scrollback) | 40.0 µs | 16.0 µs | -60%, 11 allocs to 1 |
+| Lines / ScrollbackLines | 14.0 / 98.9 µs | 11.1 / 77.0 µs | -21% / -22% |
+| Replay (restore a checkpoint) | 441 µs | 416 µs | -6% |
+
+Allocations per op are unchanged everywhere else, and a redraw frame
+still allocates nothing (`TestRedrawDoesNotAllocate`). Throughput is about
+300-450 MiB/s on program output.
+
+Memory, measured as live heap per terminal: 2.8 KB idle at a prompt
+(80x24), 5.4 KB at 200x50, 337 KB for an 80x24 terminal with a full
+2,000-line scrollback; all equal to the baseline within 0.1%. The new
+state (tab stops, XTSAVE, clusters, hyperlink targets) lives in a struct
+allocated only when used, cells stay 16 bytes (the hyperlink index uses
+what was padding), and the Terminal struct stays in the same allocation
+size class.
 
 ## Library readiness
 
