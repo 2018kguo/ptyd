@@ -1,9 +1,9 @@
 // Package vt is a compact VT/xterm screen model. It is fed a program's raw
 // terminal output and keeps what a terminal would show: the main and
-// alternate screens, cursor, colors and attributes, scroll region, the
-// input modes a program has switched on, and a bounded scrollback. It can
-// serialize that state as a byte sequence that repaints it on a fresh
-// terminal (Repaint).
+// alternate screens, cursor, colors and attributes, scroll region, tab
+// stops, the input modes a program has switched on, and a bounded
+// scrollback. It can serialize that state as a byte sequence that repaints
+// it on a fresh terminal (Repaint).
 //
 // It is written for ptyd's scale constraints rather than as a general
 // emulator: a cell is 16 bytes, rows are allocated only once something is
@@ -47,8 +47,9 @@ const (
 	ulMask  Attr = 7 << ulShift
 )
 
-// Cell is one screen position. R is 0 for a blank and wideTail for the
-// right half of a double-width character.
+// Cell is one screen position. R is 0 for a blank, wideTail for the right
+// half of a double-width character, and clusterBase+i for a character with
+// combining marks (the Terminal's clusters[i]).
 type Cell struct {
 	R  rune
 	Fg Color
@@ -56,7 +57,10 @@ type Cell struct {
 	A  Attr
 }
 
-const wideTail rune = -1
+const (
+	wideTail    rune = -1
+	clusterBase rune = 0x40000000
+)
 
 // Defaults for Options.
 const (
@@ -64,6 +68,8 @@ const (
 	DefaultScrollbackBytes = 256 << 10
 	maxOSC                 = 4096
 	maxParams              = 32
+	maxCluster             = 32 // bytes of a character with its combining marks
+	maxLogicalLine         = 32 << 10
 )
 
 var widthCond = func() *runewidth.Condition {
@@ -77,8 +83,8 @@ type cursor struct {
 	pen         Cell
 	wrapPending bool
 	origin      bool
-	g           [2]bool // G0/G1 designated as DEC special graphics
-	gl          int     // 0: G0 invoked into GL, 1: G1
+	g           [4]bool // G0-G3 designated as DEC special graphics
+	gl          uint8   // which of G0-G3 is invoked into GL
 }
 
 type savedCursor struct {
@@ -89,18 +95,26 @@ type savedCursor struct {
 // Terminal is the screen model.
 type Terminal struct {
 	cols, rows int
-	main, alt  [][]Cell // alt is nil unless the alternate screen is active
-	altActive  bool
-	cur        cursor
-	saved      [2]savedCursor // DECSC slots: main, alt
-	saved1049  savedCursor    // cursor saved by ?1049h
-	top, bot   int            // scroll region, inclusive
+	main, alt  [][]Cell // alt is nil unless the alternate screen is in use
+	// Soft-wrap flags, nil until a row wraps: wrap[y] means row y
+	// continues on row y+1.
+	mainWrap, altWrap []bool
+	altActive         bool
+	cur               cursor
+	saved             [2]savedCursor // DECSC slots: main, alt
+	saved1049         savedCursor    // cursor saved by ?1049h
+	top, bot          int            // scroll region, inclusive
+	ss                uint8          // pending single shift (2 or 3)
+	x                 *extra         // state few programs use, nil until one does
 
 	// modes
 	autowrap     bool
+	revWrap      bool // 45: BS and CUB continue on the previous wrapped line
+	revWrapExt   bool // 1045: ... on any previous line, and top to bottom
 	insert       bool
 	newline      bool // LNM
 	cursorHidden bool
+	reverseVideo bool // DECSCNM
 	appCursor    bool
 	appKeypad    bool
 	bracketed    bool
@@ -112,11 +126,13 @@ type Terminal struct {
 	title        string
 	lastChar     rune
 
-	// scrollback, oldest first; each entry is a serialized line
+	// scrollback, oldest first; each entry is a serialized logical line
+	// (rows joined where they soft-wrapped)
 	sb               [][]byte
 	sbStart, sbBytes int
 	sbMaxLines       int
 	sbMaxBytes       int
+	sbOpen           bool // the last line continues on screen row 0
 	scratch          []byte
 
 	// parser
@@ -131,6 +147,29 @@ type Terminal struct {
 	inter    byte // last intermediate byte
 	osc      []byte
 	oscOver  bool
+}
+
+// extra holds the state few programs use, kept out of Terminal so an idle
+// terminal stays small.
+type extra struct {
+	tabs       []uint64    // tab stops, nil for every 8 columns
+	savedModes []savedMode // XTSAVE
+	// characters with combining marks, referenced by cells
+	clusters   []string
+	clusterCap int
+}
+
+// ext returns t.x, allocating it.
+func (t *Terminal) ext() *extra {
+	if t.x == nil {
+		t.x = &extra{}
+	}
+	return t.x
+}
+
+type savedMode struct {
+	mode int
+	on   bool
 }
 
 const (
@@ -191,6 +230,41 @@ func (t *Terminal) screen() [][]Cell {
 	return t.main
 }
 
+// wraps returns the active screen's soft-wrap flags (nil if none is set).
+func (t *Terminal) wraps() []bool {
+	if t.altActive {
+		return t.altWrap
+	}
+	return t.mainWrap
+}
+
+// setWrap sets whether row y continues on row y+1.
+func (t *Terminal) setWrap(y int, on bool) {
+	w := t.wraps()
+	if w == nil {
+		if !on {
+			return
+		}
+		w = make([]bool, t.rows)
+		if t.altActive {
+			t.altWrap = w
+		} else {
+			t.mainWrap = w
+		}
+	}
+	w[y] = on
+}
+
+// wrapped reports whether row y continues the row above it (for row 0 of
+// the main screen, the last scrollback line).
+func (t *Terminal) wrapped(y int) bool {
+	if y == 0 {
+		return !t.altActive && t.sbOpen
+	}
+	w := t.wraps()
+	return w != nil && w[y-1]
+}
+
 // Write feeds program output. Sequences may be split across calls. It
 // always consumes all of p.
 func (t *Terminal) Write(p []byte) (int, error) {
@@ -233,8 +307,14 @@ func (t *Terminal) printUTF8(p []byte) int {
 			t.utf8Start(p[i])
 			return i + 1
 		}
-		t.printRune(r)
 		i += size
+		if r < 0xa0 {
+			// A C1 control (U+0080-U+009F): it may start a sequence, so
+			// the rest goes through the state machine.
+			t.c1(r)
+			return i
+		}
+		t.printRune(r)
 	}
 	return i
 }
@@ -259,16 +339,33 @@ func (t *Terminal) utf8Continue(c byte) {
 	t.utf8buf[t.utf8n] = c
 	t.utf8n++
 	if utf8.FullRune(t.utf8buf[:t.utf8n]) {
-		r, _ := utf8.DecodeRune(t.utf8buf[:t.utf8n])
+		r, size := utf8.DecodeRune(t.utf8buf[:t.utf8n])
 		t.utf8n = 0
+		if size == 1 {
+			// Invalid (overlong, surrogate, out of range).
+			t.printRune(utf8.RuneError)
+			return
+		}
+		if r < 0xa0 {
+			t.c1(r)
+			return
+		}
 		t.printRune(r)
 	}
+}
+
+// c1 runs a C1 control received as a UTF-8 code point: like xterm, it is
+// the 7-bit ESC Fe equivalent.
+func (t *Terminal) c1(r rune) {
+	t.step(0x1b)
+	t.step(byte(r - 0x40))
 }
 
 func (t *Terminal) printRune(r rune) {
 	w := widthCond.RuneWidth(r)
 	if w == 0 {
-		return // combining marks and other zero-width runes are dropped
+		t.combine(r)
+		return
 	}
 	t.print(r, w)
 }
@@ -410,13 +507,10 @@ func (t *Terminal) step(c byte) {
 func (t *Terminal) execute(c byte) {
 	switch c {
 	case '\b':
-		t.cur.wrapPending = false
-		if t.cur.x > 0 {
-			t.cur.x--
-		}
+		t.cursorLeft(1)
 	case '\t':
 		t.cur.wrapPending = false
-		t.cur.x = min((t.cur.x/8+1)*8, t.cols-1)
+		t.cur.x = t.nextTab(t.cur.x)
 	case '\n', '\v', '\f':
 		t.cur.wrapPending = false
 		t.index()
@@ -436,25 +530,12 @@ func (t *Terminal) execute(c byte) {
 func (t *Terminal) escDispatch(c byte) {
 	switch t.inter {
 	case 0:
-	case '(', ')':
-		g := 0
-		if t.inter == ')' {
-			g = 1
-		}
-		t.cur.g[g] = c == '0'
+	case '(', ')', '*', '+':
+		t.cur.g[t.inter-'('] = c == '0'
 		return
 	case '#':
-		if c == '8' { // DECALN: fill the screen with E
-			scr := t.screen()
-			for y := range scr {
-				row := make([]Cell, t.cols)
-				for x := range row {
-					row[x].R = 'E'
-				}
-				scr[y] = row
-			}
-			t.top, t.bot = 0, t.rows-1
-			t.cur.x, t.cur.y, t.cur.wrapPending = 0, 0, false
+		if c == '8' {
+			t.decaln()
 		}
 		return
 	default:
@@ -472,9 +553,19 @@ func (t *Terminal) escDispatch(c byte) {
 		t.cur.wrapPending = false
 		t.cur.x = 0
 		t.index()
+	case 'H':
+		t.setTab(t.cur.x, true)
 	case 'M':
 		t.cur.wrapPending = false
 		t.reverseIndex()
+	case 'N':
+		t.ss = 2
+	case 'O':
+		t.ss = 3
+	case 'n':
+		t.cur.gl = 2
+	case 'o':
+		t.cur.gl = 3
 	case 'c':
 		t.reset()
 	case '=':
@@ -482,6 +573,25 @@ func (t *Terminal) escDispatch(c byte) {
 	case '>':
 		t.appKeypad = false
 	}
+}
+
+// decaln fills the screen with E (the alignment test) and resets the
+// margins.
+func (t *Terminal) decaln() {
+	scr := t.screen()
+	for y := range scr {
+		row := scr[y]
+		if row == nil {
+			row = make([]Cell, t.cols)
+			scr[y] = row
+		}
+		for x := range row {
+			row[x] = Cell{R: 'E'}
+		}
+	}
+	clear(t.wraps())
+	t.top, t.bot = 0, t.rows-1
+	t.cur.x, t.cur.y, t.cur.wrapPending = 0, 0, false
 }
 
 func (t *Terminal) reset() {
@@ -527,7 +637,7 @@ func (t *Terminal) setCursor(c cursor) {
 	t.cur = c
 	t.cur.x = min(t.cur.x, t.cols-1)
 	t.cur.y = min(t.cur.y, t.rows-1)
-	t.cur.wrapPending = t.cur.wrapPending && t.autowrap
+	t.cur.wrapPending = t.cur.wrapPending && t.autowrap && t.cur.x == t.cols-1
 	if t.cur.origin {
 		t.cur.y = min(max(t.cur.y, t.top), t.bot)
 	}
@@ -545,11 +655,20 @@ func (t *Terminal) param(i, def int) int {
 func (t *Terminal) csiDispatch(c byte) {
 	switch t.marker {
 	case '?':
+		if t.inter != 0 {
+			return
+		}
 		switch c {
 		case 'h', 'l':
 			for i := 0; i < t.nparams; i++ {
 				if !t.sub[i] {
 					t.decMode(t.params[i], c == 'h')
+				}
+			}
+		case 's', 'r':
+			for i := 0; i < t.nparams; i++ {
+				if !t.sub[i] {
+					t.xtSaveMode(t.params[i], c == 's')
 				}
 			}
 		case 'J':
@@ -617,8 +736,8 @@ func (t *Terminal) csiDispatch(c byte) {
 		t.cursorDown(t.param(0, 1))
 	case 'C', 'a':
 		t.setX(t.cur.x + t.param(0, 1))
-	case 'D':
-		t.setX(t.cur.x - t.param(0, 1))
+	case 'D', 'j':
+		t.cursorLeft(t.param(0, 1))
 	case 'E':
 		t.cursorDown(t.param(0, 1))
 		t.cur.x = 0
@@ -631,13 +750,25 @@ func (t *Terminal) csiDispatch(c byte) {
 		t.moveTo(t.param(1, 1)-1, t.param(0, 1)-1)
 	case 'd':
 		t.moveTo(t.cur.x, t.param(0, 1)-1)
+	case 'k':
+		t.cursorUp(t.param(0, 1))
 	case 'I':
-		for range t.param(0, 1) {
-			t.execute('\t')
+		t.cur.wrapPending = false
+		for range min(t.param(0, 1), t.cols) {
+			t.cur.x = t.nextTab(t.cur.x)
 		}
 	case 'Z':
 		t.cur.wrapPending = false
-		t.cur.x = max((t.cur.x-1)/8*8, 0)
+		for range min(t.param(0, 1), t.cols) {
+			t.cur.x = t.prevTab(t.cur.x)
+		}
+	case 'g':
+		switch t.param(0, 0) {
+		case 0:
+			t.setTab(t.cur.x, false)
+		case 3:
+			t.ext().tabs = make([]uint64, (t.cols+63)/64)
+		}
 	case 'J':
 		t.eraseDisplay(t.param(0, 0))
 	case 'K':
@@ -652,6 +783,7 @@ func (t *Terminal) csiDispatch(c byte) {
 		n := min(t.param(0, 1), t.cols-t.cur.x)
 		t.cur.wrapPending = false
 		t.fillCells(t.cur.y, t.cur.x, t.cur.x+n)
+		t.setWrap(t.cur.y, false) // as ghostty: the row no longer wraps
 	case 'S':
 		t.scrollUp(t.top, t.bot, t.param(0, 1))
 	case 'T':
@@ -660,7 +792,7 @@ func (t *Terminal) csiDispatch(c byte) {
 		}
 	case 'b':
 		if t.lastChar != 0 {
-			w := widthCond.RuneWidth(t.lastChar)
+			w := t.runeWidth(t.lastChar)
 			for range min(t.param(0, 1), t.cols*t.rows) {
 				t.print(t.lastChar, w)
 			}
@@ -695,19 +827,79 @@ func (t *Terminal) softReset() {
 	t.insert = false
 	t.cur.origin = false
 	t.autowrap = true
+	t.revWrap, t.revWrapExt = false, false
 	t.appCursor = false
 	t.appKeypad = false
 	t.top, t.bot = 0, t.rows-1
 	t.cur.pen = Cell{}
-	t.cur.g, t.cur.gl = [2]bool{}, 0
+	t.cur.g, t.cur.gl, t.ss = [4]bool{}, 0, 0
 	t.cur.wrapPending = false
 	t.saved[0], t.saved[1] = savedCursor{}, savedCursor{}
+}
+
+// modeValue reports the state of a DEC private mode XTSAVE can save, and
+// whether it is one.
+func (t *Terminal) modeValue(mode int) (on, ok bool) {
+	switch mode {
+	case 1:
+		return t.appCursor, true
+	case 5:
+		return t.reverseVideo, true
+	case 6:
+		return t.cur.origin, true
+	case 7:
+		return t.autowrap, true
+	case 45:
+		return t.revWrap, true
+	case 1045:
+		return t.revWrapExt, true
+	case 25:
+		return !t.cursorHidden, true
+	case 9, 1000, 1002, 1003:
+		return t.mouse == mode, true
+	case 1005, 1006, 1015:
+		return t.mouseEnc == mode, true
+	case 1004:
+		return t.focus, true
+	case 2004:
+		return t.bracketed, true
+	}
+	return false, false
+}
+
+// xtSaveMode saves (XTSAVE) or restores (XTRESTORE) a DEC private mode.
+func (t *Terminal) xtSaveMode(mode int, save bool) {
+	x := t.ext()
+	for i, s := range x.savedModes {
+		if s.mode != mode {
+			continue
+		}
+		if save {
+			x.savedModes[i].on, _ = t.modeValue(mode)
+		} else {
+			t.decMode(mode, s.on)
+		}
+		return
+	}
+	if on, ok := t.modeValue(mode); ok && save && len(x.savedModes) < 16 {
+		x.savedModes = append(x.savedModes, savedMode{mode, on})
+	}
+}
+
+// tabs returns the custom tab stops (nil: every 8 columns).
+func (t *Terminal) tabs() []uint64 {
+	if t.x == nil {
+		return nil
+	}
+	return t.x.tabs
 }
 
 func (t *Terminal) decMode(mode int, on bool) {
 	switch mode {
 	case 1:
 		t.appCursor = on
+	case 5:
+		t.reverseVideo = on
 	case 6:
 		t.cur.origin = on
 		t.moveTo(0, 0)
@@ -716,6 +908,10 @@ func (t *Terminal) decMode(mode int, on bool) {
 		if !on {
 			t.cur.wrapPending = false
 		}
+	case 45:
+		t.revWrap = on
+	case 1045:
+		t.revWrapExt = on
 	case 25:
 		t.cursorHidden = !on
 	case 9, 1000, 1002, 1003:
@@ -735,7 +931,7 @@ func (t *Terminal) decMode(mode int, on bool) {
 	case 2004:
 		t.bracketed = on
 	case 47, 1047:
-		t.setAlt(on, mode == 1047 && !on)
+		t.setAlt(on, mode == 1047)
 	case 1048:
 		if on {
 			t.saveCursor()
@@ -747,7 +943,7 @@ func (t *Terminal) decMode(mode int, on bool) {
 			if !t.altActive {
 				t.saved1049 = savedCursor{cursor: t.cur, valid: true}
 			}
-			t.setAlt(true, false)
+			t.setAlt(true, true)
 			t.clearScreen()
 		} else if t.altActive {
 			t.setAlt(false, true)
@@ -758,19 +954,31 @@ func (t *Terminal) decMode(mode int, on bool) {
 	}
 }
 
-// setAlt switches screens. Leaving the alternate screen frees it.
+// setAlt switches screens. Leaving the alternate screen frees it, unless
+// it was left with mode 47 (which keeps its contents for the next switch)
+// and holds something.
 func (t *Terminal) setAlt(on, clearOnExit bool) {
 	if on == t.altActive {
 		return
 	}
 	t.altActive = on
 	if on {
-		t.alt = make([][]Cell, t.rows)
-	} else {
-		t.alt = nil
+		if t.alt == nil {
+			t.alt = make([][]Cell, t.rows)
+		}
+	} else if clearOnExit || t.altBlank() {
+		t.alt, t.altWrap = nil, nil
 	}
-	_ = clearOnExit // the alternate screen is dropped on exit either way
 	t.cur.wrapPending = false
+}
+
+func (t *Terminal) altBlank() bool {
+	for _, row := range t.alt {
+		if !zeroRow(row) {
+			return false
+		}
+	}
+	return true
 }
 
 func (t *Terminal) clearScreen() {
@@ -780,11 +988,15 @@ func (t *Terminal) clearScreen() {
 // eraseRows erases rows [from, to), reusing rows already allocated.
 func (t *Terminal) eraseRows(from, to int) {
 	scr := t.screen()
+	w := t.wraps()
 	for y := from; y < to; y++ {
 		if row := scr[y]; row != nil {
 			t.blank(row)
 		} else {
 			scr[y] = t.blankRow()
+		}
+		if w != nil {
+			w[y] = false
 		}
 	}
 }
@@ -822,10 +1034,17 @@ func (t *Terminal) row(y int) []Cell {
 	return scr[y]
 }
 
+// fillCells erases cells [from, to) of row y with the current background.
+// Erasing to the end of the row ends a soft wrap there.
 func (t *Terminal) fillCells(y, from, to int) {
 	from, to = max(from, 0), min(to, t.cols)
 	if from >= to {
 		return
+	}
+	if to == t.cols {
+		if w := t.wraps(); w != nil {
+			w[y] = false
+		}
 	}
 	scr := t.screen()
 	if scr[y] == nil && t.cur.pen.Bg == 0 {
@@ -850,8 +1069,19 @@ var decGraphics = [...]rune{
 	'⎻', '─', '⎼', '⎽', '├', '┤', '┴', '┬', '│', '≤', '≥', 'π', '≠', '£', '·',
 }
 
+// charset returns whether the character set for the next printed
+// character is DEC special graphics, consuming a single shift.
+func (t *Terminal) graphics() bool {
+	if t.ss != 0 {
+		g := t.cur.g[t.ss]
+		t.ss = 0
+		return g
+	}
+	return t.cur.g[t.cur.gl]
+}
+
 func (t *Terminal) print(r rune, w int) {
-	if t.cur.g[t.cur.gl] && r >= 0x5f && r <= 0x7e {
+	if t.graphics() && r >= 0x5f && r <= 0x7e {
 		if r == 0x5f {
 			r = ' '
 		} else {
@@ -861,7 +1091,7 @@ func (t *Terminal) print(r rune, w int) {
 	t.lastChar = r
 	if t.cur.wrapPending && t.autowrap {
 		t.cur.x = 0
-		t.index()
+		t.wrapLine()
 	}
 	t.cur.wrapPending = false
 	if w > t.cols {
@@ -873,7 +1103,7 @@ func (t *Terminal) print(r rune, w int) {
 		} else {
 			t.fillCells(t.cur.y, t.cur.x, t.cols)
 			t.cur.x = 0
-			t.index()
+			t.wrapLine()
 		}
 	}
 	row := t.row(t.cur.y)
@@ -884,10 +1114,10 @@ func (t *Terminal) print(r rune, w int) {
 	pen := t.cur.pen
 	// Overwriting part of a wide character blanks its other half.
 	if row[x].R == wideTail && x > 0 {
-		row[x-1] = Cell{Fg: row[x-1].Fg, Bg: row[x-1].Bg, A: row[x-1].A}
+		row[x-1] = Cell{}
 	}
 	if end := x + w; end < t.cols && row[end].R == wideTail {
-		row[end] = Cell{Fg: row[end].Fg, Bg: row[end].Bg, A: row[end].A}
+		row[end] = Cell{}
 	}
 	pen.R = r
 	row[x] = pen
@@ -896,7 +1126,7 @@ func (t *Terminal) print(r rune, w int) {
 		row[x+1] = pen
 	}
 	if t.insert {
-		fixWide(row) // the shift may have pushed half a wide character off
+		t.fixWide(row) // the shift may have pushed half a wide character off
 	}
 	if x+w >= t.cols {
 		t.cur.x = t.cols - 1
@@ -906,12 +1136,60 @@ func (t *Terminal) print(r rune, w int) {
 	}
 }
 
+// wrapLine moves the cursor to the next line for autowrap and marks the
+// row it left as continuing there.
+func (t *Terminal) wrapLine() {
+	y := t.cur.y
+	if t.top == t.bot {
+		// A one-row screen: the row scrolls away as it wraps.
+		t.setWrap(y, true)
+	}
+	if !t.index() {
+		return
+	}
+	if t.cur.y != y {
+		t.setWrap(y, true)
+	} else if y > t.top {
+		t.setWrap(y-1, true) // the region scrolled
+	}
+}
+
+// combine adds a zero-width character (a combining mark, joiner or
+// variation selector) to the character before the cursor.
+func (t *Terminal) combine(r rune) {
+	x, y := t.cur.x, t.cur.y
+	if !t.cur.wrapPending && !(x == t.cols-1 && !t.autowrap) {
+		x--
+	}
+	row := t.screen()[y]
+	if x < 0 || row == nil {
+		return
+	}
+	if row[x].R == wideTail && x > 0 {
+		x--
+	}
+	c := &row[x]
+	if c.R <= 0 {
+		if x == t.cols-1 && !t.autowrap && x > 0 && row[x-1].R > 0 {
+			c = &row[x-1]
+		} else {
+			return
+		}
+	}
+	s := t.cellString(*c)
+	if len(s)+utf8.RuneLen(r) > maxCluster {
+		return
+	}
+	c.R = t.intern(s + string(r))
+	t.lastChar = c.R
+}
+
 // printASCII prints a run of printable ASCII. The common case (no
 // charset mapping, insert mode or wide characters in the way) writes
 // cells directly; anything else goes through print.
 func (t *Terminal) printASCII(p []byte) {
 	for len(p) > 0 {
-		if t.cur.g[t.cur.gl] || t.insert || t.cur.wrapPending || !t.autowrap {
+		if t.cur.g[t.cur.gl] || t.ss != 0 || t.insert || t.cur.wrapPending || !t.autowrap {
 			t.print(rune(p[0]), 1)
 			p = p[1:]
 			continue
@@ -940,12 +1218,18 @@ func (t *Terminal) printASCII(p []byte) {
 	}
 }
 
-func (t *Terminal) index() {
+// index moves the cursor down a line, scrolling at the bottom margin. It
+// reports whether the cursor moved or the region scrolled.
+func (t *Terminal) index() bool {
 	if t.cur.y == t.bot {
 		t.scrollUp(t.top, t.bot, 1)
-	} else if t.cur.y < t.rows-1 {
-		t.cur.y++
+		return true
 	}
+	if t.cur.y < t.rows-1 {
+		t.cur.y++
+		return true
+	}
+	return false
 }
 
 func (t *Terminal) reverseIndex() {
@@ -965,9 +1249,14 @@ func (t *Terminal) scrollUp(top, bot, n int) {
 	}
 	scr := t.screen()
 	if top == 0 && !t.altActive {
-		for _, row := range scr[:n] {
-			t.pushScrollback(row)
+		w := t.mainWrap
+		for i, row := range scr[:n] {
+			t.pushScrollback(row, w != nil && w[i], rowAt(scr, i+1))
 		}
+		open := t.sbOpen
+		t.rotate(top, bot, n)
+		t.sbOpen = open
+		return
 	}
 	t.rotate(top, bot, n)
 }
@@ -1006,6 +1295,24 @@ func (t *Terminal) rotate(top, bot, n int) {
 			in[i] = t.blankRow()
 		}
 	}
+	// Soft wraps move with their rows; a row whose next row changed no
+	// longer continues onto it.
+	if w := t.wraps(); w != nil {
+		if up {
+			copy(w[top:], w[top+n:bot+1])
+			clear(w[max(bot-n, top) : bot+1])
+		} else {
+			copy(w[top+n:bot+1], w[top:bot+1-n])
+			clear(w[top : top+n])
+			w[bot] = false
+		}
+		if top > 0 {
+			w[top-1] = false
+		}
+	}
+	if top == 0 && !t.altActive {
+		t.sbOpen = false
+	}
 }
 
 func (t *Terminal) scrollDown(top, bot, n int) {
@@ -1040,6 +1347,7 @@ func (t *Terminal) insertCells(n int) {
 
 func (t *Terminal) deleteCells(n int) {
 	t.shiftCells(-min(n, t.cols-t.cur.x))
+	t.setWrap(t.cur.y, false) // as ghostty: the row no longer wraps
 }
 
 // shiftCells inserts (n > 0) or deletes (n < 0) blank cells at the cursor,
@@ -1051,6 +1359,11 @@ func (t *Terminal) shiftCells(n int) {
 	}
 	row, x := t.row(t.cur.y), t.cur.x
 	blank := Cell{Bg: t.cur.pen.Bg}
+	// Starting on the right half of a wide character splits it: the
+	// left half goes too.
+	if x > 0 && row[x].R == wideTail {
+		row[x-1], row[x] = blank, blank
+	}
 	if n > 0 {
 		copy(row[x+n:], row[x:])
 		for i := x; i < x+n; i++ {
@@ -1062,19 +1375,19 @@ func (t *Terminal) shiftCells(n int) {
 			row[i] = blank
 		}
 	}
-	fixWide(row)
+	t.fixWide(row)
 }
 
 // fixWide blanks halves of wide characters that lost their other half.
-func fixWide(row []Cell) {
+func (t *Terminal) fixWide(row []Cell) {
 	for x := range row {
 		c := &row[x]
 		switch {
 		case c.R == wideTail:
-			if x == 0 || row[x-1].R <= 0 || widthCond.RuneWidth(row[x-1].R) != 2 {
+			if x == 0 || row[x-1].R <= 0 || t.runeWidth(row[x-1].R) != 2 {
 				c.R = 0
 			}
-		case c.R > 0x7f && widthCond.RuneWidth(c.R) == 2:
+		case c.R > 0x7f && t.runeWidth(c.R) == 2:
 			if x+1 == len(row) || row[x+1].R != wideTail {
 				c.R = 0
 			}
@@ -1127,6 +1440,48 @@ func (t *Terminal) moveTo(x, y int) {
 	t.cur.y = min(max(y, minY), maxY)
 }
 
+// cursorLeft moves the cursor left n columns (BS, CUB). With reverse
+// wraparound it goes on from the end of the previous row when this one
+// continues it (45), or from any previous row and from the top margin to
+// the bottom one (1045), as xterm does.
+func (t *Terminal) cursorLeft(n int) {
+	if !t.autowrap || !t.revWrap && !t.revWrapExt {
+		t.setX(t.cur.x - n)
+		return
+	}
+	ext := t.revWrapExt
+	if t.cur.wrapPending {
+		// The pending wrap counts as one step.
+		t.cur.wrapPending = false
+		if n--; n == 0 {
+			return
+		}
+	}
+	if t.cur.x == 0 && !ext && t.cur.y <= t.top {
+		t.cur.y = t.top
+		return
+	}
+	for {
+		step := min(t.cur.x, n)
+		t.cur.x -= step
+		if n -= step; n == 0 {
+			return
+		}
+		switch {
+		case t.cur.y == t.top:
+			if !ext {
+				return
+			}
+			t.cur.x, t.cur.y = t.cols-1, t.bot
+		case t.cur.y == 0, !ext && !t.wrapped(t.cur.y):
+			return
+		default:
+			t.cur.x, t.cur.y = t.cols-1, t.cur.y-1
+		}
+		n--
+	}
+}
+
 func (t *Terminal) cursorUp(n int) {
 	t.cur.wrapPending = false
 	lim := 0
@@ -1143,6 +1498,74 @@ func (t *Terminal) cursorDown(n int) {
 		lim = t.bot
 	}
 	t.cur.y = min(t.cur.y+n, lim)
+}
+
+// --- tab stops ---
+
+func (t *Terminal) isTab(x int) bool {
+	tabs := t.tabs()
+	if tabs == nil {
+		return x%8 == 0
+	}
+	return tabs[x/64]&(1<<(x%64)) != 0
+}
+
+// setTab sets or clears the tab stop at column x.
+func (t *Terminal) setTab(x int, on bool) {
+	if t.tabs() == nil {
+		if t.isTab(x) == on {
+			return
+		}
+		t.ext().tabs = defaultTabs(t.cols)
+	}
+	tabs := t.x.tabs
+	if on {
+		tabs[x/64] |= 1 << (x % 64)
+	} else {
+		tabs[x/64] &^= 1 << (x % 64)
+	}
+}
+
+func defaultTabs(cols int) []uint64 {
+	tabs := make([]uint64, (cols+63)/64)
+	for x := 0; x < cols; x += 8 {
+		tabs[x/64] |= 1 << (x % 64)
+	}
+	return tabs
+}
+
+// nextTab returns the next tab stop after x, or the last column.
+func (t *Terminal) nextTab(x int) int {
+	for x++; x < t.cols-1; x++ {
+		if t.isTab(x) {
+			return x
+		}
+	}
+	return t.cols - 1
+}
+
+// prevTab returns the tab stop before x, or the first column.
+func (t *Terminal) prevTab(x int) int {
+	for x--; x > 0; x-- {
+		if t.isTab(x) {
+			return x
+		}
+	}
+	return 0
+}
+
+// resizeTabs keeps custom tab stops across a width change; new columns
+// get the default stops.
+func (t *Terminal) resizeTabs(oldCols int) {
+	old := t.tabs()
+	if old == nil {
+		return
+	}
+	tabs := defaultTabs(t.cols)
+	for x := 0; x < min(oldCols, t.cols); x++ {
+		tabs[x/64] = tabs[x/64]&^(1<<(x%64)) | old[x/64]&(1<<(x%64))
+	}
+	t.x.tabs = tabs
 }
 
 func (t *Terminal) sgr() {
@@ -1275,19 +1698,116 @@ func (t *Terminal) oscDispatch() {
 	}
 }
 
+// --- characters with combining marks ---
+
+// cellString returns the characters a cell shows.
+func (t *Terminal) cellString(c Cell) string {
+	if c.R >= clusterBase {
+		return t.x.clusters[c.R-clusterBase]
+	}
+	return string(c.R)
+}
+
+// runeWidth returns the width of a cell's character.
+func (t *Terminal) runeWidth(r rune) int {
+	if r >= clusterBase {
+		r, _ = utf8.DecodeRuneInString(t.x.clusters[r-clusterBase])
+	}
+	return widthCond.RuneWidth(r)
+}
+
+// intern returns the cell rune for a character with combining marks.
+// Recent entries are reused; when the table is full, entries no cell
+// refers to any more are dropped.
+func (t *Terminal) intern(s string) rune {
+	x := t.ext()
+	for i := len(x.clusters) - 1; i >= max(len(x.clusters)-16, 0); i-- {
+		if x.clusters[i] == s {
+			return clusterBase + rune(i)
+		}
+	}
+	if len(x.clusters) >= x.clusterCap {
+		t.compactClusters()
+	}
+	x.clusters = append(x.clusters, s)
+	return clusterBase + rune(len(x.clusters)-1)
+}
+
+// compactClusters drops the clusters no cell refers to, renumbering the
+// rest, and sets the next compaction point.
+func (t *Terminal) compactClusters() {
+	x := t.x
+	if len(x.clusters) > 0 {
+		remap := make([]rune, len(x.clusters))
+		var kept []string
+		ref := func(r *rune) {
+			if *r < clusterBase {
+				return
+			}
+			i := *r - clusterBase
+			if remap[i] == 0 {
+				kept = append(kept, x.clusters[i])
+				remap[i] = clusterBase + rune(len(kept)-1)
+			}
+			*r = remap[i]
+		}
+		for _, scr := range [][][]Cell{t.main, t.alt} {
+			for _, row := range scr {
+				for i := range row {
+					ref(&row[i].R)
+				}
+			}
+		}
+		ref(&t.lastChar)
+		x.clusters = kept
+	}
+	x.clusterCap = max(64, 2*len(x.clusters))
+}
+
+// --- scrollback ---
+
 // pushScrollback serializes row onto the scrollback, evicting the oldest
-// lines past the line and byte budgets.
-func (t *Terminal) pushScrollback(row []Cell) {
+// lines past the line and byte budgets. A row that continues on the next
+// one (wrapped, with next the row below) is kept whole, and the next row
+// is appended to its line.
+func (t *Terminal) pushScrollback(row []Cell, wrapped bool, next []Cell) {
 	if t.sbMaxLines <= 0 {
 		return
 	}
-	t.scratch = appendRow(t.scratch[:0], row, true)
-	line := append([]byte(nil), t.scratch...)
+	if wrapped {
+		// Kept whole (a blank a wide character left at the end included):
+		// the row below may still change, so leaving the blank out could
+		// make the line rewrap differently on replay.
+		t.scratch = t.appendWrapped(t.scratch[:0], row, nil)
+	} else {
+		t.scratch = t.appendRow(t.scratch[:0], row, true)
+	}
+	join := t.sbOpen && len(t.sb) > t.sbStart && len(t.sb[len(t.sb)-1])+len(t.scratch) <= maxLogicalLine
+	if join && !wrapped && contentEnd(row) < t.cols {
+		// Replayed, this row starts by wrapping, so something must be
+		// printed, and the wrap may scroll in a row painted in the current
+		// background: clear the rest of it.
+		if len(t.scratch) == 0 {
+			t.scratch = append(t.scratch, ' ')
+		}
+		t.scratch = append(t.scratch, "\x1b[K"...)
+	}
+	if n := len(t.sb); join {
+		line := append(t.sb[n-1], t.scratch...)
+		if !wrapped && cap(line) > len(line)+len(line)/4 {
+			line = append([]byte(nil), line...)
+		}
+		t.sbBytes += len(line) - len(t.sb[n-1])
+		t.sb[n-1] = line
+	} else {
+		line := append([]byte(nil), t.scratch...)
+		t.sb = append(t.sb, line)
+		t.sbBytes += len(line) + 24
+	}
+	t.sbOpen = wrapped
 	if len(t.scratch) > 4096 {
 		t.scratch = nil // do not keep a large buffer on an idle terminal
 	}
-	t.sb = append(t.sb, line)
-	t.sbBytes += len(line) + 24
 	for n := len(t.sb) - t.sbStart; n > t.sbMaxLines || (t.sbBytes > t.sbMaxBytes && n > 1); n-- {
 		t.sbBytes -= len(t.sb[t.sbStart]) + 24
 		t.sb[t.sbStart] = nil
@@ -1301,110 +1821,13 @@ func (t *Terminal) pushScrollback(row []Cell) {
 	}
 }
 
-// ScrollbackLen returns the number of retained scrollback lines.
+// ScrollbackLen returns the number of retained scrollback lines. A line
+// that wrapped on screen is one line.
 func (t *Terminal) ScrollbackLen() int { return len(t.sb) - t.sbStart }
 
 // ClearScrollback drops all scrollback.
 func (t *Terminal) ClearScrollback() {
-	t.sb, t.sbStart, t.sbBytes = nil, 0, 0
-}
-
-// Resize changes the screen size. Content is not reflowed: rows are
-// truncated or padded; when the height shrinks, blank rows below the
-// cursor go first, then rows from the top (into scrollback on the main
-// screen).
-func (t *Terminal) Resize(cols, rows int) {
-	cols, rows = max(cols, 1), max(rows, 1)
-	if cols == t.cols && rows == t.rows {
-		return
-	}
-	oldCols := t.cols
-	t.cols = cols
-	resizeRows := func(scr [][]Cell, cy *int, toScrollback bool) [][]Cell {
-		for y, row := range scr {
-			if row == nil {
-				continue
-			}
-			if cols < oldCols {
-				row = row[:cols:cols]
-				fixWide(row)
-			} else if cols > oldCols {
-				row = append(row, make([]Cell, cols-oldCols)...)
-			}
-			scr[y] = row
-		}
-		for len(scr) > rows && len(scr)-1 > *cy && zeroRow(scr[len(scr)-1]) {
-			scr = scr[:len(scr)-1]
-		}
-		if extra := len(scr) - rows; extra > 0 {
-			if toScrollback {
-				for _, row := range scr[:extra] {
-					t.pushScrollback(row)
-				}
-			}
-			scr = append(scr[:0], scr[extra:]...)
-			*cy -= extra
-		}
-		for len(scr) < rows {
-			scr = append(scr, nil)
-		}
-		return scr[:rows:rows]
-	}
-	mainY, altY := t.cur.y, t.cur.y
-	if t.altActive {
-		mainY = t.saved1049.y
-	}
-	t.main = resizeRows(t.main, &mainY, true)
-	if t.altActive {
-		t.alt = resizeRows(t.alt, &altY, false)
-		t.saved1049.y = max(mainY, 0)
-		t.cur.y = altY
-	} else {
-		t.cur.y = mainY
-	}
-	t.rows = rows
-	t.top, t.bot = 0, rows-1
-	t.cur.y = min(max(t.cur.y, 0), rows-1)
-	t.cur.x = min(t.cur.x, cols-1)
-	t.cur.wrapPending = false
-	for i := range t.saved {
-		t.saved[i].x = min(t.saved[i].x, cols-1)
-		t.saved[i].y = min(t.saved[i].y, rows-1)
-	}
-	t.saved1049.x = min(t.saved1049.x, cols-1)
-	t.saved1049.y = min(t.saved1049.y, rows-1)
-}
-
-// ArchiveScreen resets the terminal for a new program while keeping what
-// the screen showed in view above it, as if the old content had been
-// printed and the new program started on the next line: the main screen
-// down to its last non-blank row, then, if a full-screen program was
-// showing the alternate screen, that too. Whatever does not fit above
-// the new program's first row scrolls into scrollback.
-func (t *Terminal) ArchiveScreen() {
-	var old [][]Cell
-	keep := func(scr [][]Cell) {
-		last := -1
-		for y, row := range scr {
-			if !rowBlank(row) {
-				last = y
-			}
-		}
-		old = append(old, scr[:last+1]...)
-	}
-	keep(t.main)
-	if t.altActive {
-		keep(t.alt)
-	}
-	t.reset()
-	if over := len(old) - (t.rows - 1); over > 0 {
-		for _, row := range old[:over] {
-			t.pushScrollback(row)
-		}
-		old = old[over:]
-	}
-	copy(t.main, old)
-	t.cur.y = len(old)
+	t.sb, t.sbStart, t.sbBytes, t.sbOpen = nil, 0, 0, false
 }
 
 func rowBlank(row []Cell) bool {
@@ -1414,6 +1837,34 @@ func rowBlank(row []Cell) bool {
 		}
 	}
 	return true
+}
+
+// rowAt returns scr[i], or nil past the end.
+func rowAt(scr [][]Cell, i int) []Cell {
+	if i < len(scr) {
+		return scr[i]
+	}
+	return nil
+}
+
+// wrapEnd returns how much of a row that continues on next is part of
+// the line: all of it, but for a blank left at its end because the wide
+// character starting next did not fit there.
+func (t *Terminal) wrapEnd(row, next []Cell) int {
+	if (row == nil || row[t.cols-1] == Cell{}) && len(next) > 1 && next[1].R == wideTail {
+		return t.cols - 1
+	}
+	return t.cols
+}
+
+// contentEnd returns the length of row without its trailing default
+// blanks.
+func contentEnd(row []Cell) int {
+	end := len(row)
+	for end > 0 && row[end-1] == (Cell{}) {
+		end--
+	}
+	return end
 }
 
 // zeroRow reports whether row is blank in the default style (nil rows
@@ -1426,9 +1877,3 @@ func zeroRow(row []Cell) bool {
 	}
 	return true
 }
-
-// cellString returns the characters a cell shows.
-func (t *Terminal) cellString(c Cell) string { return string(c.R) }
-
-// wrapped reports whether row y continues the row above it (soft wrap).
-func (t *Terminal) wrapped(y int) bool { return false }

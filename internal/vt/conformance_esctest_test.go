@@ -20,13 +20,12 @@ func escRect(col, row int, lines ...string) func(*Terminal) string {
 		for dy, line := range lines {
 			for dx, want := range []rune(line) {
 				x, y := col-1+dx, row-1+dy
-				c := t.cellAt(x, y)
-				got := c.R
-				if got == 0 {
-					got = ' '
+				got := t.cellText(x, y)
+				if got == "" {
+					got = " "
 				}
-				if got != want {
-					return fmt.Sprintf("cell (%d,%d) got %q want %q", x+1, y+1, string(got), string(want))
+				if got != string(want) {
+					return fmt.Sprintf("cell (%d,%d) got %q want %q", x+1, y+1, got, string(want))
 				}
 			}
 		}

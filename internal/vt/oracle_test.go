@@ -97,3 +97,62 @@ func TestOracleRecordings(t *testing.T) {
 		compareWithOracle(t, r.path, r.cols, r.rows, in)
 	}
 }
+
+// oracleTokens is the alphabet of the differential fuzzer: sequences whose
+// meaning charmbracelet/x/vt and xterm agree on, so any difference is a
+// bug in one of the two emulators. Queries are left out (nothing reads
+// the oracle's replies).
+var oracleTokens = []string{
+	"a", "bc", "hello ", "xyz", "0123456789", " ", "é", "\r", "\n", "\r\n", "\b", "\t",
+	"\x1b[H", "\x1b[2;3H", "\x1b[5;1H", "\x1b[1;8H", "\x1b[A", "\x1b[2A", "\x1b[B", "\x1b[3B", "\x1b[C", "\x1b[4C", "\x1b[D", "\x1b[2D",
+	"\x1b[3G", "\x1b[2d", "\x1b[K", "\x1b[1K", "\x1b[2K", "\x1b[J", "\x1b[2J",
+	"\x1b[L", "\x1b[2L", "\x1b[M", "\x1b[@", "\x1b[2@", "\x1b[P", "\x1b[3P", "\x1b[2X", "\x1b[S", "\x1b[T",
+	"\x1b[m", "\x1b[1m", "\x1b[31m", "\x1b[44m", "\x1b[7m", "\x1bD", "\x1bM",
+}
+
+// FuzzOracle compares the screen text and cursor with charmbracelet/x/vt
+// on streams of oracleTokens.
+func FuzzOracle(f *testing.F) {
+	f.Add([]byte{0, 1, 2, 30, 14, 5, 6}, uint8(10), uint8(5))
+	f.Fuzz(func(t *testing.T, sel []byte, c, r uint8) {
+		cols, rows := 2+int(c%30), 1+int(r%10)
+		// Emulators disagree on what controls do to a pending wrap (the
+		// conformance suites cover it), so a CR clears it before any.
+		var in []byte
+		term := New(cols, rows, Options{})
+		for _, b := range sel {
+			tok := oracleTokens[int(b)%len(oracleTokens)]
+			if term.cur.wrapPending && (tok[0] < 0x20 || tok[0] == 0x1b) {
+				tok = "\r" + tok
+			}
+			term.Write([]byte(tok))
+			in = append(in, tok...)
+		}
+		e := cvt.NewEmulator(cols, rows)
+		e.Write(in)
+		got := term.Lines()
+		x, y, _ := term.Cursor()
+		pos := e.CursorPosition()
+		for row := range rows {
+			var b strings.Builder
+			for col := 0; col < cols; col++ {
+				cell := e.CellAt(col, row)
+				if cell == nil || cell.Width == 0 {
+					continue
+				}
+				if cell.Content == "" {
+					b.WriteByte(' ')
+				} else {
+					b.WriteString(cell.Content)
+				}
+				col += max(cell.Width, 1) - 1
+			}
+			if want := strings.TrimRight(b.String(), " "); got[row] != want {
+				t.Fatalf("%dx%d %q: row %d\n got  %q\n want %q", cols, rows, in, row, got[row], want)
+			}
+		}
+		if x != pos.X || y != pos.Y {
+			t.Fatalf("%dx%d %q: cursor %d,%d, oracle %d,%d", cols, rows, in, x, y, pos.X, pos.Y)
+		}
+	})
+}

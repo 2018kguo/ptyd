@@ -53,8 +53,9 @@ for name in sorted(os.listdir(src)):
             st = color(c["fg"], "Foreground") + "/" + color(c["bg"], "Background") + "/" + "".join(
                 sorted(FLAGS[f] for f in fl if f in FLAGS))
             styles.append(st)
-        # Trailing default blanks are trimmed from both.
-        while text and text[-1] == " " and styles[-1] == "-/-/":
+        # Trailing default blanks are trimmed from both (not from a row
+        # that wraps: its blanks are part of the line).
+        while not wrap and text and text[-1] == " " and styles[-1] == "-/-/":
             text.pop(); styles.pop()
         rle = []
         for s in styles:

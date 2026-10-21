@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -101,10 +102,11 @@ func TestResize(t *testing.T) {
 	if x, y, _ := term.Cursor(); x != 1 || y != 1 {
 		t.Fatalf("cursor %d,%d", x, y)
 	}
+	// Growing brings the line back from the scrollback.
 	term.Resize(6, 3)
 	term.Write([]byte("\x1b[3;1Habcdef"))
-	if got := term.Lines(); !slices.Equal(got, []string{"2", "3", "abcdef"}) {
-		t.Fatalf("lines after grow %q", got)
+	if got := term.Lines(); !slices.Equal(got, []string{"1", "2", "abcdef"}) || term.ScrollbackLen() != 0 {
+		t.Fatalf("lines after grow %q, scrollback %q", got, term.ScrollbackLines())
 	}
 }
 
@@ -163,7 +165,7 @@ var tokens = []string{
 	"\x1b7", "\x1b8", "\x1b[s", "\x1b[u", "\x1bM", "\x1bD", "\x1bE",
 	"\x1b(0", "\x1b(B", "\x1b)0", "\x0e", "\x0f", "lqk",
 	"\x1b]2;t\x07", "\x1b[?1h", "\x1b[?2004h", "\x1b[?1000h", "\x1b[?1006h", "\x1b[?1004h", "\x1b[?25l", "\x1b[?25h",
-	"\x1b[>3u", "\x1b[<u", "\x1b[=5;1u", "\x1b[2 q", "\x1b=", "\x1b>", "\x1b[!p",
+	"\x1b[>3u", "\x1b[<u", "\x1b[?45h", "\x1b[?5h", "\x1b[?5l", "\x1b[?1045h", "\x1b[?45l", "\x1b[?1045l", "\x1b[3D", "\x1bH", "\x1b[g", "\x1b[3g", "\x1b[2Z", "\x1b[2I", "\u0301", "e\u0301\u0302", "\u200d", "\x1b*0", "\x1bn", "\x1bN", "\x1b[?1s", "\x1b[?7s", "\x1b[?7r", "\x1b[?1r", "\x1b[=5;1u", "\x1b[2 q", "\x1b=", "\x1b>", "\x1b[!p",
 }
 
 func randomStream(rng *rand.Rand, n int) string {
@@ -175,30 +177,45 @@ func randomStream(rng *rand.Rand, n int) string {
 }
 
 // state is a comparable summary of everything Repaint promises to carry.
-func state(t *Terminal) string {
+func state(t *Terminal) string { return stateOf(t, true) }
+
+func stateOf(t *Terminal, withScrollback bool) string {
 	var b strings.Builder
-	dump := func(name string, scr [][]Cell) {
+	dump := func(name string, scr [][]Cell, wrap []bool) {
 		for y, row := range scr {
-			cells := make([]Cell, t.cols)
-			copy(cells, row)
-			for x := range cells {
-				if cells[x].R == 0 {
-					cells[x].R = ' '
+			fmt.Fprintf(&b, "%s%d", name, y)
+			for x := range t.cols {
+				var c Cell
+				if row != nil {
+					c = row[x]
 				}
+				s := "' '"
+				switch {
+				case c.R == wideTail:
+					s = "tail"
+				case c.R != 0 && c.R != ' ':
+					s = strconv.Quote(t.cellString(c))
+				}
+				fmt.Fprintf(&b, " %s/%x/%x/%x", s, c.Fg, c.Bg, c.A)
 			}
-			fmt.Fprintf(&b, "%s%d %v\n", name, y, cells)
+			if wrap != nil && wrap[y] {
+				b.WriteString(" wrapped")
+			}
+			b.WriteByte('\n')
 		}
 	}
-	dump("main", t.main)
+	dump("main", t.main, t.mainWrap)
+	if t.alt != nil {
+		dump("alt", t.alt, t.altWrap)
+	}
 	if t.altActive {
-		dump("alt", t.alt)
 		fmt.Fprintf(&b, "saved1049 %v %d,%d\n", t.saved1049.valid, t.saved1049.x, t.saved1049.y)
 	}
 	cur := t.cur
 	if cur.origin {
 		cur.wrapPending = false
 	}
-	fmt.Fprintf(&b, "cur %+v region %d-%d\n", cur, t.top, t.bot)
+	fmt.Fprintf(&b, "cur %+v region %d-%d ss %d\n", cur, t.top, t.bot, t.ss)
 	slot := 0
 	if t.altActive {
 		slot = 1
@@ -213,7 +230,20 @@ func state(t *Terminal) string {
 	fmt.Fprintf(&b, "saved %+v\n", s)
 	fmt.Fprintf(&b, "modes %v %v %v %v %v %v %v %v %d %d %d %v %q\n", t.autowrap, t.insert, t.newline, t.cursorHidden,
 		t.appCursor, t.appKeypad, t.bracketed, t.focus, t.mouse, t.mouseEnc, t.cursorStyle, t.kitty, t.title)
-	fmt.Fprintf(&b, "scrollback %q\n", bytes.Join(t.sb[t.sbStart:], []byte("\n")))
+	var tabs []int
+	for x := range t.cols {
+		if t.isTab(x) {
+			tabs = append(tabs, x)
+		}
+	}
+	var saved []savedMode
+	if t.x != nil {
+		saved = t.x.savedModes
+	}
+	fmt.Fprintf(&b, "tabs %v xtsave %v revwrap %v %v reverse %v\n", tabs, saved, t.revWrap, t.revWrapExt, t.reverseVideo)
+	if withScrollback {
+		fmt.Fprintf(&b, "scrollback %q open %v\n", bytes.Join(t.sb[t.sbStart:], []byte("\n")), t.sbOpen)
+	}
 	return b.String()
 }
 

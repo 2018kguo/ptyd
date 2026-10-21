@@ -26,7 +26,7 @@ func g3all(fs ...func(*Terminal) string) func(*Terminal) string {
 // g3rune checks the rune stored at x, y (0 blank, wideTail right half).
 func g3rune(x, y int, r rune) func(*Terminal) string {
 	return func(t *Terminal) string {
-		if got := t.cellAt(x, y).R; got != r {
+		if got := t.baseRune(x, y); got != r {
 			return fmt.Sprintf("cell %d,%d rune got %q (%d) want %q (%d)", x, y, got, got, r, r)
 		}
 		return ""
@@ -37,7 +37,7 @@ func g3rune(x, y int, r rune) func(*Terminal) string {
 func g3curRune(r rune) func(*Terminal) string {
 	return func(t *Terminal) string {
 		x, y, _ := t.Cursor()
-		if got := t.cellAt(x, y).R; got != r {
+		if got := t.baseRune(x, y); got != r {
 			return fmt.Sprintf("cell under cursor %d,%d got %q want %q", x, y, got, r)
 		}
 		return ""

@@ -97,6 +97,9 @@ type lvRunner struct {
 	glyphs   map[[2]int]string
 	glyphSeq int
 	sbSeq    int
+	// the last line sb_pushline expected, for continuations
+	lastSb     int
+	lastSbText string
 }
 
 func runLibvterm(t *testing.T, path string) lvTally {
@@ -134,6 +137,7 @@ func (r *lvRunner) key() string { return fmt.Sprintf("libvterm/%s:%d", r.file, r
 
 func (r *lvRunner) failf(format string, args ...any) {
 	if _, ok := knownFailures[r.key()]; ok {
+		knownSeen[r.key()] = true
 		r.tally.known++
 		return
 	}
@@ -223,6 +227,16 @@ func (r *lvRunner) command(line string) {
 				}
 			}
 		}
+		for _, m := range []struct{ seq, reason string }{
+			{"\x1b[?69h", gapLRMargins},
+			{"\x1b#3", gapDoubleW}, {"\x1b#4", gapDoubleW}, {"\x1b#6", gapDoubleW},
+			{"\x1b[1\"q", gapProtected}, {"\x1bV", gapProtected},
+			{"\x1b[?5h", "DECSCNM reverse video"},
+		} {
+			if strings.Contains(string(in), m.seq) {
+				r.taint = m.reason
+			}
+		}
 		r.term.Write(in)
 	case "SETDEFAULTCOL":
 		r.taint = gapPalette
@@ -310,20 +324,30 @@ func (r *lvRunner) sbPushline(arg string) {
 		r.gap(r.taint)
 		return
 	}
-	_, cells, _ := strings.Cut(arg, "=")
-	var want strings.Builder
+	head, cells, _ := strings.Cut(arg, "=")
+	var row strings.Builder
 	for _, h := range strings.Fields(cells) {
 		v, _ := strconv.ParseInt(h, 16, 32)
-		want.WriteRune(rune(v))
+		row.WriteRune(rune(v))
 	}
-	sb := r.term.ScrollbackLines()
+	// libvterm pushes rows; a row marked cont continues the previous one,
+	// and this emulator keeps them as one line.
 	i := r.sbBefore + r.sbSeq
-	r.sbSeq++
+	want := row.String()
+	if strings.HasSuffix(strings.TrimSpace(head), "cont") {
+		i = r.lastSb
+		want = r.lastSbText + want
+	} else {
+		r.sbSeq++
+	}
+	r.lastSb, r.lastSbText = i, want
+	want = strings.TrimRight(want, " \x00")
+	sb := r.term.ScrollbackLines()
 	if i >= len(sb) {
-		r.failf("sb_pushline %q: scrollback has only %d lines", want.String(), len(sb))
+		r.failf("sb_pushline %q: scrollback has only %d lines", want, len(sb))
 		return
 	}
-	r.check(sb[i] == strings.TrimRight(want.String(), " \x00"), "sb_pushline got %q want %q", sb[i], want.String())
+	r.check(sb[i] == want, "sb_pushline got %q want %q", sb[i], want)
 }
 
 // settermprop checks the terminal properties this emulator tracks.

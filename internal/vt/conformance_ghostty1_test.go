@@ -23,7 +23,7 @@ const (
 
 // g1Cell checks the rune at x, y (0 for blank, wideTail for a right half).
 func g1Cell(t *Terminal, x, y int, r rune) string {
-	if got := t.cellAt(x, y).R; got != r {
+	if got := t.baseRune(x, y); got != r {
 		return fmt.Sprintf("cell %d,%d rune got %U want %U", x, y, got, r)
 	}
 	return ""

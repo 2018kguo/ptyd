@@ -81,7 +81,12 @@ func TestAlacrittyRef(t *testing.T) {
 			// the newest lines.
 			n := min(len(got), len(hist))
 			if strings.Join(got[len(got)-n:], "\n") != strings.Join(hist[len(hist)-n:], "\n") || n == 0 {
-				errs = append(errs, fmt.Sprintf("scrollback\n got  %q\n want %q", got, hist))
+				g, h := got[len(got)-n:], hist[len(hist)-n:]
+				i := n - 1
+				for i > 0 && g[i] == h[i] {
+					i--
+				}
+				errs = append(errs, fmt.Sprintf("scrollback (%d vs %d lines) differs %d from the end\n got  %q\n want %q", len(got), len(hist), n-i, g[max(i-1, 0):min(i+2, n)], h[max(i-1, 0):min(i+2, n)]))
 			} else {
 				linesPass++
 			}
@@ -96,6 +101,7 @@ func TestAlacrittyRef(t *testing.T) {
 		case len(errs) == 0:
 			testsPass++
 		case isKnown:
+			knownSeen[key] = true
 			known++
 		default:
 			if os.Getenv("VT_CONF_LISTFAIL") != "" {
@@ -135,7 +141,7 @@ func (t *Terminal) alacrittyRow(y int) (string, string) {
 		return "", ""
 	}
 	end := len(row)
-	for end > 0 && (row[end-1] == Cell{} || row[end-1] == Cell{R: ' '}) {
+	for end > 0 && (row[end-1] == Cell{} || row[end-1] == Cell{R: ' '}) && !(y < t.rows-1 && t.wrapped(y+1)) {
 		end--
 	}
 	var text strings.Builder

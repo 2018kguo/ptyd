@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"slices"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // Conformance cases translated from other emulators' test suites (see
@@ -94,6 +96,17 @@ func (t *Terminal) cellText(x, y int) string {
 	return t.cellString(c)
 }
 
+// baseRune returns the rune stored at x, y without combining marks (0 for
+// a blank, wideTail for the right half of a wide character).
+func (t *Terminal) baseRune(x, y int) rune {
+	c := t.cellAt(x, y)
+	if c.R >= clusterBase {
+		r, _ := utf8.DecodeRuneInString(t.cellString(c))
+		return r
+	}
+	return c.R
+}
+
 // plainString is the screen as ghostty's plainString renders it.
 func plainString(t *Terminal) string {
 	return strings.TrimRight(strings.Join(t.Lines(), "\n"), "\n")
@@ -157,6 +170,28 @@ func runConf(c confCase) []string {
 	return errs
 }
 
+// knownSeen records the knownFailures entries that matched a failure.
+var knownSeen = map[string]bool{}
+
+// TestMain also checks, on a full run, that every knownFailures entry
+// still names a failing case.
+// VT_CONF_IGNORE_KNOWN=1 reports the known failures too.
+func TestMain(m *testing.M) {
+	if os.Getenv("VT_CONF_IGNORE_KNOWN") != "" {
+		knownFailures = nil
+	}
+	code := m.Run()
+	if code == 0 && flag.Lookup("test.run").Value.String() == "" {
+		for k := range knownFailures {
+			if !knownSeen[k] {
+				fmt.Printf("knownFailures entry %q matched no failing case: remove it\n", k)
+				code = 1
+			}
+		}
+	}
+	os.Exit(code)
+}
+
 func TestConformance(t *testing.T) {
 	type tally struct{ pass, fail, known, gap int }
 	counts := map[string]*tally{}
@@ -184,6 +219,7 @@ func TestConformance(t *testing.T) {
 			}
 			key := s.name + "/" + c.name
 			if _, ok := knownFailures[key]; ok {
+				knownSeen[key] = true
 				n.known++
 				continue
 			}
