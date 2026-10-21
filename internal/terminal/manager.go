@@ -846,8 +846,12 @@ type Metrics struct {
 	TotalExited    int64          `json:"total_exited_on_own"`
 	WatchFires     int64          `json:"watch_fires_total"`
 	BytesEmitted   int64          `json:"bytes_emitted_total"`
-	PersistDir     string         `json:"persist_dir,omitempty"`
-	LogDir         string         `json:"log_dir,omitempty"`
+	// What persistence wrote (tails, checkpoints, metadata), process-wide.
+	PersistBytes int64  `json:"persist_bytes_total"`
+	Fsyncs       int64  `json:"fsyncs_total"`
+	Checkpoints  int64  `json:"checkpoints_total"`
+	PersistDir   string `json:"persist_dir,omitempty"`
+	LogDir       string `json:"log_dir,omitempty"`
 }
 
 // Metrics returns operational stats. Cheap (atomics + a single mutex
@@ -879,6 +883,9 @@ func (m *Manager) Metrics() Metrics {
 		TotalExited:    m.totalExited.Load(),
 		WatchFires:     m.watchFires.Load(),
 		BytesEmitted:   m.bytesEmitted.Load(),
+		PersistBytes:   diskStats.bytes.Load(),
+		Fsyncs:         diskStats.fsyncs.Load(),
+		Checkpoints:    diskStats.checkpoints.Load(),
 		PersistDir:     m.opts.PersistDir,
 		LogDir:         m.opts.LogDir,
 	}

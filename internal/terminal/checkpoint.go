@@ -53,6 +53,13 @@ const (
 	ckptVersion     = 1
 )
 
+// diskStats counts what persistence writes (reported by /metrics).
+var diskStats struct {
+	bytes       atomic.Int64 // tails, checkpoints and metadata
+	fsyncs      atomic.Int64
+	checkpoints atomic.Int64
+}
+
 type ckptHeader struct {
 	Version int       `json:"version"`
 	Cols    int       `json:"cols"`
@@ -103,6 +110,7 @@ func (p *persister) appendLocked(typ byte, data []byte) bool {
 	rec = append(append(rec, hdr[:]...), data...)
 	n, err := p.tail.Write(rec)
 	p.tailBytes += int64(n)
+	diskStats.bytes.Add(int64(n))
 	if err != nil || p.tailBytes > 2*maxTailBytes {
 		p.broken = true
 	}
@@ -186,6 +194,7 @@ func (t *terminal) checkpoint() {
 		fmt.Fprintf(os.Stderr, "[ptyd] checkpoint %s: %v\n", p.dir, err)
 		return
 	}
+	diskStats.checkpoints.Add(1)
 	p.timerMu.Lock()
 	p.lastCkpt = time.Now()
 	p.timerMu.Unlock()
@@ -329,6 +338,8 @@ func writeFileAtomic(path string, data []byte) error {
 	tmp := f.Name()
 	_, err = f.Write(data)
 	if err == nil {
+		diskStats.bytes.Add(int64(len(data)))
+		diskStats.fsyncs.Add(1)
 		err = f.Sync()
 	}
 	if cerr := f.Close(); err == nil {
@@ -343,6 +354,7 @@ func writeFileAtomic(path string, data []byte) error {
 	}
 	// Make the rename itself durable.
 	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		diskStats.fsyncs.Add(1)
 		_ = d.Sync()
 		_ = d.Close()
 	}
