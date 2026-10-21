@@ -11,6 +11,9 @@ import (
 // slow client never holds up the PTY reader or grows memory.
 const maxAttachBuffer = 1 << 20
 
+// maxSpare is the largest drained queue buffer an attacher keeps for reuse.
+const maxSpare = 64 << 10
+
 // attacher is one attached client's output queue. The PTY reader appends
 // to it under the terminal's scrMu (in the same critical section that
 // feeds the screen), so a repaint taken under scrMu is exactly in step
@@ -18,6 +21,7 @@ const maxAttachBuffer = 1 << 20
 type attacher struct {
 	mu       sync.Mutex
 	buf      []byte
+	spare    []byte // a buffer the reader is done with, reused by push
 	overflow bool // dropped output; the next read is a repaint
 	ended    bool // the terminal's output has ended
 	wake     chan struct{}
@@ -30,6 +34,9 @@ func (a *attacher) push(p []byte) {
 	case len(a.buf)+len(p) > maxAttachBuffer:
 		a.overflow, a.buf = true, nil
 	default:
+		if a.buf == nil {
+			a.buf, a.spare = a.spare[:0], nil
+		}
 		a.buf = append(a.buf, p...)
 	}
 	a.mu.Unlock()
@@ -56,6 +63,7 @@ type Attachment struct {
 	t        *terminal // nil for a ghost
 	a        *attacher
 	initial  []byte
+	last     []byte // returned by the previous Read
 	readOnly bool
 	once     sync.Once
 }
@@ -96,7 +104,7 @@ func (at *Attachment) ReadOnly() bool { return at.readOnly }
 
 // Read waits for output and returns it. It returns io.EOF once the
 // terminal's output has ended and everything was delivered, and ctx's
-// error if ctx ends first.
+// error if ctx ends first. The bytes are valid until the next Read.
 func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
 	if at.initial != nil {
 		b := at.initial
@@ -113,6 +121,12 @@ func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
 		if len(a.buf) > 0 {
 			b := a.buf
 			a.buf = nil
+			// The caller is done with what the previous Read returned;
+			// keep it for the next output unless it grew large.
+			if cap(at.last) <= maxSpare {
+				a.spare = at.last
+			}
+			at.last = b
 			a.mu.Unlock()
 			return b, nil
 		}
