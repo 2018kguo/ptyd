@@ -145,6 +145,18 @@ func TestAttachCoalescesBulkOutput(t *testing.T) {
 		t.Fatalf("bulk output: %d bytes after %v, want 4096 after about %v", len(b), time.Since(sent), Coalesce)
 	}
 
+	// Held output that reaches holdMax is sent at once, so holding never
+	// overflows the queue.
+	sent = time.Now()
+	a.push(bulk[:2048])
+	go func() {
+		time.Sleep(Coalesce / 8)
+		a.push(bulk)
+	}()
+	if b, _ := at.Read(ctx); len(b) != 2048+len(bulk) || time.Since(sent) > Coalesce*3/4 {
+		t.Fatalf("held output past holdMax: %d bytes after %v", len(b), time.Since(sent))
+	}
+
 	// Quiet: after a second the large buffer is released.
 	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()

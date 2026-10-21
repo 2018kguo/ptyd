@@ -24,6 +24,9 @@ const maxIdleBuffer = 256 << 10
 const (
 	Coalesce    = 4 * time.Millisecond
 	CoalesceMin = 1 << 10
+	// holdMax is the most output held back: a reader holding more
+	// sends it at once, so holding never overflows the queue.
+	holdMax = maxAttachBuffer / 4
 )
 
 // attacher is one attached client's output queue. The PTY reader appends
@@ -41,18 +44,25 @@ type attacher struct {
 
 func (a *attacher) push(p []byte) {
 	a.mu.Lock()
+	n := len(a.buf)
+	wake := false
 	switch {
 	case a.overflow:
-	case len(a.buf)+len(p) > maxAttachBuffer:
-		a.overflow, a.buf = true, nil
+	case n+len(p) > maxAttachBuffer:
+		a.overflow, a.buf, wake = true, nil, true
 	default:
 		if a.buf == nil {
 			a.buf, a.spare = a.spare[:0], nil
 		}
 		a.buf = append(a.buf, p...)
+		// The reader is waiting for output, or holding it back (see
+		// Coalesce) while there is less than holdMax.
+		wake = n == 0 || n < holdMax && len(a.buf) >= holdMax
 	}
 	a.mu.Unlock()
-	a.signal()
+	if wake {
+		a.signal()
+	}
 }
 
 func (a *attacher) end() {
@@ -139,7 +149,7 @@ func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
 			return at.repaint(), nil
 		}
 		if n := len(a.buf); n > 0 {
-			if wait := Coalesce - time.Since(at.sent); wait > 0 && !at.held && n >= CoalesceMin {
+			if wait := Coalesce - time.Since(at.sent); wait > 0 && !at.held && n >= CoalesceMin && n < holdMax {
 				a.mu.Unlock()
 				at.held = true
 				if err := at.sleep(ctx, wait); err != nil {
@@ -197,8 +207,14 @@ func (at *Attachment) arm(d time.Duration) <-chan time.Time {
 }
 
 func (at *Attachment) sleep(ctx context.Context, d time.Duration) error {
+	select { // drop a wakeup for output already queued
+	case <-at.a.wake:
+	default:
+	}
 	select {
 	case <-at.arm(d):
+		return nil
+	case <-at.a.wake: // holdMax reached, overflow or end
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
