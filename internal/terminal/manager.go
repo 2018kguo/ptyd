@@ -500,6 +500,11 @@ func (m *Manager) List() []Info {
 	return out
 }
 
+// AnyTag reports whether tags has any of the tags in filter.
+func AnyTag(tags, filter []string) bool {
+	return slices.ContainsFunc(tags, func(t string) bool { return slices.Contains(filter, t) })
+}
+
 // Output returns lines with seq > sinceSeq, optionally limited to the last
 // `tail` such lines.
 func (m *Manager) Output(id ID, sinceSeq int64, tail int) (OutputSnapshot, error) {
@@ -658,10 +663,7 @@ func contextBefore(lines []Line, matchIdx, n int) []Line {
 	if n <= 0 || matchIdx <= 0 {
 		return nil
 	}
-	start := matchIdx - n
-	if start < 0 {
-		start = 0
-	}
+	start := max(matchIdx-n, 0)
 	out := make([]Line, matchIdx-start)
 	copy(out, lines[start:matchIdx])
 	return out
@@ -971,22 +973,6 @@ func (m *Manager) Search(pattern string, within time.Duration, limit int, tagFil
 		cutoff = time.Now().Add(-within)
 	}
 
-	tagSet := map[string]bool{}
-	for _, t := range tagFilter {
-		tagSet[t] = true
-	}
-	matchTag := func(tags []string) bool {
-		if len(tagSet) == 0 {
-			return true
-		}
-		for _, t := range tags {
-			if tagSet[t] {
-				return true
-			}
-		}
-		return false
-	}
-
 	hits := make([]SearchHit, 0)
 	m.mu.RLock()
 	terms := make([]*terminal, 0, len(m.terms))
@@ -1003,7 +989,7 @@ func (m *Manager) Search(pattern string, within time.Duration, limit int, tagFil
 		name := t.info.Name
 		id := t.info.ID
 		t.mu.Unlock()
-		if !matchTag(tags) {
+		if len(tagFilter) > 0 && !AnyTag(tags, tagFilter) {
 			continue
 		}
 		since := int64(-1)
@@ -1187,8 +1173,7 @@ func (t *terminal) waitLoop() {
 		t.info.Status = StatusExited
 	}
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			code := exitErr.ExitCode()
 			t.info.ExitCode = &code
 		}
@@ -1296,13 +1281,10 @@ func mergeEnv(parent []string, override map[string]string) []string {
 	}
 	out := make([]string, 0, len(parent)+len(override))
 	for _, kv := range parent {
-		eq := strings.IndexByte(kv, '=')
-		if eq < 0 {
-			out = append(out, kv)
-			continue
-		}
-		if _, ok := override[kv[:eq]]; ok {
-			continue
+		if k, _, ok := strings.Cut(kv, "="); ok {
+			if _, dup := override[k]; dup {
+				continue
+			}
 		}
 		out = append(out, kv)
 	}
@@ -1314,9 +1296,7 @@ func mergeEnv(parent []string, override map[string]string) []string {
 
 func randHex(n int) string {
 	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return strings.Repeat("0", n*2)
-	}
+	_, _ = rand.Read(b) // never fails (it crashes the program instead)
 	return hex.EncodeToString(b)
 }
 

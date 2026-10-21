@@ -60,7 +60,7 @@ func (m *Manager) RestoreGhosts() {
 }
 
 // restoreParallelism is how many restores RestoreGhosts runs at once.
-var restoreParallelism = 16
+const restoreParallelism = 16
 
 // Restore brings a ghost back under the same id, with policy (or its own
 // policy if empty): rerun starts the same command again, agent resumes

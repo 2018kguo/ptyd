@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -193,12 +194,7 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 var detachKeys = [][]byte{[]byte("\x1c"), []byte("\x1b[92;5u"), []byte("\x1b[92;5:1u"), []byte("\x1b[27;5;92~")}
 
 func isDetachKey(p []byte) bool {
-	for _, k := range detachKeys {
-		if bytes.Equal(p, k) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(detachKeys, func(k []byte) bool { return bytes.Equal(p, k) })
 }
 
 func isDoubleDetachKey(p []byte) bool {

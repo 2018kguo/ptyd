@@ -101,7 +101,6 @@ func readFrames(r *bufio.Reader, at *terminal.Attachment) error {
 		if n > maxFrame {
 			return errors.New("frame too large")
 		}
-		buf = buf[:0]
 		if cap(buf) < int(n) {
 			buf = make([]byte, n)
 		}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,12 +52,7 @@ var agents = map[string]agentAdapter{
 }
 
 func supportedAgents() string {
-	names := make([]string, 0, len(agents))
-	for n := range agents {
-		names = append(names, n)
-	}
-	slices.Sort(names)
-	return strings.Join(names, ", ")
+	return strings.Join(slices.Sorted(maps.Keys(agents)), ", ")
 }
 
 // detectAgent maps a command to an adapter name by its basename.

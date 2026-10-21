@@ -7,9 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -139,7 +140,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	if tags := splitNonEmpty(r.URL.Query().Get("tag"), ","); len(tags) > 0 {
 		out := terms[:0]
 		for _, t := range terms {
-			if anyTagMatch(t.Tags, tags) {
+			if terminal.AnyTag(t.Tags, tags) {
 				out = append(out, t)
 			}
 		}
@@ -548,17 +549,6 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "closed"})
 }
 
-func anyTagMatch(tags, filter []string) bool {
-	for _, f := range filter {
-		for _, t := range tags {
-			if t == f {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func splitNonEmpty(s, sep string) []string {
 	if s == "" {
 		return nil
@@ -594,9 +584,6 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 // parseSince returns sinceSeq from a query parameter. Empty -> -1 (return
 // everything), since Seq starts at 0.
 func parseSince(s string) int64 {
-	if s == "" {
-		return -1
-	}
 	n, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return -1
@@ -605,12 +592,7 @@ func parseSince(s string) int64 {
 }
 
 func knownSignals() string {
-	keys := make([]string, 0, len(signalMap))
-	for k := range signalMap {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return strings.Join(keys, ", ")
+	return strings.Join(slices.Sorted(maps.Keys(signalMap)), ", ")
 }
 
 // appendLineEvent appends the server-sent event for a line, its data
