@@ -602,16 +602,16 @@ BenchmarkHTTP/Metrics-18                   	  243036	      5034 ns/op	    6960 B
 BenchmarkHTTP/Metrics-18                   	  240229	      5042 ns/op	    6960 B/op	      26 allocs/op
 BenchmarkHTTP/Metrics-18                   	  243212	      5041 ns/op	    6960 B/op	      26 allocs/op
 BenchmarkHTTP/Metrics-18                   	  244171	      5061 ns/op	    6960 B/op	      26 allocs/op
-BenchmarkStream-18                         	    1135	    966790 ns/op	      4834 ns/line	   47472 B/op	    1400 allocs/op
-BenchmarkStream-18                         	    1149	    972347 ns/op	      4862 ns/line	   47453 B/op	    1400 allocs/op
-BenchmarkStream-18                         	    1144	    937727 ns/op	      4689 ns/line	   47462 B/op	    1400 allocs/op
-BenchmarkStream-18                         	    1178	    942325 ns/op	      4712 ns/line	   47432 B/op	    1400 allocs/op
-BenchmarkStream-18                         	    1143	    929790 ns/op	      4649 ns/line	   47464 B/op	    1400 allocs/op
-BenchmarkStream-18                         	    1128	    984760 ns/op	      4924 ns/line	   47471 B/op	    1400 allocs/op
-BenchmarkStream-18                         	    1207	    939055 ns/op	      4695 ns/line	   47415 B/op	    1400 allocs/op
-BenchmarkStream-18                         	    1174	    959848 ns/op	      4799 ns/line	   47445 B/op	    1400 allocs/op
-BenchmarkStream-18                         	    1167	    947846 ns/op	      4739 ns/line	   47427 B/op	    1400 allocs/op
-BenchmarkStream-18                         	    1152	   1112257 ns/op	      5561 ns/line	   47462 B/op	    1400 allocs/op
+BenchmarkStream-18    	    2151	    562754 ns/op	      2814 ns/line	   47086 B/op	    1400 allocs/op
+BenchmarkStream-18    	    2000	    554387 ns/op	      2772 ns/line	   47099 B/op	    1400 allocs/op
+BenchmarkStream-18    	    2191	    546992 ns/op	      2735 ns/line	   47049 B/op	    1400 allocs/op
+BenchmarkStream-18    	    2184	    547759 ns/op	      2739 ns/line	   47063 B/op	    1400 allocs/op
+BenchmarkStream-18    	    1870	    547359 ns/op	      2737 ns/line	   47143 B/op	    1400 allocs/op
+BenchmarkStream-18    	    2169	    537093 ns/op	      2685 ns/line	   47060 B/op	    1400 allocs/op
+BenchmarkStream-18    	    2200	    544311 ns/op	      2722 ns/line	   47049 B/op	    1400 allocs/op
+BenchmarkStream-18    	    1860	    549069 ns/op	      2745 ns/line	   47136 B/op	    1400 allocs/op
+BenchmarkStream-18    	    2158	    547112 ns/op	      2736 ns/line	   47063 B/op	    1400 allocs/op
+BenchmarkStream-18    	    2175	    549614 ns/op	      2748 ns/line	   47060 B/op	    1400 allocs/op
 BenchmarkEncodeList-18                     	    1875	    575139 ns/op	  394061 B/op	    2010 allocs/op
 BenchmarkEncodeList-18                     	    2142	    555985 ns/op	  395808 B/op	    2010 allocs/op
 BenchmarkEncodeList-18                     	    2114	    561068 ns/op	  394860 B/op	    2010 allocs/op

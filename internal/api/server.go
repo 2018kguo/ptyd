@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -205,26 +206,44 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	since := parseSince(r.URL.Query().Get("since"))
+	sse := sseWriter{w: w}
 	for _, line := range snap.Lines {
 		if line.Seq <= since {
 			continue
 		}
-		sendSSE(w, "line", line)
+		sse.send("line", line)
 	}
 	flusher.Flush()
 
 	ping := time.NewTicker(15 * time.Second)
 	defer ping.Stop()
 
+	end := func() {
+		sse.send("end", map[string]string{"reason": "terminal closed"})
+		flusher.Flush()
+	}
 	for {
 		select {
 		case line, ok := <-ch:
+			// Send the lines already queued behind this one, then flush
+			// once: a flush is a write to the connection, and one per line
+			// was most of the cost of a busy stream.
+		batch:
+			for n := 0; ok; n++ {
+				sse.send("line", line)
+				if n == cap(ch) {
+					break
+				}
+				select {
+				case line, ok = <-ch:
+				default:
+					break batch
+				}
+			}
 			if !ok {
-				sendSSE(w, "end", map[string]string{"reason": "terminal closed"})
-				flusher.Flush()
+				end()
 				return
 			}
-			sendSSE(w, "line", line)
 			flusher.Flush()
 		case <-ping.C:
 			_, _ = fmt.Fprint(w, ": ping\n\n")
@@ -599,13 +618,27 @@ func knownSignals() string {
 	return strings.Join(keys, ", ")
 }
 
-func sendSSE(w http.ResponseWriter, event string, data any) {
-	b, err := json.Marshal(data)
-	if err != nil {
+// sseWriter writes server-sent events, reusing one encoding buffer.
+type sseWriter struct {
+	w   io.Writer
+	buf bytes.Buffer
+	enc *json.Encoder
+}
+
+func (s *sseWriter) send(event string, data any) {
+	if s.enc == nil {
+		s.enc = json.NewEncoder(&s.buf)
+	}
+	s.buf.Reset()
+	s.buf.WriteString("event: ")
+	s.buf.WriteString(event)
+	s.buf.WriteString("\ndata: ")
+	if err := s.enc.Encode(data); err != nil { // the JSON and a newline
 		log.Printf("sse marshal: %v", err)
 		return
 	}
-	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
+	s.buf.WriteByte('\n')
+	_, _ = s.w.Write(s.buf.Bytes())
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

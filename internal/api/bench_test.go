@@ -91,15 +91,16 @@ func BenchmarkHTTP(b *testing.B) {
 	})
 }
 
-// BenchmarkStream is the SSE endpoint end to end: a terminal prints
-// streamLines lines per op and one client reads them all from the stream.
+// BenchmarkStream is the SSE endpoint end to end: a terminal prints a
+// burst of streamLines lines per op and one client reads them all from
+// the stream.
 // streamLines is below the subscriber's buffer, so none are dropped.
 func BenchmarkStream(b *testing.B) {
 	const streamLines = 200
 	mgr := terminal.NewManager()
 	b.Cleanup(mgr.CloseAll)
 	info, err := mgr.Create(terminal.CreateConfig{Name: "s", Command: "sh",
-		Args: []string{"-c", "stty -echo; while read x; do i=0; while [ $i -lt " + strconv.Itoa(streamLines) + " ]; do echo line $i; i=$((i+1)); done; done"}})
+		Args: []string{"-c", "stty -echo; s=$(i=0; while [ $i -lt " + strconv.Itoa(streamLines) + " ]; do echo line $i; i=$((i+1)); done); while read x; do printf '%s\\n' \"$s\"; done"}})
 	if err != nil {
 		b.Fatal(err)
 	}

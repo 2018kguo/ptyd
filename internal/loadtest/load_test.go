@@ -13,6 +13,8 @@
 //
 //	PTYD_LOAD_N         producer terminals (default 32)
 //	PTYD_LOAD_RATE      bytes/s each producer prints, 0 = flat out (default 1048576)
+//	PTYD_LOAD_BURST     if set, print in bursts: PTYD_LOAD_BURST seconds of output at once, then as long quiet
+//	PTYD_LOAD_LABEL     label recorded in the result
 //	PTYD_LOAD_SECONDS   measured duration (default 10)
 //	PTYD_LOAD_ATTACH    attached clients per producer terminal (default 1)
 //	PTYD_LOAD_STREAMS   SSE clients per producer terminal (default 1)
@@ -54,17 +56,30 @@ import (
 func TestMain(m *testing.M) {
 	if r := os.Getenv("PTYD_LOAD_PRODUCER"); r != "" {
 		rate, _ := strconv.Atoi(r)
-		produce(rate)
+		burst, _ := strconv.Atoi(os.Getenv("PTYD_LOAD_BURST"))
+		produce(rate, burst)
 		return
 	}
 	os.Exit(m.Run())
 }
 
 // produce prints agent output to stdout at rate bytes/s (0: flat out)
-// until killed.
-func produce(rate int) {
+// until killed. With burst > 0 it prints burst seconds' worth at once,
+// then pauses for burst seconds.
+func produce(rate, burst int) {
 	data := benchdata.Claude(1<<20, 120, 40)
 	const chunk = 4096
+	if burst > 0 {
+		for i := 0; ; {
+			for n := 0; n < rate*burst; n += chunk {
+				if _, err := os.Stdout.Write(data[i : i+chunk]); err != nil {
+					return
+				}
+				i = (i + chunk) % (len(data) - chunk)
+			}
+			time.Sleep(time.Duration(burst) * time.Second)
+		}
+	}
 	start := time.Now()
 	sent := 0
 	for i := 0; ; i = (i + chunk) % (len(data) - chunk) {
@@ -89,6 +104,7 @@ func envInt(name string, def int) int {
 
 // Result is one load-test run.
 type Result struct {
+	Label                    string
 	N, Rate, Attach, Streams int
 	Persist                  bool
 	Seconds                  float64
@@ -103,12 +119,17 @@ type Result struct {
 	GCPauseP99Us             float64
 	GCCycles                 uint64
 	HeapMiB                  float64
-	Disk                     map[string]any `json:",omitempty"`
+	// Disk writes during the measured window: write amplification is
+	// persisted bytes per byte of output.
+	WriteAmplification float64
+	FsyncsPerSec       float64
+	CheckpointsPerSec  float64
 }
 
 func TestLoad(t *testing.T) {
 	cfg := Result{
-		N: envInt("PTYD_LOAD_N", 32), Rate: envInt("PTYD_LOAD_RATE", 1<<20),
+		Label: os.Getenv("PTYD_LOAD_LABEL"),
+		N:     envInt("PTYD_LOAD_N", 32), Rate: envInt("PTYD_LOAD_RATE", 1<<20),
 		Attach: envInt("PTYD_LOAD_ATTACH", 1), Streams: envInt("PTYD_LOAD_STREAMS", 1),
 		Persist: envInt("PTYD_LOAD_PERSIST", 1) == 1,
 	}
@@ -144,7 +165,7 @@ func TestLoad(t *testing.T) {
 	for i := range cfg.N {
 		info, err := mgr.Create(terminal.CreateConfig{
 			Name: fmt.Sprintf("prod-%d", i), Command: self, Cols: 120, Rows: 40,
-			Env: map[string]string{"PTYD_LOAD_PRODUCER": strconv.Itoa(cfg.Rate)},
+			Env: map[string]string{"PTYD_LOAD_PRODUCER": strconv.Itoa(cfg.Rate), "PTYD_LOAD_BURST": os.Getenv("PTYD_LOAD_BURST")},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -239,7 +260,8 @@ func TestLoad(t *testing.T) {
 	runtime.GC()
 	ms0 := readMetrics()
 	cpu0 := cpuTime()
-	out0 := mgr.Metrics().BytesEmitted
+	met0 := mgr.Metrics()
+	out0 := met0.BytesEmitted
 	att0, sse0 := attachBytes.Load(), sseLines.Load()
 	start := time.Now()
 
@@ -268,16 +290,11 @@ func TestLoad(t *testing.T) {
 	}
 	cfg.Keystrokes = len(lat)
 	cfg.EchoP50Ms, cfg.EchoP99Ms, cfg.EchoMaxMs = q(0.5), q(0.99), q(1)
-	if raw, err := json.Marshal(met); err == nil {
-		var all map[string]any
-		_ = json.Unmarshal(raw, &all)
-		cfg.Disk = map[string]any{}
-		for k, v := range all {
-			if k == "persist_bytes_total" || k == "fsyncs_total" || k == "checkpoints_total" {
-				cfg.Disk[k] = v
-			}
-		}
+	if out := met.BytesEmitted - out0; out > 0 {
+		cfg.WriteAmplification = float64(met.PersistBytes-met0.PersistBytes) / float64(out)
 	}
+	cfg.FsyncsPerSec = float64(met.Fsyncs-met0.Fsyncs) / elapsed
+	cfg.CheckpointsPerSec = float64(met.Checkpoints-met0.Checkpoints) / elapsed
 
 	line, _ := json.Marshal(cfg)
 	t.Logf("%s", line)
