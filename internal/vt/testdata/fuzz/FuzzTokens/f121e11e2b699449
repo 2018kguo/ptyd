@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("\xdc1B\xba\xf50b@")
+byte('\x01')
+byte('>')

@@ -17,6 +17,7 @@ package vt
 import (
 	"strings"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/mattn/go-runewidth"
 )
@@ -2189,7 +2190,7 @@ func (t *Terminal) wrapEnd(row, next []Cell) int {
 // blanks.
 func contentEnd(row []Cell) int {
 	end := len(row)
-	for end > 0 && isZero(row[end-1]) {
+	for end > 0 && isZeroAt(&row[end-1]) {
 		end--
 	}
 	return end
@@ -2197,7 +2198,20 @@ func contentEnd(row []Cell) int {
 
 // isZero reports whether c is a blank in the default style (a spacer
 // head is a blank).
-func isZero(c Cell) bool { return c == Cell{} || c == Cell{R: spacerHead} }
+func isZero(c Cell) bool { return isZeroAt(&c) }
+
+// isZeroAt is isZero for a cell in place (field tests are about twice
+// as fast as comparing whole cells in the trimming loops).
+func isZeroAt(c *Cell) bool {
+	// A cell is two words: R and Fg, then Bg, A and L.
+	w := *(*uint64)(unsafe.Pointer(c))
+	return *(*uint64)(unsafe.Pointer(&c.Bg)) == 0 && (w == 0 || w == spacerWord)
+}
+
+var spacerWord = func() uint64 {
+	c := Cell{R: spacerHead}
+	return *(*uint64)(unsafe.Pointer(&c))
+}()
 
 // startsWide reports whether row starts with a wide character.
 func startsWide(row []Cell) bool { return len(row) > 1 && row[1].R == wideTail }
@@ -2205,8 +2219,8 @@ func startsWide(row []Cell) bool { return len(row) > 1 && row[1].R == wideTail }
 // zeroRow reports whether row is blank in the default style (nil rows
 // are).
 func zeroRow(row []Cell) bool {
-	for _, c := range row {
-		if !isZero(c) {
+	for i := range row {
+		if !isZeroAt(&row[i]) {
 			return false
 		}
 	}

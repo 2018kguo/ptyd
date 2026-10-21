@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 func feed(cols, rows int, in string) *Terminal {
@@ -421,5 +422,14 @@ func TestHyperlinks(t *testing.T) {
 	}
 	if !bytes.Contains(term.Repaint(true), []byte("\x1b]8;id=x;https://example.com/a\x1b\\docs")) {
 		t.Fatal("scrolled-off link not repainted")
+	}
+}
+
+// isZeroAt and appendRow read a cell as two words: R and Fg, then Bg, A
+// and L.
+func TestCellLayout(t *testing.T) {
+	var c Cell
+	if unsafe.Sizeof(c) != 16 || unsafe.Offsetof(c.Fg) != 4 || unsafe.Offsetof(c.Bg) != 8 || unsafe.Offsetof(c.L) != 14 {
+		t.Fatalf("Cell layout changed: size %d", unsafe.Sizeof(c))
 	}
 }
