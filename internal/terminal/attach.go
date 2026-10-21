@@ -11,8 +11,8 @@ import (
 // slow client never holds up the PTY reader or grows memory.
 const maxAttachBuffer = 1 << 20
 
-// maxSpare is the largest drained queue buffer an attacher keeps for reuse.
-const maxSpare = 64 << 10
+// maxSpare is the largest queue buffer an idle attacher keeps for reuse.
+const maxSpare = 256 << 10
 
 // attacher is one attached client's output queue. The PTY reader appends
 // to it under the terminal's scrMu (in the same critical section that
@@ -124,16 +124,21 @@ func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
 			return at.repaint(), nil
 		}
 		if len(a.buf) > 0 {
+			// The caller is done with what the previous Read returned:
+			// the queue reuses it, so a client that keeps up swaps two
+			// buffers instead of allocating one per read.
 			b := a.buf
-			a.buf = nil
-			// The caller is done with what the previous Read returned;
-			// keep it for the next output unless it grew large.
-			if cap(at.last) <= maxSpare {
-				a.spare = at.last
-			}
+			a.buf, a.spare = nil, at.last
 			at.last = b
 			a.mu.Unlock()
 			return b, nil
+		}
+		// Going idle: keep no large buffer for a quiet client.
+		if cap(a.spare) > maxSpare {
+			a.spare = nil
+		}
+		if cap(at.last) > maxSpare {
+			at.last = nil
 		}
 		ended := a.ended
 		a.mu.Unlock()
