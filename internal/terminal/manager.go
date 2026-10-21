@@ -1005,23 +1005,7 @@ func (t *terminal) readLoop() {
 	for {
 		n, err := t.ptmx.Read(buf)
 		if n > 0 {
-			now := time.Now()
-			t.mu.Lock()
-			t.lastOutputAt = now
-			t.mu.Unlock()
-			t.scrMu.Lock()
-			t.screen.Write(buf[:n])
-			t.broadcastLocked(buf[:n])
-			tailFull := t.persist.appendLocked(recData, buf[:n])
-			t.scrMu.Unlock()
-			if t.persist != nil {
-				t.noteOutput(tailFull)
-			}
-			t.ring.Write(buf[:n])
-			t.writeLog(buf[:n])
-			if t.mgr != nil {
-				t.mgr.bytesEmitted.Add(int64(n))
-			}
+			t.consume(buf[:n])
 		}
 		if err != nil {
 			// EIO: the child side hung up. ErrClosed: Close closed the
@@ -1032,6 +1016,28 @@ func (t *terminal) readLoop() {
 			t.ring.FlushPending()
 			return
 		}
+	}
+}
+
+// consume processes one read of PTY output: the screen, attached
+// clients, the persisted tail, the line ring and the log mirror.
+func (t *terminal) consume(p []byte) {
+	now := time.Now()
+	t.mu.Lock()
+	t.lastOutputAt = now
+	t.mu.Unlock()
+	t.scrMu.Lock()
+	t.screen.Write(p)
+	t.broadcastLocked(p)
+	tailFull := t.persist.appendLocked(recData, p)
+	t.scrMu.Unlock()
+	if t.persist != nil {
+		t.noteOutput(tailFull)
+	}
+	t.ring.Write(p)
+	t.writeLog(p)
+	if t.mgr != nil {
+		t.mgr.bytesEmitted.Add(int64(len(p)))
 	}
 }
 

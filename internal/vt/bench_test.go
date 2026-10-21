@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/2018kguo/ptyd/internal/benchdata"
 )
 
 func benchInput(b *testing.B) []byte {
@@ -95,4 +97,99 @@ func heapInUse() uint64 {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 	return ms.HeapInuse
+}
+
+// streams are the realistic inputs: the recorded vim and less sessions,
+// and generated agent-TUI, log and progress-bar output (~1 MiB each).
+func streams(b *testing.B) []struct {
+	name string
+	data []byte
+} {
+	vim, err := os.ReadFile("testdata/vim.raw")
+	if err != nil {
+		b.Fatal(err)
+	}
+	less, err := os.ReadFile("testdata/less.raw")
+	if err != nil {
+		b.Fatal(err)
+	}
+	return []struct {
+		name string
+		data []byte
+	}{
+		{"vim", vim},
+		{"less", less},
+		{"claude", benchdata.Claude(1<<20, 120, 40)},
+		{"logs", benchdata.Logs(1 << 20)},
+		{"progress", benchdata.Progress(1 << 20)},
+	}
+}
+
+// BenchmarkWriteStream feeds each stream in PTY-read-sized chunks, as the
+// daemon does.
+func BenchmarkWriteStream(b *testing.B) {
+	for _, s := range streams(b) {
+		b.Run(s.name, func(b *testing.B) {
+			term := New(120, 40, Options{})
+			b.SetBytes(int64(len(s.data)))
+			b.ReportAllocs()
+			for b.Loop() {
+				for p := s.data; len(p) > 0; {
+					n := min(len(p), 8192)
+					term.Write(p[:n])
+					p = p[n:]
+				}
+			}
+		})
+	}
+}
+
+// fullTerm is a 120x40 terminal with full scrollback of agent output.
+func fullTerm() *Terminal {
+	term := New(120, 40, Options{})
+	term.Write(benchdata.Claude(4<<20, 120, 40))
+	return term
+}
+
+// BenchmarkSerialize covers what the API and checkpoints read from a
+// terminal with a full scrollback: the repaint with and without
+// scrollback, and the screen and scrollback as text.
+func BenchmarkSerialize(b *testing.B) {
+	term := fullTerm()
+	b.Run("RepaintScreen", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			term.Repaint(false)
+		}
+	})
+	b.Run("RepaintScrollback", func(b *testing.B) {
+		b.SetBytes(int64(len(term.Repaint(true))))
+		b.ReportAllocs()
+		for b.Loop() {
+			term.Repaint(true)
+		}
+	})
+	b.Run("Lines", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			term.Lines()
+		}
+	})
+	b.Run("ScrollbackLines", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			term.ScrollbackLines()
+		}
+	})
+}
+
+// BenchmarkReplay is restoring a screen: a fresh emulator fed a full
+// checkpoint (scrollback plus screen).
+func BenchmarkReplay(b *testing.B) {
+	ckpt := fullTerm().Repaint(true)
+	b.SetBytes(int64(len(ckpt)))
+	b.ReportAllocs()
+	for b.Loop() {
+		New(120, 40, Options{}).Write(ckpt)
+	}
 }
