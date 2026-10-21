@@ -2,7 +2,6 @@ package vt
 
 import (
 	"os"
-	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -11,8 +10,9 @@ import (
 
 func benchInput(b *testing.B) []byte {
 	var all []byte
-	paths, _ := filepath.Glob("testdata/*.raw")
-	for _, p := range paths {
+	// The original vim and less recordings only, so the benchmark input
+	// stays the same as recordings are added.
+	for _, p := range []string{"testdata/less.raw", "testdata/vim.raw"} {
 		d, err := os.ReadFile(p)
 		if err != nil {
 			b.Fatal(err)
