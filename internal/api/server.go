@@ -90,6 +90,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /terminals/{id}", s.handleGet)
 	mux.HandleFunc("GET /terminals/{id}/output", s.handleOutput)
 	mux.HandleFunc("GET /terminals/{id}/stream", s.handleStream)
+	mux.HandleFunc("GET /terminals/{id}/screen", s.handleScreen)
 	mux.HandleFunc("POST /terminals/{id}/write", s.handleWrite)
 	mux.HandleFunc("POST /terminals/{id}/keys", s.handleKeys)
 	mux.HandleFunc("POST /terminals/{id}/wait", s.handleWait)
@@ -229,6 +230,33 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		}
+	}
+}
+
+// handleScreen returns the current screen: JSON text by default, or with
+// ?format=ansi the bytes that repaint it on a terminal of the same size.
+// ?scrollback=1 includes the scrollback above the screen.
+func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
+	id := terminal.ID(r.PathValue("id"))
+	withScrollback := r.URL.Query().Get("scrollback") == "1"
+	switch r.URL.Query().Get("format") {
+	case "", "text":
+		scr, err := s.mgr.Screen(id, withScrollback)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, scr)
+	case "ansi":
+		b, err := s.mgr.ScreenANSI(id, withScrollback)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(b)
+	default:
+		writeError(w, http.StatusBadRequest, "format must be text or ansi")
 	}
 }
 

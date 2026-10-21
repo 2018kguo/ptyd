@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/2018kguo/ptyd/internal/vt"
 	"github.com/creack/pty"
 )
 
@@ -92,6 +93,11 @@ type terminal struct {
 
 	ring *Ring
 	done chan struct{} // closed when waitLoop returns
+
+	// scrMu guards screen, the emulator fed with every byte of output, so
+	// the daemon knows what the window looks like.
+	scrMu  sync.Mutex
+	screen *vt.Terminal
 
 	logFile *os.File // optional, for raw output mirror
 	logSize int64    // bytes written to logFile since it was last emptied
@@ -276,6 +282,7 @@ func (m *Manager) Create(cfg CreateConfig) (Info, error) {
 		ptmx:    ptmx,
 		cmd:     cmd,
 		ring:    NewRing(ringCapacity, m.opts.ScrollbackBytes),
+		screen:  vt.New(int(cfg.Cols), int(cfg.Rows), vt.Options{}),
 		done:    make(chan struct{}),
 		logFile: logFile,
 		watches: compiled,
@@ -585,7 +592,17 @@ func (m *Manager) Resize(id ID, cols, rows uint16) error {
 	if !t.running() {
 		return ErrNotRunning
 	}
-	return setSize(t.ptmx, cols, rows)
+	return t.resize(cols, rows)
+}
+
+func (t *terminal) resize(cols, rows uint16) error {
+	t.scrMu.Lock()
+	defer t.scrMu.Unlock()
+	if err := setSize(t.ptmx, cols, rows); err != nil {
+		return err
+	}
+	t.screen.Resize(int(cols), int(rows))
+	return nil
 }
 
 // Signal delivers a signal to the terminal's process group, falling back to
@@ -873,6 +890,9 @@ func (t *terminal) readLoop() {
 			t.mu.Lock()
 			t.lastOutputAt = now
 			t.mu.Unlock()
+			t.scrMu.Lock()
+			t.screen.Write(buf[:n])
+			t.scrMu.Unlock()
 			t.ring.Write(buf[:n])
 			t.writeLog(buf[:n])
 			if t.mgr != nil {
