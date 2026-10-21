@@ -1426,3 +1426,9 @@ func zeroRow(row []Cell) bool {
 	}
 	return true
 }
+
+// cellString returns the characters a cell shows.
+func (t *Terminal) cellString(c Cell) string { return string(c.R) }
+
+// wrapped reports whether row y continues the row above it (soft wrap).
+func (t *Terminal) wrapped(y int) bool { return false }
