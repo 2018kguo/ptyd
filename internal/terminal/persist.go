@@ -146,6 +146,17 @@ func loadGhosts(persistDir string) ([]Info, error) {
 	return ghosts, nil
 }
 
+// readMeta reads a terminal directory's meta.json.
+func readMeta(dir string) (persistedMeta, error) {
+	var meta persistedMeta
+	raw, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+	if err != nil {
+		return meta, err
+	}
+	err = json.Unmarshal(raw, &meta)
+	return meta, err
+}
+
 // readExit returns the exit code from exit.json if present, else nil.
 func readExit(persistDir string, id ID) *int {
 	raw, err := os.ReadFile(filepath.Join(persistDir, string(id), "exit.json"))
@@ -179,13 +190,20 @@ func PruneGhosts(persistDir string, maxAge time.Duration) (int, error) {
 			continue
 		}
 		dir := filepath.Join(persistDir, e.Name())
-		// Use exit.json mtime if present, else meta.json mtime.
+		// Age is time since the terminal last changed anything on disk
+		// (metadata, exit record, checkpoint or tail), so a terminal that
+		// ran for weeks is not pruned the moment the daemon restarts.
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
 		var ts time.Time
-		if st, err := os.Stat(filepath.Join(dir, "exit.json")); err == nil {
-			ts = st.ModTime()
-		} else if st, err := os.Stat(filepath.Join(dir, "meta.json")); err == nil {
-			ts = st.ModTime()
-		} else {
+		for _, f := range files {
+			if fi, err := f.Info(); err == nil && fi.ModTime().After(ts) {
+				ts = fi.ModTime()
+			}
+		}
+		if ts.IsZero() {
 			continue
 		}
 		if ts.Before(cutoff) {
@@ -205,32 +223,13 @@ func removePersisted(persistDir string, id ID) error {
 	return os.RemoveAll(filepath.Join(persistDir, string(id)))
 }
 
-// writeJSONAtomic writes v to path via a synced owner-only temp file and a
-// rename, so a crash leaves either the old file or the new one.
+// writeJSONAtomic writes v to path atomically (see writeFileAtomic).
 func writeJSONAtomic(path string, v any) error {
 	raw, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	_, err = f.Write(raw)
-	if err == nil {
-		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = os.Rename(tmp, path)
-	}
-	if err != nil {
-		_ = os.Remove(tmp)
-	}
-	return err
+	return writeFileAtomic(path, raw)
 }
 
 // ErrGhostTerminal is returned by mutations attempted on a ghost.

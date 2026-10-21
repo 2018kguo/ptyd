@@ -101,6 +101,11 @@ type terminal struct {
 	attachers   map[*attacher]struct{} // guarded by scrMu
 	outputEnded bool                   // guarded by scrMu
 
+	// persist saves the screen under the persist dir (nil without one);
+	// ckptMu serializes its checkpoints.
+	persist *persister
+	ckptMu  sync.Mutex
+
 	logFile *os.File // optional, for raw output mirror
 	logSize int64    // bytes written to logFile since it was last emptied
 	// logCap overrides defaultMaxLogFileBytes in tests. 0 uses the default.
@@ -294,6 +299,8 @@ func (m *Manager) Create(cfg CreateConfig) (Info, error) {
 	// exits immediately must find meta.json in place for its exit.json.
 	if err := writeMeta(m.opts.PersistDir, id, cfg, t.info.PID, t.info.CreatedAt); err != nil {
 		fmt.Fprintf(os.Stderr, "[ptyd] writeMeta(%s) failed: %v\n", id, err)
+	} else if m.opts.PersistDir != "" {
+		t.persist = &persister{dir: filepath.Join(m.opts.PersistDir, string(id))}
 	}
 	m.mu.Lock()
 	m.terms[id] = t
@@ -604,6 +611,7 @@ func (t *terminal) resize(cols, rows uint16) error {
 		return err
 	}
 	t.screen.Resize(int(cols), int(rows))
+	t.persist.appendLocked(recResize, []byte{byte(cols >> 8), byte(cols), byte(rows >> 8), byte(rows)})
 	return nil
 }
 
@@ -639,6 +647,7 @@ func (m *Manager) Close(id ID) error {
 		return fmt.Errorf("%w: %q", ErrNotFound, id)
 	}
 	if ok {
+		t.stopPersisting()
 		t.terminate()
 		m.totalClosed.Add(1)
 	}
@@ -662,6 +671,9 @@ func (m *Manager) CloseAll() {
 	var wg sync.WaitGroup
 	for _, t := range terms {
 		wg.Go(func() {
+			// Save the screen as the user last saw it, before the
+			// program prints anything on its way out.
+			t.finalCheckpoint()
 			if t.terminate() {
 				if err := writeExit(m.opts.PersistDir, t.info.ID, t.exitCode(), "shutdown"); err != nil {
 					fmt.Fprintf(os.Stderr, "[ptyd] writeExit(%s) failed: %v\n", t.info.ID, err)
@@ -884,6 +896,7 @@ func (t *terminal) readLoop() {
 	defer t.ring.CloseSubscribers()
 	defer t.endAttachers()
 	defer t.finishLog()
+	defer t.finalCheckpoint() // the program's last screen
 
 	buf := make([]byte, readBufSize)
 	for {
@@ -896,7 +909,11 @@ func (t *terminal) readLoop() {
 			t.scrMu.Lock()
 			t.screen.Write(buf[:n])
 			t.broadcastLocked(buf[:n])
+			tailFull := t.persist.appendLocked(recData, buf[:n])
 			t.scrMu.Unlock()
+			if t.persist != nil {
+				t.noteOutput(tailFull)
+			}
 			t.ring.Write(buf[:n])
 			t.writeLog(buf[:n])
 			if t.mgr != nil {

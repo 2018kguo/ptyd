@@ -1,6 +1,10 @@
 package terminal
 
-import "github.com/2018kguo/ptyd/internal/vt"
+import (
+	"path/filepath"
+
+	"github.com/2018kguo/ptyd/internal/vt"
+)
 
 // Screen is what a terminal's window shows, as text.
 type Screen struct {
@@ -36,6 +40,9 @@ func screenOf(s *vt.Terminal, withScrollback bool) Screen {
 func (m *Manager) Screen(id ID, withScrollback bool) (Screen, error) {
 	t, err := m.get(id)
 	if err != nil {
+		if scr, ok := m.loadGhostScreen(id); ok {
+			return screenOf(scr, withScrollback), nil
+		}
 		return Screen{}, err
 	}
 	t.scrMu.Lock()
@@ -48,6 +55,9 @@ func (m *Manager) Screen(id ID, withScrollback bool) (Screen, error) {
 func (m *Manager) ScreenANSI(id ID, withScrollback bool) ([]byte, error) {
 	t, err := m.get(id)
 	if err != nil {
+		if scr, ok := m.loadGhostScreen(id); ok {
+			return scr.Repaint(withScrollback), nil
+		}
 		return nil, err
 	}
 	t.scrMu.Lock()
@@ -55,7 +65,28 @@ func (m *Manager) ScreenANSI(id ID, withScrollback bool) ([]byte, error) {
 	return t.screen.Repaint(withScrollback), nil
 }
 
+// loadGhostScreen rebuilds a ghost's saved screen from disk.
+func (m *Manager) loadGhostScreen(id ID) (*vt.Terminal, bool) {
+	if _, ok := m.GhostMeta(id); !ok || m.opts.PersistDir == "" {
+		return nil, false
+	}
+	dir := filepath.Join(m.opts.PersistDir, string(id))
+	meta, err := readMeta(dir)
+	if err != nil {
+		return nil, false
+	}
+	scr, _, err := loadScreen(dir, int(meta.Cols), int(meta.Rows))
+	if err != nil {
+		return nil, false
+	}
+	return scr, true
+}
+
 // ghostScreen returns the repaint of a ghost's saved screen.
 func (m *Manager) ghostScreen(id ID) ([]byte, bool) {
-	return nil, false
+	scr, ok := m.loadGhostScreen(id)
+	if !ok {
+		return nil, false
+	}
+	return scr.Repaint(true), true
 }
