@@ -27,6 +27,9 @@ func TestMain(m *testing.M) {
 	if os.Getenv("PTYD_FAKE_AGENT") != "" {
 		os.Exit(runFakeAgent(filepath.Base(os.Args[0]), os.Args[1:]))
 	}
+	if dir := os.Getenv("PTYD_KILL9_TAIL"); dir != "" {
+		writeTailThenDie(dir)
+	}
 	os.Exit(m.Run())
 }
 

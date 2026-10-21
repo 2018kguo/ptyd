@@ -10,11 +10,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/2018kguo/ptyd/internal/vt"
@@ -33,9 +36,10 @@ import (
 //
 // The checkpoint plus the tails with gen >= its tailGen, replayed through
 // a fresh emulator, give the screen as the program left it, even after a
-// kill -9 of the daemon: tails are appended on every PTY read (not
-// fsynced; the page cache survives a process crash). A torn last record
-// is ignored, and output cut mid escape sequence is harmless.
+// kill -9 of the daemon: every PTY read is in the tail (written, or on
+// macOS stored into a mapping, see mapTails) before the next read, not
+// fsynced; the page cache survives a process crash. A torn last record is
+// ignored, and output cut mid escape sequence is harmless.
 //
 // Checkpoints bound the tail: one is taken once output has been quiet
 // for ckptSettle (at most every ckptMinInterval), whenever the tail
@@ -74,11 +78,11 @@ type ckptHeader struct {
 type persister struct {
 	dir string
 
-	gen       uint64   // scrMu: tail generation being written
-	tail      *os.File // scrMu: open tail file, nil until output arrives
-	tailBytes int64    // scrMu
-	stopped   bool     // scrMu: no more writes (shutdown, deleted)
-	broken    bool     // scrMu: tail grew past twice the cap; stop appending
+	gen       uint64    // scrMu: tail generation being written
+	tail      *tailFile // scrMu: open tail file, nil until output arrives
+	tailBytes int64     // scrMu
+	stopped   bool      // scrMu: no more writes (shutdown, deleted)
+	broken    bool      // scrMu: tail grew past twice the cap; stop appending
 
 	timerMu  sync.Mutex
 	timer    *time.Timer // armed while output is pending a checkpoint
@@ -87,10 +91,6 @@ type persister struct {
 	queued atomic.Bool // a tail-full checkpoint is on its way
 }
 
-// recPool holds tail record buffers, shared by all terminals so an idle
-// one keeps none.
-var recPool = sync.Pool{New: func() any { b := make([]byte, 0, 5+readBufSize); return &b }}
-
 // appendLocked records output (or a resize) in the tail. Caller holds
 // scrMu. It reports whether a checkpoint is due because the tail is full.
 func (p *persister) appendLocked(typ byte, data []byte) bool {
@@ -98,28 +98,126 @@ func (p *persister) appendLocked(typ byte, data []byte) bool {
 		return false
 	}
 	if p.tail == nil {
-		f, err := os.OpenFile(filepath.Join(p.dir, tailPrefix+strconv.FormatUint(p.gen, 10)), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
-		if err != nil {
-			p.broken = true
-			fmt.Fprintf(os.Stderr, "[ptyd] open tail in %s: %v\n", p.dir, err)
-			return false
-		}
-		p.tail = f
+		p.tail = &tailFile{path: filepath.Join(p.dir, tailPrefix+strconv.FormatUint(p.gen, 10))}
 	}
-	// One write per record keeps a record whole in the page cache.
-	bp := recPool.Get().(*[]byte)
-	rec := append((*bp)[:0], typ, 0, 0, 0, 0)
-	binary.BigEndian.PutUint32(rec[1:], uint32(len(data)))
-	rec = append(rec, data...)
-	n, err := p.tail.Write(rec)
-	*bp = rec
-	recPool.Put(bp)
-	p.tailBytes += int64(n)
-	diskStats.bytes.Add(int64(n))
-	if err != nil || p.tailBytes > 2*maxTailBytes {
+	if err := p.tail.append(typ, data); err != nil {
+		p.broken = true
+		fmt.Fprintf(os.Stderr, "[ptyd] tail in %s: %v\n", p.dir, err)
+		return false
+	}
+	n := int64(5 + len(data))
+	p.tailBytes += n
+	diskStats.bytes.Add(n)
+	if p.tailBytes > 2*maxTailBytes {
 		p.broken = true
 	}
 	return p.tailBytes > maxTailBytes
+}
+
+// mapTails selects how records reach a tail file. On macOS a write(2) per
+// PTY read was the largest single cost of the daemon under output (a
+// quarter of its CPU flat out), so there the file is mapped and records
+// are stored into it: a store into a MAP_SHARED page is in the kernel's
+// page cache as soon as it is made, so it survives a kill -9 exactly as a
+// write would. On Linux a write is cheap and the mapping was not faster;
+// page faults on the mapping stalled the reader under writeback instead.
+var mapTails = runtime.GOOS == "darwin"
+
+// tailWindow is how much of a mapped tail is mapped at a time.
+const tailWindow = 256 << 10
+
+// tailFile appends records to one tail file. A mapped file is extended a
+// window at a time, so after a crash it ends in zeros, which replay reads
+// as the end; close cuts it to its records.
+type tailFile struct {
+	path string
+	f    *os.File
+	size int64  // bytes of records
+	buf  []byte // write: the record being written
+	mem  []byte // mapped: the window, starting at file offset off
+	off  int64
+}
+
+func (tf *tailFile) append(typ byte, data []byte) error {
+	if tf.f == nil {
+		flag := os.O_WRONLY | os.O_APPEND
+		if mapTails {
+			flag = os.O_RDWR
+		}
+		f, err := os.OpenFile(tf.path, flag|os.O_CREATE|os.O_TRUNC, 0o600)
+		if err != nil {
+			return err
+		}
+		tf.f = f
+	}
+	n := 5 + len(data)
+	if !mapTails {
+		// One write per record keeps a record whole in the page cache.
+		tf.buf = append(append(tf.buf[:0], typ, 0, 0, 0, 0), data...)
+		binary.BigEndian.PutUint32(tf.buf[1:], uint32(len(data)))
+		_, err := tf.f.Write(tf.buf)
+		tf.size += int64(n)
+		return err
+	}
+	if tf.size+int64(n) > tf.off+int64(len(tf.mem)) {
+		if err := tf.remap(n); err != nil {
+			return err
+		}
+	}
+	if !putRecord(tf.mem[tf.size-tf.off:][:n], typ, data) {
+		return errors.New("fault writing the tail (disk full?)")
+	}
+	tf.size += int64(n)
+	return nil
+}
+
+// putRecord stores one record, its type byte last: a record a crash cuts
+// short still has type 0 and ends the replay. A fault on the mapping (the
+// disk is full, so the page cannot be allocated) is reported, not fatal.
+func putRecord(rec []byte, typ byte, data []byte) (ok bool) {
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
+	defer func() { ok = recover() == nil }()
+	copy(rec[5:], data)
+	binary.BigEndian.PutUint32(rec[1:], uint32(len(data)))
+	rec[0] = typ
+	return true
+}
+
+// remap maps a new window that has room for need more bytes.
+func (tf *tailFile) remap(need int) error {
+	tf.unmap()
+	page := int64(os.Getpagesize())
+	off := tf.size &^ (page - 1)
+	size := (max(tailWindow, tf.size-off+int64(need)) + page - 1) &^ (page - 1)
+	if err := tf.f.Truncate(off + size); err != nil {
+		return err
+	}
+	mem, err := syscall.Mmap(int(tf.f.Fd()), off, int(size), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		return err
+	}
+	tf.mem, tf.off = mem, off
+	return nil
+}
+
+func (tf *tailFile) unmap() {
+	if tf.mem != nil {
+		_ = syscall.Munmap(tf.mem)
+		tf.mem = nil
+	}
+}
+
+// close closes the file, cutting a mapped one to its records.
+func (tf *tailFile) close() {
+	if tf == nil || tf.f == nil {
+		return
+	}
+	if mapTails {
+		tf.unmap()
+		_ = tf.f.Truncate(tf.size)
+	}
+	_ = tf.f.Close()
+	tf.f = nil
 }
 
 // noteOutput arms the settle timer after output (no-op if armed), or
@@ -191,9 +289,7 @@ func (t *terminal) checkpoint() {
 	p.tail, p.tailBytes, p.broken = nil, 0, false
 	gen := p.gen
 	t.scrMu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
+	old.close()
 
 	if err := writeCheckpoint(p.dir, cols, rows, gen, body); err != nil {
 		fmt.Fprintf(os.Stderr, "[ptyd] checkpoint %s: %v\n", p.dir, err)
@@ -235,10 +331,8 @@ func (t *terminal) stopPersisting() {
 	t.ckptMu.Lock()
 	t.scrMu.Lock()
 	p.stopped = true
-	if p.tail != nil {
-		_ = p.tail.Close()
-		p.tail = nil
-	}
+	p.tail.close()
+	p.tail = nil
 	t.scrMu.Unlock()
 	t.ckptMu.Unlock()
 }

@@ -160,7 +160,7 @@ func BenchmarkTailAppend(b *testing.B) {
 			n := min(len(out), readBufSize)
 			if p.appendLocked(recData, out[:n]) {
 				// What a checkpoint does to the tail, without the checkpoint.
-				_ = p.tail.Close()
+				p.tail.close()
 				p.gen++
 				p.tail, p.tailBytes = nil, 0
 			}
@@ -168,9 +168,7 @@ func BenchmarkTailAppend(b *testing.B) {
 		}
 	}
 	b.StopTimer()
-	if p.tail != nil {
-		_ = p.tail.Close()
-	}
+	p.tail.close()
 }
 
 // writeGhost writes a persisted terminal as a crashed daemon leaves it: a

@@ -1,14 +1,21 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+
+	"github.com/2018kguo/ptyd/internal/benchdata"
+	"github.com/2018kguo/ptyd/internal/vt"
 )
 
 func persistManager(t *testing.T, dir string) *Manager {
@@ -84,6 +91,58 @@ func TestShutdownCheckpointExcludesExitNoise(t *testing.T) {
 	}
 }
 
+// kill9Output is what writeTailThenDie stores: more than one mapped
+// window, in PTY-read sized records, with a resize in the middle.
+var kill9Output = benchdata.Claude(3<<20, 80, 24)
+
+// writeTailThenDie stores kill9Output in a tail in dir, the way a daemon
+// does, and SIGKILLs itself before anything closes or unmaps the file.
+func writeTailThenDie(dir string) {
+	mapTails = os.Getenv("PTYD_KILL9_MAP") == "1"
+	p := &persister{dir: dir}
+	for i, out := 0, kill9Output; len(out) > 0; i++ {
+		n := min(len(out), 1024)
+		p.appendLocked(recData, out[:n])
+		out = out[n:]
+		if i == 1000 {
+			p.appendLocked(recResize, []byte{0, 100, 0, 30})
+		}
+	}
+	_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
+	select {}
+}
+
+// What a daemon stored in its tail before a kill -9 is on disk for the
+// next one: the stores into the mapped file are in the page cache the
+// moment they are made.
+func TestTailSurvivesKill9(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mapped := range []string{"0", "1"} {
+		dir := t.TempDir()
+		cmd := exec.Command(self, "-test.run", "^$")
+		cmd.Env = append(os.Environ(), "PTYD_KILL9_TAIL="+dir, "PTYD_KILL9_MAP="+mapped)
+		err = cmd.Run()
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) || ee.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL {
+			t.Fatalf("helper did not die by SIGKILL: %v", err)
+		}
+		got, _, err := loadScreen(dir, 80, 24)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := vt.New(80, 24, vt.Options{})
+		want.Write(kill9Output[:1001*1024])
+		want.Resize(100, 30)
+		want.Write(kill9Output[1001*1024:])
+		if !bytes.Equal(got.Repaint(true), want.Repaint(true)) {
+			t.Fatalf("mapped=%s: screen after kill -9 differs:\n got %q\nwant %q", mapped, got.Lines(), want.Lines())
+		}
+	}
+}
+
 // Truncating the tail anywhere (a torn record, or output cut inside an
 // escape sequence) still yields a usable screen, never an error.
 func TestTornTailReplays(t *testing.T) {
@@ -104,6 +163,12 @@ func TestTornTailReplays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The live tail is mapped a window at a time: past its records it
+	// reads as zeros, which is where a crash leaves it.
+	if scr, _, err := loadScreen(tdir, 20, 4); err != nil || scr.Lines()[1] != "漢字" {
+		t.Fatalf("padded tail: %q %v", scr.Lines(), err)
+	}
+	raw = bytes.TrimRight(raw, "\x00")
 	for cut := range len(raw) {
 		cdir := filepath.Join(t.TempDir(), "c")
 		_ = os.MkdirAll(cdir, 0o700)
@@ -119,7 +184,7 @@ func TestTornTailReplays(t *testing.T) {
 	p.appendLocked(recData, []byte("x\x1b[1;3"))
 	p.appendLocked(recData, []byte("1mred\x1b]2;ti"))
 	p.appendLocked(recData, []byte("tle\x07!"))
-	p.tail.Close()
+	p.tail.close()
 	scr, _, err := loadScreen(cdir, 20, 2)
 	if err != nil || scr.Lines()[0] != "xred!" || scr.Title() != "title" {
 		t.Fatalf("split records: %q %q %v", scr.Lines(), scr.Title(), err)
