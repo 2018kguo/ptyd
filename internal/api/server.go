@@ -1,14 +1,12 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"sort"
@@ -207,19 +205,21 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	ping := time.NewTicker(15 * time.Second)
 	defer ping.Stop()
-	sse := sseWriter{w: w}
 	lines := make([]terminal.Line, 256)
+	var buf []byte
 	for {
 		// Send everything new, then flush once: a flush is a write to
 		// the connection.
 		changed, ended := cur.Changed()
 		for n := cur.Read(lines); n > 0; n = cur.Read(lines) {
+			buf = buf[:0]
 			for _, line := range lines[:n] {
-				sse.send("line", line)
+				buf = appendLineEvent(buf, line)
 			}
+			_, _ = w.Write(buf)
 		}
 		if ended {
-			sse.send("end", map[string]string{"reason": "terminal closed"})
+			_, _ = io.WriteString(w, "event: end\ndata: {\"reason\":\"terminal closed\"}\n\n")
 		}
 		flusher.Flush()
 		if ended {
@@ -599,27 +599,68 @@ func knownSignals() string {
 	return strings.Join(keys, ", ")
 }
 
-// sseWriter writes server-sent events, reusing one encoding buffer.
-type sseWriter struct {
-	w   io.Writer
-	buf bytes.Buffer
-	enc *json.Encoder
+// appendLineEvent appends the server-sent event for a line, its data
+// byte for byte what encoding/json writes for it, without reflection or
+// allocation (it was most of a busy stream's cost).
+func appendLineEvent(b []byte, l terminal.Line) []byte {
+	b = append(b, "event: line\ndata: {\"seq\":"...)
+	b = strconv.AppendInt(b, l.Seq, 10)
+	b = append(b, `,"text":`...)
+	b = appendJSONString(b, l.Text)
+	b = append(b, `,"at":"`...)
+	b = l.At.AppendFormat(b, time.RFC3339Nano)
+	return append(b, "\"}\n\n"...)
 }
 
-func (s *sseWriter) send(event string, data any) {
-	if s.enc == nil {
-		s.enc = json.NewEncoder(&s.buf)
+// appendJSONString appends s as encoding/json does: with <, > and &
+// escaped, invalid UTF-8 replaced by U+FFFD, and U+2028 and U+2029
+// escaped.
+func appendJSONString(b []byte, s string) []byte {
+	const hex = "0123456789abcdef"
+	b = append(b, '"')
+	start := 0
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			if c >= 0x20 && c != '"' && c != '\\' && c != '<' && c != '>' && c != '&' {
+				i++
+				continue
+			}
+			b = append(b, s[start:i]...)
+			switch c {
+			case '"', '\\':
+				b = append(b, '\\', c)
+			case '\b':
+				b = append(b, '\\', 'b')
+			case '\f':
+				b = append(b, '\\', 'f')
+			case '\n':
+				b = append(b, '\\', 'n')
+			case '\r':
+				b = append(b, '\\', 'r')
+			case '\t':
+				b = append(b, '\\', 't')
+			default:
+				b = append(b, '\\', 'u', '0', '0', hex[c>>4], hex[c&0xf])
+			}
+			i++
+			start = i
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && size == 1:
+			b = append(append(b, s[start:i]...), `\ufffd`...)
+		case r == '\u2028' || r == '\u2029':
+			b = append(append(b, s[start:i]...), '\\', 'u', '2', '0', '2', hex[r&0xf])
+		default:
+			i += size
+			continue
+		}
+		i += size
+		start = i
 	}
-	s.buf.Reset()
-	s.buf.WriteString("event: ")
-	s.buf.WriteString(event)
-	s.buf.WriteString("\ndata: ")
-	if err := s.enc.Encode(data); err != nil { // the JSON and a newline
-		log.Printf("sse marshal: %v", err)
-		return
-	}
-	s.buf.WriteByte('\n')
-	_, _ = s.w.Write(s.buf.Bytes())
+	return append(append(b, s[start:]...), '"')
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

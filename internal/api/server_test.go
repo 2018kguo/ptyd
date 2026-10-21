@@ -271,3 +271,34 @@ func TestGhostMutationReturns409(t *testing.T) {
 		t.Fatalf("ghost write: status=%d body=%s", resp.StatusCode, body)
 	}
 }
+
+// A stream's line event is what encoding/json writes for the line.
+func TestLineEventMatchesEncodingJSON(t *testing.T) {
+	texts := []string{"", "plain", `q"uo\te`, "<a href='x'>&amp;</a>", "tab\tnl\ncr\rbs\bff\f", "\x00\x01\x1f\x7f",
+		"漢字 ✓ 🙂", "\u2028\u2029", "bad \xff\xfe utf8 \xe2\x82", "\xed\xa0\x80 surrogate"}
+	for c := range 256 {
+		texts = append(texts, string([]byte{byte(c)}), "a"+string([]byte{byte(c)})+"b")
+	}
+	for i, text := range texts {
+		checkLineEvent(t, terminal.Line{Seq: int64(i) * 1e9, Text: text, At: time.Date(2026, 1, 2, 3, 4, 5, i, time.FixedZone("x", -4*3600))})
+	}
+	checkLineEvent(t, terminal.Line{Seq: 0, Text: "now", At: time.Now()})
+}
+
+func FuzzLineEvent(f *testing.F) {
+	f.Add(int64(3), "a<b>\"c\xff\u2028", int64(1700000000123456789))
+	f.Fuzz(func(t *testing.T, seq int64, text string, ns int64) {
+		checkLineEvent(t, terminal.Line{Seq: seq, Text: text, At: time.Unix(0, ns).UTC()})
+	})
+}
+
+func checkLineEvent(t *testing.T, l terminal.Line) {
+	t.Helper()
+	want, err := json.Marshal(l)
+	if err != nil {
+		t.Skip(err)
+	}
+	if got := appendLineEvent(nil, l); string(got) != "event: line\ndata: "+string(want)+"\n\n" {
+		t.Fatalf("line %+v:\n got %q\nwant %q", l, got, want)
+	}
+}
