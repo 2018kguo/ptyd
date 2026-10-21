@@ -53,8 +53,9 @@ const (
 )
 
 // Cell is one screen position. R is 0 for a blank, wideTail for the right
-// half of a double-width character, and clusterBase+i for a character with
-// combining marks (the Terminal's clusters[i]).
+// half of a double-width character, spacerHead for the blank a wide
+// character left at the end of a row it wrapped from, and clusterBase+i
+// for a character with combining marks (the Terminal's clusters[i]).
 type Cell struct {
 	R  rune
 	Fg Color

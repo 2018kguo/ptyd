@@ -104,7 +104,10 @@ func TestOracleRecordings(t *testing.T) {
 // oracleTokens is the alphabet of the differential fuzzer: sequences whose
 // meaning charmbracelet/x/vt and xterm agree on, so any difference is a
 // bug in one of the two emulators. Queries are left out (nothing reads
-// the oracle's replies).
+// the oracle's replies), and so are wide characters (the oracle loses them
+// at the right margin), scroll regions (DECSTBM homes the oracle's cursor
+// to the top margin, with or without origin mode), DECAWM off and insert
+// mode, where it departs from xterm.
 var oracleTokens = []string{
 	"a", "bc", "hello ", "xyz", "0123456789", " ", "é", "\r", "\n", "\r\n", "\b", "\t",
 	"\x1b[H", "\x1b[2;3H", "\x1b[5;1H", "\x1b[1;8H", "\x1b[A", "\x1b[2A", "\x1b[B", "\x1b[3B", "\x1b[C", "\x1b[4C", "\x1b[D", "\x1b[2D",
@@ -119,13 +122,14 @@ func FuzzOracle(f *testing.F) {
 	f.Add([]byte{0, 1, 2, 30, 14, 5, 6}, uint8(10), uint8(5))
 	f.Fuzz(func(t *testing.T, sel []byte, c, r uint8) {
 		cols, rows := 2+int(c%30), 1+int(r%10)
-		// Emulators disagree on what controls do to a pending wrap (the
-		// conformance suites cover it), so a CR clears it before any.
+		// Emulators disagree on what controls do to a pending wrap, and
+		// charmbracelet on the last column with autowrap off (the
+		// conformance suites cover both), so a CR comes first there.
 		var in []byte
 		term := New(cols, rows, Options{})
 		for _, b := range sel {
 			tok := oracleTokens[int(b)%len(oracleTokens)]
-			if term.cur.wrapPending && (tok[0] < 0x20 || tok[0] == 0x1b) {
+			if (term.cur.wrapPending || term.cur.x == cols-1) && (tok[0] < 0x20 || tok[0] == 0x1b) {
 				tok = "\r" + tok
 			}
 			term.Write([]byte(tok))

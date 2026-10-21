@@ -258,7 +258,7 @@ func stateOf(t *Terminal, withScrollback bool) string {
 		var lines [][]byte
 		for i, l := range t.sb[t.sbStart:] {
 			if !t.sbOpen || i < t.ScrollbackLen()-1 {
-				l = bytes.TrimRight(bytes.ReplaceAll(l, eraseLine, nil), " ")
+				l = normLine(l)
 			}
 			lines = append(lines, l)
 		}
@@ -332,6 +332,29 @@ func FuzzWrite(f *testing.F) {
 			t.Fatalf("repaint lines differ: %q vs %q", dst.Lines(), src.Lines())
 		}
 	})
+}
+
+// normLine renders a closed scrollback line on one wide row and lists its
+// cells without the trailing blanks, whatever their background (a line
+// cut from its continuation keeps blanks a replay need not recreate).
+func normLine(line []byte) []byte {
+	tmp := New(2*len(line)+2, 1, Options{ScrollbackLines: -1})
+	tmp.Write(line)
+	row := tmp.main[0]
+	end := len(row)
+	for end > 0 {
+		c := row[end-1]
+		if (c.R == 0 || c.R == ' ' || c.R == spacerHead) && c.A&^attrProtected == 0 && c.Fg == 0 && c.L == 0 {
+			end--
+			continue
+		}
+		break
+	}
+	var b []byte
+	for _, c := range row[:end] {
+		b = fmt.Appendf(b, "%q/%x/%x/%x/%q ", tmp.cellString(c), c.Fg, c.Bg, c.A, tmp.link(c.L))
+	}
+	return b
 }
 
 func lineDiff(got, want string) string {
