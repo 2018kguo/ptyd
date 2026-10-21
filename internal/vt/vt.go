@@ -212,7 +212,15 @@ func (t *Terminal) Write(p []byte) (int, error) {
 				continue
 			}
 			if c >= 0x80 {
-				t.utf8Start(c)
+				// Fast path: a complete, valid UTF-8 sequence. Anything
+				// else (invalid, or cut at the end of p) goes through
+				// the byte-at-a-time decoder.
+				if r, size := utf8.DecodeRune(p[i:]); size > 1 {
+					t.printRune(r)
+					i += size - 1
+				} else {
+					t.utf8Start(c)
+				}
 				continue
 			}
 		}
