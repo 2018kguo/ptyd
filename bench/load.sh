@@ -6,7 +6,8 @@ cd "$(dirname "$0")/.."
 out=$(cd "$(dirname "${1:-bench/load.jsonl}")" && pwd)/$(basename "${1:-bench/load.jsonl}")
 bin=$(mktemp -d)
 trap 'rm -rf "$bin"' EXIT
-go test -tags loadtest -c -o "$bin/load.test" ./internal/loadtest
+# Built with the daemon's PGO profile, as go build builds the daemon.
+go test -tags loadtest -c -pgo="$PWD/cmd/ptyd/default.pgo" -o "$bin/load.test" ./internal/loadtest
 run() {
 	env PTYD_LOAD_OUT="$out" "$@" "$bin/load.test" -test.run Load -test.timeout 10m >/dev/null 2>&1 ||
 		echo "scenario failed: $*" >&2
