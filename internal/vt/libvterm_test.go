@@ -229,7 +229,6 @@ func (r *lvRunner) command(line string) {
 		}
 		for _, m := range []struct{ seq, reason string }{
 			{"\x1b#3", gapDoubleW}, {"\x1b#4", gapDoubleW}, {"\x1b#6", gapDoubleW},
-			{"\x1b[1\"q", gapProtected}, {"\x1bV", gapProtected},
 			{"\x1b[?5h", "DECSCNM reverse video"},
 		} {
 			if strings.Contains(string(in), m.seq) {

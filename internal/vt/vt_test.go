@@ -165,7 +165,7 @@ var tokens = []string{
 	"\x1b7", "\x1b8", "\x1b[s", "\x1b[u", "\x1bM", "\x1bD", "\x1bE",
 	"\x1b(0", "\x1b(B", "\x1b)0", "\x0e", "\x0f", "lqk",
 	"\x1b]2;t\x07", "\x1b[?1h", "\x1b[?2004h", "\x1b[?1000h", "\x1b[?1006h", "\x1b[?1004h", "\x1b[?25l", "\x1b[?25h",
-	"\x1b[>3u", "\x1b[<u", "\x1b[?45h", "\x1b[?69h", "\x1b[?69l", "\x1b[2;4s", "\x1b[3;5s", "\x1b[?5h", "\x1b[?5l", "\x1b[?1045h", "\x1b[?45l", "\x1b[?1045l", "\x1b[3D", "\x1bH", "\x1b[g", "\x1b[3g", "\x1b[2Z", "\x1b[2I", "\u0301", "e\u0301\u0302", "\u200d", "\x1b*0", "\x1bn", "\x1bN", "\x1b[?1s", "\x1b[?7s", "\x1b[?7r", "\x1b[?1r", "\x1b[=5;1u", "\x1b[2 q", "\x1b=", "\x1b>", "\x1b[!p",
+	"\x1b[>3u", "\x1b[<u", "\x1b[?45h", "\x1b[1\"q", "\x1b[0\"q", "\x1bV", "\x1bW", "\x1b[?J", "\x1b[?1K", "\x1b[?2K", "\x1b[?69h", "\x1b[?69l", "\x1b[2;4s", "\x1b[3;5s", "\x1b[?5h", "\x1b[?5l", "\x1b[?1045h", "\x1b[?45l", "\x1b[?1045l", "\x1b[3D", "\x1bH", "\x1b[g", "\x1b[3g", "\x1b[2Z", "\x1b[2I", "\u0301", "e\u0301\u0302", "\u200d", "\x1b*0", "\x1bn", "\x1bN", "\x1b[?1s", "\x1b[?7s", "\x1b[?7r", "\x1b[?1r", "\x1b[=5;1u", "\x1b[2 q", "\x1b=", "\x1b>", "\x1b[!p",
 }
 
 func randomStream(rng *rand.Rand, n int) string {
@@ -220,7 +220,7 @@ func stateOf(t *Terminal, withScrollback bool) string {
 		cur.x = min(max(cur.x, t.left), t.right)
 		cur.y = min(max(cur.y, t.top), t.bot)
 	}
-	fmt.Fprintf(&b, "cur %+v region %d-%d margins %v %d-%d ss %d\n", cur, t.top, t.bot, t.lrmm, t.left, t.right, t.ss)
+	fmt.Fprintf(&b, "cur %+v region %d-%d margins %v %d-%d ss %d iso %v\n", cur, t.top, t.bot, t.lrmm, t.left, t.right, t.ss, t.protISO)
 	slot := 0
 	if t.altActive {
 		slot = 1

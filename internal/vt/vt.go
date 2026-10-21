@@ -41,6 +41,10 @@ const (
 	attrHidden
 	attrStrike
 	attrOverline
+	// attrProtected marks a character selective erase (DECSED, DECSEL,
+	// and after SPA also ED, EL, ECH) leaves alone. It is set by DECSCA or
+	// SPA, not by SGR.
+	attrProtected
 	// The underline style (0 none, 1 single, 2 double, 3 curly, 4 dotted,
 	// 5 dashed) lives in the top bits.
 	ulShift      = 12
@@ -106,6 +110,7 @@ type Terminal struct {
 	top, bot          int            // scroll region, inclusive
 	left, right       int            // left and right margins, inclusive
 	lrmm              bool           // DECLRMM: left and right margins enabled
+	protISO           bool           // protection was last set by SPA (ISO), not DECSCA
 	ss                uint8          // pending single shift (2 or 3)
 	x                 *extra         // state few programs use, nil until one does
 
@@ -560,6 +565,10 @@ func (t *Terminal) escDispatch(c byte) {
 	case 'M':
 		t.cur.wrapPending = false
 		t.reverseIndex()
+	case 'V': // SPA
+		t.protect(true, true)
+	case 'W': // EPA
+		t.protect(false, true)
 	case 'N':
 		t.ss = 2
 	case 'O':
@@ -672,9 +681,9 @@ func (t *Terminal) csiDispatch(c byte) {
 				}
 			}
 		case 'J':
-			t.eraseDisplay(t.param(0, 0))
+			t.eraseDisplay(t.param(0, 0), true)
 		case 'K':
-			t.eraseLine(t.param(0, 0))
+			t.eraseLine(t.param(0, 0), true)
 		}
 		return
 	case '>':
@@ -722,6 +731,11 @@ func (t *Terminal) csiDispatch(c byte) {
 	case '!':
 		if c == 'p' {
 			t.softReset()
+		}
+		return
+	case '"':
+		if c == 'q' { // DECSCA
+			t.protect(t.param(0, 0) == 1, false)
 		}
 		return
 	default:
@@ -780,9 +794,9 @@ func (t *Terminal) csiDispatch(c byte) {
 			t.ext().tabs = make([]uint64, (t.cols+63)/64)
 		}
 	case 'J':
-		t.eraseDisplay(t.param(0, 0))
+		t.eraseDisplay(t.param(0, 0), false)
 	case 'K':
-		t.eraseLine(t.param(0, 0))
+		t.eraseLine(t.param(0, 0), false)
 	case 'L':
 		t.insertLines(t.param(0, 1))
 	case 'M':
@@ -792,7 +806,7 @@ func (t *Terminal) csiDispatch(c byte) {
 	case 'X':
 		n := min(t.param(0, 1), t.cols-t.cur.x)
 		t.cur.wrapPending = false
-		t.fillCells(t.cur.y, t.cur.x, t.cur.x+n)
+		t.erase(t.cur.y, t.cur.x, t.cur.x+n, t.protISO)
 		t.setWrap(t.cur.y, false) // as ghostty: the row no longer wraps
 	case 'S':
 		t.scrollUp(t.top, t.bot, t.param(0, 1))
@@ -847,6 +861,7 @@ func (t *Terminal) softReset() {
 	t.cur.origin = false
 	t.autowrap = true
 	t.revWrap, t.revWrapExt = false, false
+	t.protISO = false
 	t.appCursor = false
 	t.appKeypad = false
 	t.top, t.bot, t.left, t.right = 0, t.rows-1, 0, t.cols-1
@@ -1544,31 +1559,81 @@ func (t *Terminal) fixWide(row []Cell) {
 	}
 }
 
-func (t *Terminal) eraseDisplay(mode int) {
+// eraseDisplay is ED, or DECSED when selective.
+func (t *Terminal) eraseDisplay(mode int, selective bool) {
 	t.cur.wrapPending = false
+	keep := selective || t.protISO // leave protected characters
 	switch mode {
 	case 0:
-		t.fillCells(t.cur.y, t.cur.x, t.cols)
-		t.eraseRows(t.cur.y+1, t.rows)
+		t.erase(t.cur.y, t.cur.x, t.cols, keep)
+		t.eraseFull(t.cur.y+1, t.rows, keep)
 	case 1:
-		t.eraseRows(0, t.cur.y)
-		t.fillCells(t.cur.y, 0, t.cur.x+1)
+		t.eraseFull(0, t.cur.y, keep)
+		t.erase(t.cur.y, 0, t.cur.x+1, keep)
 	case 2:
-		t.clearScreen()
+		t.eraseFull(0, t.rows, keep)
 	case 3:
-		t.ClearScrollback()
+		if !selective {
+			t.ClearScrollback()
+		}
 	}
 }
 
-func (t *Terminal) eraseLine(mode int) {
+// eraseLine is EL, or DECSEL when selective.
+func (t *Terminal) eraseLine(mode int, selective bool) {
 	t.cur.wrapPending = false
+	keep := selective || t.protISO
 	switch mode {
 	case 0:
-		t.fillCells(t.cur.y, t.cur.x, t.cols)
+		t.erase(t.cur.y, t.cur.x, t.cols, keep)
 	case 1:
-		t.fillCells(t.cur.y, 0, t.cur.x+1)
+		t.erase(t.cur.y, 0, t.cur.x+1, keep)
 	case 2:
-		t.eraseRows(t.cur.y, t.cur.y+1)
+		t.eraseFull(t.cur.y, t.cur.y+1, keep)
+	}
+}
+
+// eraseFull erases rows [from, to); with keep, protected characters stay.
+func (t *Terminal) eraseFull(from, to int, keep bool) {
+	if !keep {
+		t.eraseRows(from, to)
+		return
+	}
+	for y := from; y < to; y++ {
+		t.erase(y, 0, t.cols, true)
+	}
+}
+
+// erase erases cells [from, to) of row y; with keep, protected
+// characters stay.
+func (t *Terminal) erase(y, from, to int, keep bool) {
+	row := t.screen()[y]
+	if !keep || row == nil {
+		t.fillCells(y, from, to)
+		return
+	}
+	for x := max(from, 0); x < min(to, t.cols); {
+		if row[x].A&attrProtected != 0 {
+			x++
+			continue
+		}
+		end := x + 1
+		for end < min(to, t.cols) && row[end].A&attrProtected == 0 {
+			end++
+		}
+		t.fillCells(y, x, end)
+		x = end
+	}
+}
+
+// protect sets whether characters printed from now on are protected,
+// by DECSCA or (iso) SPA/EPA.
+func (t *Terminal) protect(on, iso bool) {
+	if on {
+		t.cur.pen.A |= attrProtected
+		t.protISO = iso
+	} else {
+		t.cur.pen.A &^= attrProtected
 	}
 }
 
@@ -1731,7 +1796,7 @@ func (t *Terminal) resizeTabs(oldCols int) {
 
 func (t *Terminal) sgr() {
 	if t.nparams == 0 {
-		t.cur.pen = Cell{}
+		t.cur.pen = Cell{A: t.cur.pen.A & attrProtected}
 		return
 	}
 	p := &t.cur.pen
@@ -1744,7 +1809,7 @@ func (t *Terminal) sgr() {
 		}
 		switch {
 		case v == 0:
-			*p = Cell{}
+			*p = Cell{A: p.A & attrProtected}
 		case v == 1:
 			p.A |= attrBold
 		case v == 2:

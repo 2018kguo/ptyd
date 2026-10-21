@@ -87,7 +87,12 @@ func (t *Terminal) appendRow(b []byte, row []Cell, trim bool) []byte {
 			continue
 		}
 		if s := styleOf(c); s != style {
-			b = appendSGR(b, s)
+			if (s.A^style.A)&attrProtected != 0 {
+				b = appendProtect(b, s.A&attrProtected != 0)
+			}
+			if (s.A^style.A)&^attrProtected != 0 || s.Fg != style.Fg || s.Bg != style.Bg {
+				b = appendSGR(b, s)
+			}
 			style = s
 		}
 		switch {
@@ -99,10 +104,21 @@ func (t *Terminal) appendRow(b []byte, row []Cell, trim bool) []byte {
 			b = utf8.AppendRune(b, c.R)
 		}
 	}
-	if style != (Cell{}) {
+	if style.A&attrProtected != 0 {
+		b = appendProtect(b, false)
+	}
+	if style.A&^attrProtected != 0 || style.Fg != 0 || style.Bg != 0 {
 		b = append(b, "\x1b[0m"...)
 	}
 	return b
+}
+
+// appendProtect appends DECSCA, turning character protection on or off.
+func appendProtect(b []byte, on bool) []byte {
+	if on {
+		return append(b, "\x1b[1\"q"...)
+	}
+	return append(b, "\x1b[0\"q"...)
 }
 
 // appendWrapped appends a row that continues on next: all its cells (blanks
@@ -156,7 +172,7 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 	b := make([]byte, 0, 256+t.rows*(t.cols+16))
 	// Synchronized update, normalize the receiving terminal, hide the
 	// cursor while painting.
-	b = append(b, "\x1b[?2026h\x1b[?1049l\x1b[?5l\x1b[?69l\x1b[0m\x1b[r\x1b[?6l\x1b[?7h\x1b[4l\x1b(B\x1b)B\x1b*B\x1b+B\x0f\x1b[?25l\x1b[H\x1b[2J"...)
+	b = append(b, "\x1b[?2026h\x1b[?1049l\x1b[?5l\x1b[?69l\x1b[0\"q\x1b[0m\x1b[r\x1b[?6l\x1b[?7h\x1b[4l\x1b(B\x1b)B\x1b*B\x1b+B\x0f\x1b[?25l\x1b[H\x1b[2J"...)
 	sbOpen := false
 	if withScrollback {
 		lines := t.sb[t.sbStart:]
@@ -227,8 +243,10 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 			b = appendCUP(b, s.y, s.x)
 		}
 		b = appendSGR(b, s.pen)
+		b = appendProtect(b, s.pen.A&attrProtected != 0)
 		b = appendCharsets(b, s.cursor)
 		b = append(b, "\x1b7"...)
+		b = appendProtect(b, false)
 		if s.origin {
 			b = append(b, "\x1b[?6l"...)
 		}
@@ -281,6 +299,14 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 		b = appendCUP(b, y, x)
 	}
 	b = appendSGR(b, t.cur.pen)
+	switch prot := t.cur.pen.A&attrProtected != 0; {
+	case t.protISO && prot:
+		b = append(b, "\x1bV"...)
+	case t.protISO:
+		b = append(b, "\x1bV\x1bW"...) // ISO protection mode, nothing protected
+	case prot:
+		b = appendProtect(b, true)
+	}
 	b = appendCharsets(b, t.cur)
 	if t.ss != 0 {
 		b = append(b, 0x1b, 'L'+t.ss) // SS2 is ESC N, SS3 ESC O
