@@ -168,8 +168,14 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 			if row == nil {
 				continue
 			}
+			// A blank row (allocated, then erased) is skipped like an
+			// unallocated one.
+			n := len(b)
 			b = appendCUP(b, y, 0)
-			b = appendRow(b, row, true)
+			m := len(b)
+			if b = appendRow(b, row, true); len(b) == m {
+				b = b[:n]
+			}
 		}
 	}
 	if t.top != 0 || t.bot != t.rows-1 {

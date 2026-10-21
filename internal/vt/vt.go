@@ -762,15 +762,24 @@ func (t *Terminal) clearScreen() {
 // eraseRows erases rows [from, to), reusing rows already allocated.
 func (t *Terminal) eraseRows(from, to int) {
 	scr := t.screen()
-	blank := Cell{Bg: t.cur.pen.Bg}
 	for y := from; y < to; y++ {
 		if row := scr[y]; row != nil {
-			for x := range row {
-				row[x] = blank
-			}
+			t.blank(row)
 		} else {
 			scr[y] = t.blankRow()
 		}
+	}
+}
+
+// blank erases row in place with the current background.
+func (t *Terminal) blank(row []Cell) {
+	if t.cur.pen.Bg == 0 {
+		clear(row)
+		return
+	}
+	blank := Cell{Bg: t.cur.pen.Bg}
+	for x := range row {
+		row[x] = blank
 	}
 }
 
@@ -942,24 +951,41 @@ func (t *Terminal) scrollUp(top, bot, n int) {
 			t.pushScrollback(row)
 		}
 	}
-	// Rotate the rows leaving the top to the bottom and reuse them, so a
-	// scrolling program does not allocate a row per line.
+	t.rotate(top, bot, n)
+}
+
+// rotate moves rows top..bot up by n rows (down by -n), 0 < |n| <=
+// bot-top+1. The rows that leave at one end come back blank at the other,
+// so programs that scroll, insert, delete and erase lines all the time
+// do not allocate a row each time.
+func (t *Terminal) rotate(top, bot, n int) {
+	scr := t.screen()
+	up := n > 0
+	n = max(n, -n)
+	// The rows leaving, kept to be reused (a small batch suffices for
+	// the common one-line case without allocating).
 	var spare [8][]Cell
 	recycled := spare[:0]
 	if n <= len(spare) {
-		recycled = append(recycled, scr[top:top+n]...)
-	}
-	copy(scr[top:], scr[top+n:bot+1])
-	for i, y := 0, bot-n+1; y <= bot; i, y = i+1, y+1 {
-		if i < len(recycled) && recycled[i] != nil {
-			row := recycled[i]
-			blank := Cell{Bg: t.cur.pen.Bg}
-			for x := range row {
-				row[x] = blank
-			}
-			scr[y] = row
+		if up {
+			recycled = append(recycled, scr[top:top+n]...)
 		} else {
-			scr[y] = t.blankRow()
+			recycled = append(recycled, scr[bot-n+1:bot+1]...)
+		}
+	}
+	in := scr[top : top+n] // where blank rows come in
+	if up {
+		copy(scr[top:], scr[top+n:bot+1])
+		in = scr[bot-n+1 : bot+1]
+	} else {
+		copy(scr[top+n:bot+1], scr[top:bot+1-n])
+	}
+	for i := range in {
+		if i < len(recycled) && recycled[i] != nil {
+			t.blank(recycled[i])
+			in[i] = recycled[i]
+		} else {
+			in[i] = t.blankRow()
 		}
 	}
 }
@@ -969,11 +995,7 @@ func (t *Terminal) scrollDown(top, bot, n int) {
 	if n <= 0 {
 		return
 	}
-	scr := t.screen()
-	copy(scr[top+n:bot+1], scr[top:bot+1-n])
-	for y := top; y < top+n; y++ {
-		scr[y] = t.blankRow()
-	}
+	t.rotate(top, bot, -n)
 }
 
 func (t *Terminal) insertLines(n int) {
@@ -988,11 +1010,8 @@ func (t *Terminal) deleteLines(n int) {
 	if t.cur.y < t.top || t.cur.y > t.bot {
 		return
 	}
-	n = min(n, t.bot-t.cur.y+1)
-	scr := t.screen()
-	copy(scr[t.cur.y:], scr[t.cur.y+n:t.bot+1])
-	for y := t.bot - n + 1; y <= t.bot; y++ {
-		scr[y] = t.blankRow()
+	if n = min(n, t.bot-t.cur.y+1); n > 0 {
+		t.rotate(t.cur.y, t.bot, n)
 	}
 	t.cur.x, t.cur.wrapPending = 0, false
 }
@@ -1069,7 +1088,7 @@ func (t *Terminal) eraseLine(mode int) {
 	case 1:
 		t.fillCells(t.cur.y, 0, t.cur.x+1)
 	case 2:
-		t.screen()[t.cur.y] = t.blankRow()
+		t.eraseRows(t.cur.y, t.cur.y+1)
 	}
 }
 
@@ -1296,7 +1315,7 @@ func (t *Terminal) Resize(cols, rows int) {
 			}
 			scr[y] = row
 		}
-		for len(scr) > rows && len(scr)-1 > *cy && scr[len(scr)-1] == nil {
+		for len(scr) > rows && len(scr)-1 > *cy && zeroRow(scr[len(scr)-1]) {
 			scr = scr[:len(scr)-1]
 		}
 		if extra := len(scr) - rows; extra > 0 {
@@ -1365,6 +1384,17 @@ func (t *Terminal) ArchiveScreen() {
 func rowBlank(row []Cell) bool {
 	for _, c := range row {
 		if c != (Cell{}) && !(c.R == ' ' && c.Fg == 0 && c.Bg == 0 && c.A == 0) {
+			return false
+		}
+	}
+	return true
+}
+
+// zeroRow reports whether row is blank in the default style (nil rows
+// are).
+func zeroRow(row []Cell) bool {
+	for _, c := range row {
+		if c != (Cell{}) {
 			return false
 		}
 	}

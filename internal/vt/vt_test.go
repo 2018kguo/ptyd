@@ -288,3 +288,31 @@ func lineDiff(got, want string) string {
 	}
 	return b.String()
 }
+
+// Redrawing lines in place (erase, cursor moves, insert and delete lines,
+// as TUIs do every frame) reuses the screen's rows: no allocation once
+// every row has been drawn on.
+func TestRedrawDoesNotAllocate(t *testing.T) {
+	term := New(80, 24, Options{})
+	frame := []byte(strings.Repeat("\x1b[2K\x1b[1A", 10) + "\x1b[2K\x1b[G" +
+		strings.Repeat("\x1b[1;38;2;200;100;50mredrawn line\x1b[0m\r\n", 10) +
+		"\x1b[5;1H\x1b[2L\x1b[3M\x1b[J\x1b[2;24r\x1b[24;1H\x1b[S\x1b[T\n\x1b[r")
+	term.Write([]byte("\x1b[24;1H" + strings.Repeat("\r\n", 30))) // scroll every row into use
+	for y := range 24 {
+		term.Write(fmt.Appendf(nil, "\x1b[%d;1Hx", y+1))
+	}
+	term.Write(frame)
+	if n := testing.AllocsPerRun(100, func() { term.Write(frame) }); n != 0 {
+		t.Fatalf("a redraw frame allocates %v times", n)
+	}
+}
+
+// Shrinking the screen drops blank rows below the cursor first, also
+// rows that were drawn on and then erased.
+func TestResizeDropsErasedRowsFirst(t *testing.T) {
+	term := feed(10, 6, "top\r\nmid\r\nlow\r\nx\x1b[3;1H\x1b[J\x1b[2;4H")
+	term.Resize(10, 3)
+	if got := term.Lines(); !slices.Equal(got, []string{"top", "mid", ""}) || term.ScrollbackLen() != 0 {
+		t.Fatalf("lines %q, %d scrollback lines", got, term.ScrollbackLen())
+	}
+}
