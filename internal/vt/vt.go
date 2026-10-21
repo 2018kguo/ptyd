@@ -212,21 +212,31 @@ func (t *Terminal) Write(p []byte) (int, error) {
 				continue
 			}
 			if c >= 0x80 {
-				// Fast path: a complete, valid UTF-8 sequence. Anything
-				// else (invalid, or cut at the end of p) goes through
-				// the byte-at-a-time decoder.
-				if r, size := utf8.DecodeRune(p[i:]); size > 1 {
-					t.printRune(r)
-					i += size - 1
-				} else {
-					t.utf8Start(c)
-				}
+				i += t.printUTF8(p[i:]) - 1
 				continue
 			}
 		}
 		t.step(c)
 	}
 	return len(p), nil
+}
+
+// printUTF8 prints the run of non-ASCII characters at the start of p
+// (p[0] >= 0x80) and returns how many bytes it consumed. Complete, valid
+// sequences are decoded at once; anything else (invalid, or cut at the
+// end of p) goes through the byte-at-a-time decoder, which ends the run.
+func (t *Terminal) printUTF8(p []byte) int {
+	i := 0
+	for i < len(p) && p[i] >= 0x80 {
+		r, size := utf8.DecodeRune(p[i:])
+		if size == 1 {
+			t.utf8Start(p[i])
+			return i + 1
+		}
+		t.printRune(r)
+		i += size
+	}
+	return i
 }
 
 func (t *Terminal) utf8Start(c byte) {
