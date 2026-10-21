@@ -391,7 +391,7 @@ func (r *lvRunner) cellChars(row, col int) string {
 		return ""
 	}
 	c := r.term.cellAt(col, row)
-	if c.R == 0 || c.R == wideTail {
+	if c.R == 0 || c.R == wideTail || c.R == spacerHead {
 		return ""
 	}
 	return r.term.cellString(c)
@@ -409,7 +409,7 @@ func (r *lvRunner) getChars(r0, c0, r1, c1 int) string {
 			}
 			c := r.term.cellAt(col, row)
 			switch c.R {
-			case 0:
+			case 0, spacerHead:
 				pad++
 			case wideTail:
 			default:
@@ -602,7 +602,7 @@ func lvAttrs(a Attr) string {
 func (r *lvRunner) screenCell(row, col int) string {
 	c := r.term.cellAt(col, row)
 	var chars []string
-	if c.R != 0 && c.R != wideTail {
+	if c.R > 0 {
 		for _, ch := range r.term.cellString(c) {
 			chars = append(chars, fmt.Sprintf("0x%x", ch))
 		}

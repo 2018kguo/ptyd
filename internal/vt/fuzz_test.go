@@ -3,6 +3,7 @@ package vt
 import (
 	"bytes"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -57,7 +58,7 @@ func (t *Terminal) checkInvariants() string {
 					if t.runeWidth(c.R) == 2 && (x+1 >= t.cols || row[x+1].R != wideTail) {
 						fail("%s %d,%d: wide character without its right half", name, x, y)
 					}
-				case c.R < 0:
+				case c.R < 0 && c.R != spacerHead:
 					fail("%s %d,%d: bad rune %d", name, x, y, c.R)
 				}
 			}
@@ -203,11 +204,7 @@ func checkRepaint(t *testing.T, src *Terminal) {
 			// (A one-column terminal cannot show the wide characters of
 			// lines it scrolled away when wider.)
 			if sb && cols > 1 {
-				// Lines scrolled away at another width rewrap on replay, and
-				// a wide character that wraps leaves a blank at the end of
-				// the row (kept in the line as a space): compare the text
-				// without spaces.
-				if got, want := noSpaces(dst.ScrollbackLines()), noSpaces(src.ScrollbackLines()); !slices.Equal(got, want) {
+				if got, want := dst.ScrollbackLines(), src.ScrollbackLines(); !slices.Equal(got, want) {
 					t.Fatalf("repaint scrollback\n got  %q\n want %q", got, want)
 				}
 				if dst.sbOpen != src.sbOpen {
@@ -247,3 +244,66 @@ func noSpaces(lines []string) []string {
 }
 
 func readTestdata(name string) ([]byte, error) { return os.ReadFile(filepath.Join("testdata", name)) }
+
+// TestRecordings replays real program sessions (testdata/*.raw, recorded
+// at 100x30; see record_test.go) cut at many points and checks the
+// invariants and the Repaint round trip there, then resizes narrower and
+// wider (reflowing the main screen) and checks again.
+func TestRecordings(t *testing.T) {
+	paths, _ := filepath.Glob("testdata/*.raw")
+	for _, p := range paths {
+		in, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for cut := 0; cut <= len(in); cut += max(len(in)/40, 1) {
+			term := New(100, 30, Options{})
+			term.Write(in[:cut])
+			if msg := term.checkInvariants(); msg != "" {
+				t.Fatalf("%s[:%d]: %s", p, cut, msg)
+			}
+			dst := New(100, 30, Options{})
+			dst.Write(term.Repaint(true))
+			if got, want := state(dst), state(term); got != want {
+				t.Fatalf("%s[:%d]: repaint differs:\n%s", p, cut, lineDiff(got, want))
+			}
+			for _, size := range [][2]int{{61, 17}, {37, 40}, {100, 30}, {133, 12}} {
+				term.Resize(size[0], size[1])
+				if msg := term.checkInvariants(); msg != "" {
+					t.Fatalf("%s[:%d] at %v: %s", p, cut, size, msg)
+				}
+				checkRepaint(t, term)
+			}
+		}
+	}
+}
+
+// Narrowing and widening back gives the original screen and scrollback
+// for plain output: every line rewraps and comes back whole.
+func TestReflowRoundTrip(t *testing.T) {
+	rng := rand.New(rand.NewPCG(3, 4))
+	words := []string{"a", "bb", "ccc", "漢字", "é", "dddd", "🙂", "eeeee", "\x1b[31mred\x1b[m", "\x1b[44mbg\x1b[m"}
+	for i := range 1000 {
+		cols, rows := 10+rng.IntN(30), 3+rng.IntN(10)
+		term := New(cols, rows, Options{})
+		for range rng.IntN(30) {
+			for range rng.IntN(12) {
+				term.Write([]byte(words[rng.IntN(len(words))] + " "))
+			}
+			term.Write([]byte("\r\n"))
+		}
+		lines, sb := term.Lines(), term.ScrollbackLines()
+		cur := [2]int{term.cur.x, term.cur.y}
+		narrow := 2 + rng.IntN(cols-2)
+		term.Resize(narrow, rows+rng.IntN(5)-2)
+		if msg := term.checkInvariants(); msg != "" {
+			t.Fatalf("case %d: %s", i, msg)
+		}
+		term.Resize(cols, rows)
+		if !slices.Equal(term.Lines(), lines) || !slices.Equal(term.ScrollbackLines(), sb) ||
+			cur != [2]int{term.cur.x, term.cur.y} {
+			t.Fatalf("case %d (%dx%d via %d): lines\n%q\nwant\n%q\nscrollback\n%q\nwant\n%q\ncursor %d,%d want %v",
+				i, cols, rows, narrow, term.Lines(), lines, term.ScrollbackLines(), sb, term.cur.x, term.cur.y, cur)
+		}
+	}
+}

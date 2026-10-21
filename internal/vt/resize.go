@@ -229,13 +229,13 @@ func (t *Terminal) rewrap(scr [][]Cell, wrap []bool, oldCols, cols int, pts []po
 			n := len(row)
 			// A blank left at the end of a row because the wide character
 			// after it did not fit is not part of the line.
-			if r < e && row[n-1] == (Cell{}) && scr[r+1] != nil && len(scr[r+1]) > 1 && scr[r+1][1].R == wideTail {
+			if r < e && row[n-1].R == spacerHead {
 				n--
 			}
 			cells = append(cells, row[:n]...)
 		}
 		length := len(cells)
-		for length > 0 && cells[length-1] == (Cell{}) {
+		for length > 0 && isZero(cells[length-1]) {
 			length--
 		}
 		// Offsets of the points on this line.
@@ -270,6 +270,9 @@ func (t *Terminal) rewrap(scr [][]Cell, wrap []bool, oldCols, cols int, pts []po
 				c, w = Cell{Fg: c.Fg, Bg: c.Bg, A: c.A}, 1
 			}
 			if col+w > cols {
+				if col == cols-1 && w == 2 {
+					row[col] = Cell{R: spacerHead, Bg: c.Bg}
+				}
 				out = append(out, row)
 				outWrap = append(outWrap, true)
 				row = make([]Cell, cols)
@@ -359,7 +362,7 @@ func (t *Terminal) popScrollback(n int) ([][]Cell, []bool) {
 func (t *Terminal) popLine() ([][]Cell, []bool) {
 	last := len(t.sb) - 1
 	line := t.sb[last]
-	open := t.sbOpen
+	open, spacer := t.sbOpen, t.sbSpacer
 	t.sb[last] = nil
 	t.sb = t.sb[:last]
 	t.sbBytes -= len(line) + 24
@@ -369,6 +372,9 @@ func (t *Terminal) popLine() ([][]Cell, []bool) {
 	}
 	rows, wraps := t.parseLine(line)
 	wraps[len(wraps)-1] = open
+	if r := rows[len(rows)-1]; open && spacer && r != nil && r[t.cols-1] == (Cell{}) {
+		r[t.cols-1].R = spacerHead // left out of the line, see pushScrollback
+	}
 	return rows, wraps
 }
 

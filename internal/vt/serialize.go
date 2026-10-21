@@ -78,7 +78,7 @@ func (t *Terminal) appendRow(b []byte, row []Cell, trim bool) []byte {
 	}
 	end := len(row)
 	if trim {
-		for end > 0 && row[end-1] == (Cell{}) {
+		for end > 0 && isZero(row[end-1]) {
 			end--
 		}
 	}
@@ -100,7 +100,7 @@ func (t *Terminal) appendRow(b []byte, row []Cell, trim bool) []byte {
 			style = s
 		}
 		switch {
-		case c.R == 0:
+		case c.R == 0, c.R == spacerHead:
 			b = append(b, ' ')
 		case c.R >= clusterBase:
 			b = append(b, t.x.clusters[c.R-clusterBase]...)
@@ -205,6 +205,11 @@ func (t *Terminal) Repaint(withScrollback bool) []byte {
 	// The main screen flows in as lines, so with scrollback above it ends
 	// up exactly on screen. A full-width last row leaves a pending wrap,
 	// never a scroll.
+	if sbOpen && t.sbSpacer && !startsWide(t.main[0]) {
+		// The line left out a spacer head, but row 0 no longer starts with
+		// the wide character that made it: keep the column.
+		b = append(b, ' ')
+	}
 	b = t.appendScreen(b, t.main, t.mainWrap, sbOpen, false)
 	if t.altActive {
 		// Enter the alternate screen from the main screen's saved cursor so
@@ -444,7 +449,7 @@ func (t *Terminal) rowText(row []Cell) string {
 	for _, c := range row {
 		switch {
 		case c.R == wideTail:
-		case c.R == 0:
+		case c.R == 0, c.R == spacerHead:
 			sb.WriteByte(' ')
 		case c.R >= clusterBase:
 			sb.WriteString(t.x.clusters[c.R-clusterBase])

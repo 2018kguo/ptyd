@@ -64,7 +64,10 @@ type Cell struct {
 }
 
 const (
-	wideTail    rune = -1
+	wideTail rune = -1
+	// spacerHead is the blank left at the end of a row when a wide
+	// character did not fit there and wrapped: not part of the text.
+	spacerHead  rune = -2
 	clusterBase rune = 0x40000000
 )
 
@@ -142,6 +145,7 @@ type Terminal struct {
 	sbMaxLines       int
 	sbMaxBytes       int
 	sbOpen           bool // the last line continues on screen row 0
+	sbSpacer         bool // ... after a spacer head left out of it
 	scratch          []byte
 
 	// parser
@@ -1159,6 +1163,9 @@ func (t *Terminal) print(r rune, w int) {
 			t.cur.x = max(edge+1-w, 0)
 		} else {
 			t.fillCells(t.cur.y, t.cur.x, edge+1)
+			if w == 2 && t.fullWidth() {
+				t.row(t.cur.y)[t.cur.x] = Cell{R: spacerHead, Bg: t.cur.pen.Bg}
+			}
 			t.wrapLine()
 			t.cur.x = t.left
 			if t.cur.x+w > t.right+1 {
@@ -2077,14 +2084,22 @@ func (t *Terminal) pushScrollback(row []Cell, wrapped bool, next []Cell) {
 		return
 	}
 	if wrapped {
-		// Kept whole, a blank a wide character left at the end included:
-		// the row below may still change, so leaving the blank out could
-		// make the line rewrap differently on replay.
-		t.scratch = t.appendWrapped(t.scratch[:0], row, nil)
+		// A spacer head at the end is left out: it is not text, and the
+		// wide character after it recreates it on replay at this width.
+		end := t.cols
+		if row != nil && row[end-1].R == spacerHead {
+			end--
+		}
+		if row == nil {
+			t.scratch = t.appendWrapped(t.scratch[:0], nil, nil)
+		} else {
+			t.scratch = t.appendRow(t.scratch[:0], row[:end], false)
+		}
 	} else {
 		t.scratch = t.appendRow(t.scratch[:0], row, true)
 	}
 	join := t.sbOpen && len(t.sb) > t.sbStart && len(t.sb[len(t.sb)-1])+len(t.scratch) <= maxLogicalLine
+	putBack := join && t.sbSpacer && !startsWide(row)
 	if join && !wrapped && contentEnd(row) < t.cols {
 		// Replayed, this row starts by wrapping, so something must be
 		// printed, and the wrap may scroll in a row painted in the current
@@ -2093,6 +2108,13 @@ func (t *Terminal) pushScrollback(row []Cell, wrapped bool, next []Cell) {
 			t.scratch = append(t.scratch, ' ')
 		}
 		t.scratch = append(t.scratch, "\x1b[K"...)
+	}
+	if putBack {
+		// The line left out a spacer head, but this row no longer starts
+		// with the wide character that made it: keep the column.
+		t.scratch = append(t.scratch, 0)
+		copy(t.scratch[1:], t.scratch)
+		t.scratch[0] = ' '
 	}
 	if n := len(t.sb); join {
 		line := append(t.sb[n-1], t.scratch...)
@@ -2107,6 +2129,7 @@ func (t *Terminal) pushScrollback(row []Cell, wrapped bool, next []Cell) {
 		t.sbBytes += len(line) + 24
 	}
 	t.sbOpen = wrapped
+	t.sbSpacer = wrapped && row != nil && row[t.cols-1].R == spacerHead
 	if len(t.scratch) > 4096 {
 		t.scratch = nil // do not keep a large buffer on an idle terminal
 	}
@@ -2134,7 +2157,7 @@ func (t *Terminal) ClearScrollback() {
 
 func rowBlank(row []Cell) bool {
 	for _, c := range row {
-		if c != (Cell{}) && !(c.R == ' ' && c.Fg == 0 && c.Bg == 0 && c.A == 0) {
+		if !isZero(c) && !(c.R == ' ' && c.Fg == 0 && c.Bg == 0 && c.A == 0) {
 			return false
 		}
 	}
@@ -2153,13 +2176,9 @@ func rowAt(scr [][]Cell, i int) []Cell {
 // the line: all of it, but for a blank left at its end because the wide
 // character starting next did not fit there.
 func (t *Terminal) wrapEnd(row, next []Cell) int {
-	if len(next) < 2 || next[1].R != wideTail {
-		return t.cols
-	}
-	// Replayed, the wide character wraps and erases that blank in its own
-	// background, so leave it out only if that recreates it.
-	blank := Cell{Bg: next[0].Bg}
-	if row == nil && blank == (Cell{}) || row != nil && row[t.cols-1] == blank {
+	// Replayed, the wide character wraps and leaves a spacer head in its
+	// own background, so leave it out only if that recreates it.
+	if row != nil && row[t.cols-1].R == spacerHead && startsWide(next) && row[t.cols-1].Bg == next[0].Bg {
 		return t.cols - 1
 	}
 	return t.cols
@@ -2169,17 +2188,24 @@ func (t *Terminal) wrapEnd(row, next []Cell) int {
 // blanks.
 func contentEnd(row []Cell) int {
 	end := len(row)
-	for end > 0 && row[end-1] == (Cell{}) {
+	for end > 0 && isZero(row[end-1]) {
 		end--
 	}
 	return end
 }
 
+// isZero reports whether c is a blank in the default style (a spacer
+// head is a blank).
+func isZero(c Cell) bool { return c == Cell{} || c == Cell{R: spacerHead} }
+
+// startsWide reports whether row starts with a wide character.
+func startsWide(row []Cell) bool { return len(row) > 1 && row[1].R == wideTail }
+
 // zeroRow reports whether row is blank in the default style (nil rows
 // are).
 func zeroRow(row []Cell) bool {
 	for _, c := range row {
-		if c != (Cell{}) {
+		if !isZero(c) {
 			return false
 		}
 	}

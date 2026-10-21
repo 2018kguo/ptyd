@@ -194,6 +194,7 @@ func stateOf(t *Terminal, withScrollback bool) string {
 				case c.R == wideTail:
 					s = "tail"
 					c = Cell{} // a right half shows its left half's style
+				case c.R == spacerHead:
 				case c.R != 0 && c.R != ' ':
 					s = strconv.Quote(t.cellString(c))
 				}
@@ -251,7 +252,20 @@ func stateOf(t *Terminal, withScrollback bool) string {
 	}
 	fmt.Fprintf(&b, "tabs %v xtsave %v revwrap %v %v reverse %v\n", tabs, saved, t.revWrap, t.revWrapExt, t.reverseVideo)
 	if withScrollback {
-		sb := bytes.Join(t.sb[t.sbStart:], []byte("\n"))
+		// A line cut off from its continuation (by scrolling down at the
+		// top) keeps the form of a wrapped row: trailing blanks and no
+		// erase; replayed, it comes back closed. Compare them alike.
+		var lines [][]byte
+		for i, l := range t.sb[t.sbStart:] {
+			if !t.sbOpen || i < t.ScrollbackLen()-1 {
+				l = bytes.TrimRight(bytes.ReplaceAll(l, eraseLine, nil), " ")
+			}
+			lines = append(lines, l)
+		}
+		sb := bytes.Join(lines, []byte("\n"))
+		if t.sbOpen && t.sbSpacer && !startsWide(t.main[0]) {
+			sb = append(sb, ' ') // what Repaint puts back
+		}
 		fmt.Fprintf(&b, "scrollback %q open %v\n", sb, t.sbOpen)
 	}
 	return b.String()

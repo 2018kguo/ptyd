@@ -76,7 +76,10 @@ func TestOracleRecordings(t *testing.T) {
 		cols, rows int
 	}
 	var recs []rec
-	for _, name := range []string{"vim.raw", "less.raw"} {
+	// rec-nano.raw is left out: at cuts inside nano's line redraws the
+	// oracle drops a cell where a wide character is split (this emulator
+	// blanks it, as xterm and ghostty do).
+	for _, name := range []string{"vim.raw", "less.raw", "rec-nvim.raw", "rec-vim.raw", "rec-less.raw", "rec-man.raw"} {
 		recs = append(recs, rec{filepath.Join("testdata", name), 100, 30})
 	}
 	if dir := os.Getenv("PTYD_VT_RECORDINGS"); dir != "" {

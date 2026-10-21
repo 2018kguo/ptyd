@@ -150,7 +150,7 @@ func (t *Terminal) alacrittyRow(y int) (string, string) {
 		if c.R == wideTail {
 			continue
 		}
-		if c.R == 0 {
+		if c.R == 0 || c.R == spacerHead {
 			text.WriteByte(' ')
 		} else {
 			text.WriteString(t.cellString(c))

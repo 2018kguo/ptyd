@@ -97,7 +97,7 @@ func (t *Terminal) cellAt(x, y int) Cell {
 func (t *Terminal) cellText(x, y int) string {
 	c := t.cellAt(x, y)
 	switch {
-	case c.R == 0 || c.R == wideTail:
+	case c.R == 0 || c.R == wideTail || c.R == spacerHead:
 		return ""
 	}
 	return t.cellString(c)
@@ -107,6 +107,9 @@ func (t *Terminal) cellText(x, y int) string {
 // a blank, wideTail for the right half of a wide character).
 func (t *Terminal) baseRune(x, y int) rune {
 	c := t.cellAt(x, y)
+	if c.R == spacerHead {
+		return 0
+	}
 	if c.R >= clusterBase {
 		r, _ := utf8.DecodeRuneInString(t.cellString(c))
 		return r
