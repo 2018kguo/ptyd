@@ -1,5 +1,7 @@
 # ptyd
 
+![ptyd demo: start a terminal, detach, kill -9 the daemon, restart and reattach](docs/demo.gif)
+
 `ptyd` is a small daemon that runs long-lived terminal sessions (PTYs) and
 lets other programs drive them over a local HTTP/JSON API. You can spawn a
 shell or any interactive program, type into it, read its output as
@@ -9,7 +11,7 @@ with a JSON API instead of a screen, meant for scripts, test harnesses and
 tools that need to operate interactive programs.
 
 ptyd also keeps track of what each terminal's window shows, so you can
-attach to it from a real terminal (`ptyd attach <id>`), and with
+attach to it from a real terminal (`ptyd new`, `ptyd attach`), and with
 `--persist-dir` the window survives a daemon restart, a `kill -9` of the
 daemon and a reboot. A terminal can be restored afterwards: its command
 started again, or, for Claude Code and Codex, the exact conversation it
@@ -27,26 +29,48 @@ on Linux and macOS.
 ## Quick start
 
 ```bash
-export PTYD_TOKEN=$(openssl rand -hex 16)
-ptyd &                      # listens on 127.0.0.1:4242
+ptyd &                  # start the daemon on 127.0.0.1:4242
+ptyd new                # a shell in this directory; you are now inside it
+                        # ... work, then press Ctrl-\ twice to detach
+ptyd new -d -n build -- make test   # start a command without attaching
+ptyd ls                 # what is running
+ptyd attach build       # by name, id, number (1 for term-1-ab12) or id prefix
+ptyd kill build
+```
 
-H="X-Ptyd-Token: $PTYD_TOKEN"
+```
+$ ptyd ls
+ID           NAME   STATUS   IDLE  ATTACHED  COMMAND
+term-1-3f2a  ptyd   running  4s    -         zsh
+term-2-9c01  build  exited 0 -     -         make test
+```
+
+`ptyd new [-n name] [-d] [--restore none|rerun|agent] [command [args...]]`
+starts `command` (default `$SHELL`) in the current directory, at the size of
+your window, with your `TERM`, `COLORTERM` and locale on top of the
+daemon's environment, then attaches. With `-d`, or when its output is not
+a terminal, it prints the new id instead. The name defaults to the command,
+or to the directory for a shell.
+
+Commands find the daemon at `$PTYD_ADDR` (default `127.0.0.1:4242`). The
+daemon always requires a token: `$PTYD_TOKEN` or `--token` if set, otherwise
+a random one. It saves the token where the commands find it (see
+[Security](#security)), so there is nothing to export. To use the API
+directly:
+
+```bash
+H="X-Ptyd-Token: $(ptyd token)"
 API=http://127.0.0.1:4242
 
-# start a shell
 ID=$(curl -sS -H "$H" -X POST $API/terminals \
   -d '{"name":"demo","command":"sh"}' | sed 's/.*"id":"\([^"]*\)".*/\1/')
-
-# type a command ("submit" appends a carriage return, like pressing Enter)
 curl -sS -H "$H" -X POST $API/terminals/$ID/write -d '{"data":"echo hi","submit":true}'
-
-# wait for the output, then read everything
 curl -sS -H "$H" -X POST $API/terminals/$ID/wait -d '{"pattern":"^hi$","timeout_seconds":5}'
 curl -sS -H "$H" $API/terminals/$ID/output
-
-# kill it
 curl -sS -H "$H" -X DELETE $API/terminals/$ID
 ```
+
+("submit" appends a carriage return, like pressing Enter.)
 
 ## API
 
@@ -60,7 +84,7 @@ has exited or is a ghost, or a restore was declined) or 413 (body over 1 MiB).
 | `GET` | `/metrics` | | Counters and uptime (JSON). No auth. |
 | `GET` | `/terminals` | `?tag=a,b` | List terminals, oldest first, optionally only those with any of the tags. |
 | `POST` | `/terminals` | see below | Start a terminal. Returns `201` and its metadata. |
-| `GET` | `/terminals/{id}` | | Metadata: status, pid, exit code, idle time, `latest_seq`, `pending`, watch events, and `restore`, `restored`, `notice`, `agent_session`. |
+| `GET` | `/terminals/{id}` | | Metadata: status, pid, exit code, idle time, `latest_seq`, `pending`, `attached` (clients), watch events, and `restore`, `restored`, `notice`, `agent_session`. |
 | `GET` | `/terminals/{id}/output` | `?since=N&tail=N` | Lines with `seq > since` (default: all retained), optionally only the last `tail`. |
 | `GET` | `/terminals/{id}/stream` | `?since=N` | Server-sent events: `line` per committed line, `end` when the terminal exits. |
 | `GET` | `/terminals/{id}/screen` | `?format=text\|ansi&scrollback=1` | The current window (see [Screen](#screen)). Works for ghosts. |
@@ -167,38 +191,53 @@ and control keys as `ctrl+c`, `c-c` or `^c`.
 ## Attach
 
 ```bash
-ptyd attach term-1-ab12            # Ctrl-\ twice to detach
+ptyd attach build                  # Ctrl-\ twice to detach
 ptyd attach --readonly term-1-ab12 # watch only
 ```
 
-`ptyd attach` connects your terminal to a terminal in the daemon, like
-`tmux attach`: it repaints the window (with its scrollback, so you can
-scroll back natively), then streams output live and sends your keys. It
-reads the address from `--addr` or `PTYD_ADDR` (default
-`127.0.0.1:4242`) and the token from `PTYD_TOKEN`.
+`ptyd attach` (and `ptyd new`) connects your terminal to a terminal in the
+daemon, like `tmux attach`: it repaints the window (with its scrollback,
+so you can scroll back natively), then streams output live and sends your
+keys. Ctrl-C, Ctrl-Z and every other key go to the program.
 
 - **Detach:** press **Ctrl-\\ twice** within a second. A single Ctrl-\\
   is passed to the program after that second (so a shell's SIGQUIT still
   works, just delayed). It is recognized in the kitty keyboard and
   modifyOtherKeys encodings too. Ctrl-\\ is not bound by Claude Code,
-  Codex, vim, less or shells beyond SIGQUIT. On detach (or when the
-  program exits) your terminal is restored: raw mode off, and modes the
-  program had switched on (alternate screen, mouse, bracketed paste,
-  kitty keyboard, hidden cursor...) reset.
-- **Size:** the most recent attacher's window size wins. Attaching
-  resizes the terminal to your window, and so does each resize of it
-  (SIGWINCH). `POST /resize` still works and also wins until the next one.
+  Codex, vim, less or shells beyond SIGQUIT.
+- **Your window afterwards:** raw mode is turned off and every mode the
+  program switched on is reset (alternate screen, mouse, bracketed paste,
+  application keys, kitty keyboard, hidden cursor, scroll region,
+  colors). On detach, the attached window scrolls into your scrollback
+  and you get a blank window with `[detached from NAME (ID)]` and your
+  prompt; what your window showed before attaching is in the scrollback
+  above it. When the program exits, its last window stays in view with
+  `[terminal exited (code N)]` below it, and `ptyd` exits with code N.
+  If the daemon goes away (even `kill -9`), the client says
+  `[lost the connection: ...]` and exits 1.
+
+  ptyd passes the program's output straight through rather than drawing
+  the window itself, so it cannot keep your shell's screen on the side
+  the way tmux does with the alternate screen: the program's own
+  alternate screen (vim, less) would switch it back. Scrolling the
+  window away keeps both your shell's history and the session in your
+  terminal's native scrollback instead.
+- **Size:** attaching resizes the terminal to your window, and so does
+  each resize of it (SIGWINCH). `POST /resize` still works and also wins
+  until the next one.
 - **Several clients** can attach at once; all see the output and all can
-  type.
+  type. The one that types gets its window size back if another client
+  changed it (tmux's `latest`).
 - **Slow clients never slow the program:** each client has a 1 MiB output
   queue; one that falls behind is sent a fresh repaint instead of the
   missed bytes.
-- **Ghosts** (see below) attach read-only and show their saved window.
+- **Ghosts** (see below) attach read-only: you get their saved window,
+  fitted to yours, and your prompt back.
 
 The protocol is `GET /terminals/{id}/attach` with `Connection: Upgrade`,
 `Upgrade: ptyd-attach` (and the token header). After `101 Switching
 Protocols` the server sends raw terminal output (EOF when the program's
-output ends); the client sends frames of a type byte, a 4-byte big-endian
+output ends, or right after a ghost's window); the client sends frames of a type byte, a 4-byte big-endian
 length and a payload: `i` with input bytes, or `r` with cols and rows as
 two big-endian uint16s.
 
@@ -334,12 +373,13 @@ further prompt lands in its transcript. It sends three one-word prompts.
 | Flag | Env | Default | Description |
 | --- | --- | --- | --- |
 | `--bind` | `PTYD_ADDR` | `127.0.0.1:4242` | Listen address. |
-| `--token` | `PTYD_TOKEN` | none | If set, every request except `/healthz` and `/metrics` must send it in the `X-Ptyd-Token` header. |
+| `--token` | `PTYD_TOKEN` | random | Every request except `/healthz` and `/metrics` must send it in the `X-Ptyd-Token` header. Saved for the CLI (see [Security](#security)). |
 | `--persist-dir` | `PTYD_PERSIST_DIR` | none | Keep each terminal's metadata and window here so they survive restarts (see [Persistence](#persistence)), and restore terminals on startup by their policy. |
 | `--log-dir` | `PTYD_LOG_DIR` | none | Mirror each live terminal's raw output to `<id>.log` (capped at 32 MiB, wraps; removed when the terminal ends). |
 | `--scrollback-bytes` | | `1048576` | Memory budget per terminal for retained output lines. |
 
-On SIGINT or SIGTERM, ptyd stops accepting requests, ends open streams and
+Plain `ptyd` runs the daemon; it ignores SIGHUP, so `ptyd &` outlives
+the window it was started from. On SIGINT or SIGTERM, ptyd stops accepting requests, ends open streams and
 waits, checkpoints every terminal's window, terminates every terminal's
 process group and exits.
 
@@ -406,10 +446,15 @@ revision) and `bench/load.sh` (end-to-end load test, build tag
 ptyd runs arbitrary commands as the user it runs as. Anyone who can reach
 the port can do the same.
 
-- Keep it bound to `127.0.0.1` (the default). ptyd warns at startup if it
-  listens elsewhere without a token.
-- Set a token whenever other users or containers share the host. Prefer
-  `PTYD_TOKEN` over `--token`, which is visible in `ps`.
+- Keep it bound to `127.0.0.1` (the default).
+- Every request needs the token, so other users on the host and web pages
+  posting to `127.0.0.1` cannot start commands. Without `PTYD_TOKEN` or
+  `--token` the daemon makes a random token at each start. It writes the
+  token to `$XDG_STATE_HOME/ptyd/token-<port>` (default
+  `~/.local/state/ptyd/`), mode 0600 in a 0700 directory, and removes it
+  on a clean stop. The `ptyd` commands and `scripts/ptyd-ctl.sh` read it
+  when `PTYD_TOKEN` is unset; an explicit `PTYD_TOKEN` always wins.
+- Prefer `PTYD_TOKEN` over `--token`, which is visible in `ps`.
 - `/healthz` and `/metrics` never require the token; metrics include the
   configured directory paths and terminal counts.
 - The token is a shared secret over plain HTTP. For remote access, tunnel
@@ -437,14 +482,15 @@ the port can do the same.
   ```
 
 Services start with a minimal `PATH`; set it in the unit so the commands you
-spawn can be found. To use a token, add `Environment=PTYD_TOKEN=...` (systemd)
-or a `PTYD_TOKEN` entry under `EnvironmentVariables` (launchd).
+spawn can be found. The service saves its token for the `ptyd` commands of
+the same user; to choose it, add `Environment=PTYD_TOKEN=...` (systemd) or a
+`PTYD_TOKEN` entry under `EnvironmentVariables` (launchd).
 
-## Command-line helper
+## Scripting helper
 
 [`scripts/ptyd-ctl.sh`](scripts/ptyd-ctl.sh) wraps the API (needs `bash`,
-`curl` and `python3`; uses `jq` if present). It reads `PTYD_API` (default
-`http://127.0.0.1:4242`) and `PTYD_TOKEN`.
+`curl` and `python3`; uses `jq` if present) for scripts. It reads `PTYD_API`
+(default `http://127.0.0.1:4242`) and `PTYD_TOKEN`, or the saved token.
 
 ```bash
 scripts/ptyd-ctl.sh create demo "$PWD" sh     # prints the new terminal
@@ -462,7 +508,8 @@ scripts/ptyd-ctl.sh help                     # all commands
 go test -race ./...
 ```
 
-The end-to-end tests in `cmd/ptyd` build the binary and `kill -9` it.
+The end-to-end tests in `cmd/ptyd` build the binary, drive the `ptyd`
+commands in real PTYs and `kill -9` the daemon.
 Agent restore is covered with fake `claude` and `codex` binaries (the
 test binary behind symlinks); no agent needs to be installed. The live
 check against real agents is `scripts/verify-agent-resume.sh`.
