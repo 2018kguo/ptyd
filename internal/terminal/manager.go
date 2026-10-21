@@ -869,16 +869,36 @@ func (m *Manager) Metrics() Metrics {
 	m.mu.RLock()
 	live := len(m.terms)
 	ghosts := len(m.ghosts)
-	perStatus := map[string]int{}
+	var running, exited, closed int
+	other := map[string]int{}
+	count := func(s Status) {
+		switch s {
+		case StatusRunning:
+			running++
+		case StatusExited:
+			exited++
+		case StatusClosed:
+			closed++
+		default:
+			other[string(s)]++
+		}
+	}
 	for _, t := range m.terms {
 		t.mu.Lock()
-		perStatus[string(t.info.Status)]++
+		s := t.info.Status
 		t.mu.Unlock()
+		count(s)
 	}
 	for _, g := range m.ghosts {
-		perStatus[string(g.Status)]++
+		count(g.Status)
 	}
 	m.mu.RUnlock()
+	perStatus := other
+	for s, n := range map[Status]int{StatusRunning: running, StatusExited: exited, StatusClosed: closed} {
+		if n > 0 {
+			perStatus[string(s)] = n
+		}
+	}
 	return Metrics{
 		StartedAt:      m.startedAt,
 		UptimeSeconds:  time.Since(m.startedAt).Seconds(),
