@@ -306,8 +306,9 @@ func replayTail(scr *vt.Terminal, path string) {
 		return
 	}
 	defer f.Close()
-	r := bufio.NewReader(f)
+	r := bufio.NewReaderSize(f, 64<<10)
 	var hdr [5]byte
+	var data []byte // reused: the emulator copies what it keeps
 	for {
 		if _, err := io.ReadFull(r, hdr[:]); err != nil {
 			return
@@ -316,7 +317,10 @@ func replayTail(scr *vt.Terminal, path string) {
 		if n > 2*maxTailBytes {
 			return
 		}
-		data := make([]byte, n)
+		if cap(data) < int(n) {
+			data = make([]byte, n)
+		}
+		data = data[:n]
 		if _, err := io.ReadFull(r, data); err != nil {
 			return
 		}
