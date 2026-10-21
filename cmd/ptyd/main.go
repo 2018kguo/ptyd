@@ -15,7 +15,13 @@ import (
 )
 
 func main() {
-	bind := flag.String("bind", "127.0.0.1:4242", "Address to bind (host:port). Use 0.0.0.0:4242 to expose on all interfaces.")
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "attach":
+			os.Exit(runAttach(os.Args[2:]))
+		}
+	}
+	bind := flag.String("bind", defaultAddr(), "Address to bind (host:port; default $PTYD_ADDR or 127.0.0.1:4242). Use 0.0.0.0:4242 to expose on all interfaces.")
 	token := flag.String("token", os.Getenv("PTYD_TOKEN"), "Auth token required as X-Ptyd-Token header (default $PTYD_TOKEN)")
 	logDir := flag.String("log-dir", os.Getenv("PTYD_LOG_DIR"), "Optional directory to mirror raw PTY output to <id>.log files (default $PTYD_LOG_DIR)")
 	persistDir := flag.String("persist-dir", os.Getenv("PTYD_PERSIST_DIR"), "Optional directory to persist per-terminal metadata sidecars so terminals are recoverable as 'ghosts' across daemon restarts (default $PTYD_PERSIST_DIR)")

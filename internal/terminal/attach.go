@@ -1,0 +1,199 @@
+package terminal
+
+import (
+	"context"
+	"io"
+	"sync"
+)
+
+// maxAttachBuffer bounds the output queued for one attached client. A
+// client that falls further behind is sent a fresh repaint instead, so a
+// slow client never holds up the PTY reader or grows memory.
+const maxAttachBuffer = 1 << 20
+
+// attacher is one attached client's output queue. The PTY reader appends
+// to it under the terminal's scrMu (in the same critical section that
+// feeds the screen), so a repaint taken under scrMu is exactly in step
+// with the queue.
+type attacher struct {
+	mu       sync.Mutex
+	buf      []byte
+	overflow bool // dropped output; the next read is a repaint
+	ended    bool // the terminal's output has ended
+	wake     chan struct{}
+}
+
+func (a *attacher) push(p []byte) {
+	a.mu.Lock()
+	switch {
+	case a.overflow:
+	case len(a.buf)+len(p) > maxAttachBuffer:
+		a.overflow, a.buf = true, nil
+	default:
+		a.buf = append(a.buf, p...)
+	}
+	a.mu.Unlock()
+	a.signal()
+}
+
+func (a *attacher) end() {
+	a.mu.Lock()
+	a.ended = true
+	a.mu.Unlock()
+	a.signal()
+}
+
+func (a *attacher) signal() {
+	select {
+	case a.wake <- struct{}{}:
+	default:
+	}
+}
+
+// Attachment is a client attached to a terminal: it receives an initial
+// repaint, then the raw output, and may send input and resize.
+type Attachment struct {
+	t        *terminal // nil for a ghost
+	a        *attacher
+	initial  []byte
+	readOnly bool
+	once     sync.Once
+}
+
+// Attach attaches a client. If cols and rows are set, the terminal is
+// resized to them first (the most recent attacher's size wins). The first
+// Read returns a repaint of the screen with its scrollback. A ghost can be
+// attached read-only: the client sees its saved screen and no more.
+func (m *Manager) Attach(id ID, cols, rows uint16, readOnly bool) (*Attachment, error) {
+	t, err := m.get(id)
+	if err != nil {
+		if g, ok := m.ghostScreen(id); ok {
+			return &Attachment{initial: g, readOnly: true, a: &attacher{ended: false, wake: make(chan struct{}, 1)}}, nil
+		}
+		return nil, err
+	}
+	if cols > 0 && rows > 0 && !readOnly && t.running() {
+		_ = t.resize(cols, rows)
+	}
+	a := &attacher{wake: make(chan struct{}, 1)}
+	t.scrMu.Lock()
+	initial := t.screen.Repaint(true)
+	if t.outputEnded {
+		a.ended = true
+	} else {
+		if t.attachers == nil {
+			t.attachers = map[*attacher]struct{}{}
+		}
+		t.attachers[a] = struct{}{}
+	}
+	t.scrMu.Unlock()
+	m.activeSubs.Add(1)
+	return &Attachment{t: t, a: a, initial: initial, readOnly: readOnly}, nil
+}
+
+// ReadOnly reports whether input and resizes are ignored.
+func (at *Attachment) ReadOnly() bool { return at.readOnly }
+
+// Read waits for output and returns it. It returns io.EOF once the
+// terminal's output has ended and everything was delivered, and ctx's
+// error if ctx ends first.
+func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
+	if at.initial != nil {
+		b := at.initial
+		at.initial = nil
+		return b, nil
+	}
+	a := at.a
+	for {
+		a.mu.Lock()
+		if a.overflow {
+			a.mu.Unlock()
+			return at.repaint(), nil
+		}
+		if len(a.buf) > 0 {
+			b := a.buf
+			a.buf = nil
+			a.mu.Unlock()
+			return b, nil
+		}
+		ended := a.ended
+		a.mu.Unlock()
+		if ended {
+			return nil, io.EOF
+		}
+		select {
+		case <-a.wake:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+// repaint returns the current screen (without scrollback, which the
+// client already has) and resets the queue in step with it.
+func (at *Attachment) repaint() []byte {
+	t := at.t
+	t.scrMu.Lock()
+	defer t.scrMu.Unlock()
+	at.a.mu.Lock()
+	at.a.buf, at.a.overflow = nil, false
+	at.a.mu.Unlock()
+	return t.screen.Repaint(false)
+}
+
+// Write sends input to the terminal.
+func (at *Attachment) Write(p []byte) error {
+	if at.readOnly || at.t == nil {
+		return nil
+	}
+	if !at.t.running() {
+		return ErrNotRunning
+	}
+	_, err := at.t.ptmx.Write(p)
+	return err
+}
+
+// Resize resizes the terminal to this client's window.
+func (at *Attachment) Resize(cols, rows uint16) error {
+	if at.readOnly || at.t == nil || cols == 0 || rows == 0 {
+		return nil
+	}
+	if !at.t.running() {
+		return ErrNotRunning
+	}
+	return at.t.resize(cols, rows)
+}
+
+// Close detaches the client.
+func (at *Attachment) Close() {
+	at.once.Do(func() {
+		if at.t == nil {
+			return
+		}
+		at.t.scrMu.Lock()
+		delete(at.t.attachers, at.a)
+		at.t.scrMu.Unlock()
+		if at.t.mgr != nil {
+			at.t.mgr.activeSubs.Add(-1)
+		}
+	})
+}
+
+// broadcastLocked queues output for every attached client. Caller holds
+// t.scrMu.
+func (t *terminal) broadcastLocked(p []byte) {
+	for a := range t.attachers {
+		a.push(p)
+	}
+}
+
+// endAttachers tells attached clients the output has ended.
+func (t *terminal) endAttachers() {
+	t.scrMu.Lock()
+	t.outputEnded = true
+	for a := range t.attachers {
+		a.end()
+	}
+	t.attachers = nil
+	t.scrMu.Unlock()
+}

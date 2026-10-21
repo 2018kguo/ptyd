@@ -96,8 +96,10 @@ type terminal struct {
 
 	// scrMu guards screen, the emulator fed with every byte of output, so
 	// the daemon knows what the window looks like.
-	scrMu  sync.Mutex
-	screen *vt.Terminal
+	scrMu       sync.Mutex
+	screen      *vt.Terminal
+	attachers   map[*attacher]struct{} // guarded by scrMu
+	outputEnded bool                   // guarded by scrMu
 
 	logFile *os.File // optional, for raw output mirror
 	logSize int64    // bytes written to logFile since it was last emptied
@@ -880,6 +882,7 @@ func (t *terminal) closePtmx() {
 // active.
 func (t *terminal) readLoop() {
 	defer t.ring.CloseSubscribers()
+	defer t.endAttachers()
 	defer t.finishLog()
 
 	buf := make([]byte, readBufSize)
@@ -892,6 +895,7 @@ func (t *terminal) readLoop() {
 			t.mu.Unlock()
 			t.scrMu.Lock()
 			t.screen.Write(buf[:n])
+			t.broadcastLocked(buf[:n])
 			t.scrMu.Unlock()
 			t.ring.Write(buf[:n])
 			t.writeLog(buf[:n])

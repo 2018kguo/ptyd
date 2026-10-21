@@ -91,6 +91,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /terminals/{id}/output", s.handleOutput)
 	mux.HandleFunc("GET /terminals/{id}/stream", s.handleStream)
 	mux.HandleFunc("GET /terminals/{id}/screen", s.handleScreen)
+	mux.HandleFunc("GET /terminals/{id}/attach", s.handleAttach)
 	mux.HandleFunc("POST /terminals/{id}/write", s.handleWrite)
 	mux.HandleFunc("POST /terminals/{id}/keys", s.handleKeys)
 	mux.HandleFunc("POST /terminals/{id}/wait", s.handleWait)

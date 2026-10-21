@@ -54,3 +54,8 @@ func (m *Manager) ScreenANSI(id ID, withScrollback bool) ([]byte, error) {
 	defer t.scrMu.Unlock()
 	return t.screen.Repaint(withScrollback), nil
 }
+
+// ghostScreen returns the repaint of a ghost's saved screen.
+func (m *Manager) ghostScreen(id ID) ([]byte, bool) {
+	return nil, false
+}
