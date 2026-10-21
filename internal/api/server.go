@@ -192,7 +192,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subID, ch, snap, err := s.mgr.Subscribe(id, 256)
+	since := parseSince(r.URL.Query().Get("since"))
+	subID, ch, snap, err := s.mgr.Subscribe(id, 256, since)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -205,12 +206,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	since := parseSince(r.URL.Query().Get("since"))
 	sse := sseWriter{w: w}
 	for _, line := range snap.Lines {
-		if line.Seq <= since {
-			continue
-		}
 		sse.send("line", line)
 	}
 	flusher.Flush()

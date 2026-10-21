@@ -110,7 +110,7 @@ func TestRingCRLF(t *testing.T) {
 func TestRingSubscribe(t *testing.T) {
 	r := NewRing(10, DefaultScrollbackBytes)
 	r.Write([]byte("a\n"))
-	id, ch, snap := r.Subscribe(8)
+	id, ch, snap := r.Subscribe(8, -1)
 	if len(snap.Lines) != 1 {
 		t.Fatalf("snap want 1, got %d", len(snap.Lines))
 	}
@@ -131,13 +131,13 @@ func TestRingSubscribe(t *testing.T) {
 
 func TestRingCloseSubscribers(t *testing.T) {
 	r := NewRing(10, DefaultScrollbackBytes)
-	_, ch, _ := r.Subscribe(8)
+	_, ch, _ := r.Subscribe(8, -1)
 	r.CloseSubscribers()
 	if _, ok := <-ch; ok {
 		t.Fatal("channel should be closed after CloseSubscribers")
 	}
 	// Subsequent subscribe returns an already-closed channel.
-	_, ch2, _ := r.Subscribe(8)
+	_, ch2, _ := r.Subscribe(8, -1)
 	if _, ok := <-ch2; ok {
 		t.Fatal("post-close subscribe should return closed channel")
 	}

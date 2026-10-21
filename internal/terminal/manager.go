@@ -488,13 +488,14 @@ func (m *Manager) Output(id ID, sinceSeq int64, tail int) (OutputSnapshot, error
 	return t.ring.Snapshot(sinceSeq, tail), nil
 }
 
-// Subscribe attaches a streaming consumer.
-func (m *Manager) Subscribe(id ID, buf int) (int, <-chan Line, OutputSnapshot, error) {
+// Subscribe attaches a streaming consumer. The snapshot holds the retained
+// lines with Seq > sinceSeq.
+func (m *Manager) Subscribe(id ID, buf int, sinceSeq int64) (int, <-chan Line, OutputSnapshot, error) {
 	t, err := m.get(id)
 	if err != nil {
 		return 0, nil, OutputSnapshot{}, err
 	}
-	subID, ch, snap := t.ring.Subscribe(buf)
+	subID, ch, snap := t.ring.Subscribe(buf, sinceSeq)
 	m.activeSubs.Add(1)
 	return subID, ch, snap, nil
 }

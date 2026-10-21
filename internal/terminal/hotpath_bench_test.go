@@ -316,7 +316,7 @@ func BenchmarkRingSubscribe(b *testing.B) {
 	r := fullBenchRing()
 	b.ReportAllocs()
 	for b.Loop() {
-		id, _, _ := r.Subscribe(256)
+		id, _, _ := r.Subscribe(256, r.LatestSeq())
 		r.Unsubscribe(id)
 	}
 }

@@ -223,10 +223,11 @@ func (r *Ring) notifyLocked() {
 }
 
 // Subscribe returns a buffered channel that receives newly committed lines,
-// a unique subscription id, and a snapshot of the current ring contents at
-// subscribe time. Slow subscribers will drop lines; consumers should detect
-// gaps via Line.Seq and refetch via Snapshot if needed.
-func (r *Ring) Subscribe(buf int) (int, <-chan Line, OutputSnapshot) {
+// a unique subscription id, and a snapshot of the retained lines with
+// Seq > sinceSeq at subscribe time (so it costs what it returns). Slow
+// subscribers will drop lines; consumers should detect gaps via Line.Seq
+// and refetch via Snapshot if needed.
+func (r *Ring) Subscribe(buf int, sinceSeq int64) (int, <-chan Line, OutputSnapshot) {
 	if buf < 1 {
 		buf = 256
 	}
@@ -245,7 +246,7 @@ func (r *Ring) Subscribe(buf int) (int, <-chan Line, OutputSnapshot) {
 		}
 		r.subs[id] = sub
 	}
-	return id, sub.ch, r.snapshotLocked(-1, 0)
+	return id, sub.ch, r.snapshotLocked(sinceSeq, 0)
 }
 
 // Unsubscribe removes a subscriber. Idempotent.
