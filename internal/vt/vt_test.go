@@ -2,6 +2,7 @@ package vt
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math/rand/v2"
 	"slices"
@@ -431,5 +432,36 @@ func TestCellLayout(t *testing.T) {
 	var c Cell
 	if unsafe.Sizeof(c) != 16 || unsafe.Offsetof(c.Fg) != 4 || unsafe.Offsetof(c.Bg) != 8 || unsafe.Offsetof(c.L) != 14 {
 		t.Fatalf("Cell layout changed: size %d", unsafe.Sizeof(c))
+	}
+}
+
+// printable8 agrees with a byte-at-a-time check: every byte value in
+// every position, and random words.
+func TestPrintable8(t *testing.T) {
+	check := func(b [8]byte) {
+		want := true
+		for _, x := range b {
+			want = want && x >= 0x20 && x < 0x7f
+		}
+		if got := printable8(binary.LittleEndian.Uint64(b[:])); got != want {
+			t.Fatalf("% x: got %v want %v", b, got, want)
+		}
+	}
+	for pos := range 8 {
+		for c := range 256 {
+			b := [8]byte{'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a'}
+			b[pos] = byte(c)
+			check(b)
+		}
+	}
+	for range 1 << 20 {
+		var b [8]byte
+		binary.LittleEndian.PutUint64(b[:], rand.Uint64())
+		for i := range b {
+			if rand.IntN(2) == 0 {
+				b[i] = byte(0x20 + rand.IntN(0x5f))
+			}
+		}
+		check(b)
 	}
 }

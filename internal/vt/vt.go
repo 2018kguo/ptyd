@@ -15,6 +15,7 @@
 package vt
 
 import (
+	"encoding/binary"
 	"strings"
 	"unicode/utf8"
 	"unsafe"
@@ -295,8 +296,12 @@ func (t *Terminal) Write(p []byte) (int, error) {
 				continue
 			}
 			if c >= 0x20 && c < 0x7f {
-				// Fast path: a run of printable ASCII.
+				// Fast path: a run of printable ASCII, scanned eight
+				// bytes at a time.
 				j := i + 1
+				for j+8 <= len(p) && printable8(binary.LittleEndian.Uint64(p[j:])) {
+					j += 8
+				}
 				for j < len(p) && p[j] >= 0x20 && p[j] < 0x7f {
 					j++
 				}
@@ -312,6 +317,15 @@ func (t *Terminal) Write(p []byte) (int, error) {
 		t.step(c)
 	}
 	return len(p), nil
+}
+
+// printable8 reports whether all eight bytes of w are printable ASCII
+// (0x20-0x7e): subtracting 0x20 borrows into the top bit of a byte under
+// 0x20, adding 1 carries into it for 0x7f, and bytes from 0x80 have it
+// set already.
+func printable8(w uint64) bool {
+	const lo, one, top = 0x2020202020202020, 0x0101010101010101, 0x8080808080808080
+	return ((w-lo)|(w+one)|w)&top == 0
 }
 
 // printUTF8 prints the run of non-ASCII characters at the start of p
