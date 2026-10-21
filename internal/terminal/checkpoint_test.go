@@ -178,16 +178,16 @@ func TestIdleTerminalSettles(t *testing.T) {
 		term.scrMu.Lock()
 		open := term.persist.tail != nil
 		term.scrMu.Unlock()
-		if !armed && !open {
+		// The tail is closed when a checkpoint starts; the file lands
+		// once it is written.
+		_, err := os.Stat(filepath.Join(dir, string(info.ID), ckptFile))
+		if !armed && !open && err == nil {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("still armed=%v tail open=%v after settling", armed, open)
+			t.Fatalf("still armed=%v tail open=%v checkpoint %v after settling", armed, open, err)
 		}
 		time.Sleep(50 * time.Millisecond)
-	}
-	if _, err := os.Stat(filepath.Join(dir, string(info.ID), ckptFile)); err != nil {
-		t.Fatal("no checkpoint after settling")
 	}
 }
 
