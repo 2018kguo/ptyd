@@ -1,6 +1,6 @@
 #!/bin/sh
 # A/B a change: build the benchmarks of package PKG at git revision REV
-# (with this tree's _test.go files, so new benchmarks run on old code) and
+# (with this tree's *bench_test.go files, so new benchmarks run on old code) and
 # in this tree, run them alternately COUNT times, and print benchstat.
 #
 #   bench/ab.sh HEAD ./internal/vt 'WriteStream|Serialize'
@@ -10,7 +10,7 @@ rev=$1 pkg=$2 bench=${3:-.} count=${COUNT:-10}
 tmp=$(mktemp -d)
 trap 'git worktree remove --force "$tmp/old" >/dev/null 2>&1; rm -rf "$tmp"' EXIT
 git worktree add -q --detach "$tmp/old" "$rev"
-for f in "$pkg"/*_test.go; do cp "$f" "$tmp/old/$f"; done
+for f in "$pkg"/*bench_test.go; do cp "$f" "$tmp/old/$f"; done
 (cd "$tmp/old" && go test -c -o "$tmp/old.test" "$pkg")
 go test -c -o "$tmp/new.test" "$pkg"
 for i in $(seq "$count"); do

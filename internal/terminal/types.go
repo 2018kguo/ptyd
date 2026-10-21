@@ -1,9 +1,11 @@
 package terminal
 
 import (
+	"bytes"
 	"strings"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 )
 
 // stripANSI removes the ANSI escape sequences terminals emit:
@@ -38,6 +40,17 @@ func stripANSI(s string) string {
 	}
 	out.WriteString(s)
 	return out.String()
+}
+
+// stripANSIBytes is stripANSI for bytes, with a single allocation. The
+// result never aliases p.
+func stripANSIBytes(p []byte) string {
+	if bytes.IndexByte(p, 0x1b) < 0 {
+		return string(p)
+	}
+	// stripANSI only reads its argument and, as s has an ESC, returns a
+	// new string, so a read-only view of p is enough.
+	return stripANSI(unsafe.String(unsafe.SliceData(p), len(p)))
 }
 
 // escapeLen returns the length of the escape sequence at the start of s

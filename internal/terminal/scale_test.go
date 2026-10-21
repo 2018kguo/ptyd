@@ -237,8 +237,18 @@ func FuzzStripANSI(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, in string) {
-		if got, want := stripANSI(in), ansiPattern.ReplaceAllString(in, ""); got != want {
+		want := ansiPattern.ReplaceAllString(in, "")
+		if got := stripANSI(in); got != want {
 			t.Fatalf("stripANSI(%q) = %q, regexp gives %q", in, got, want)
+		}
+		// The bytes version agrees and its result survives reuse of p.
+		p := []byte(in)
+		got := stripANSIBytes(p)
+		for i := range p {
+			p[i] = 'Z'
+		}
+		if got != want {
+			t.Fatalf("stripANSIBytes(%q) = %q, regexp gives %q", in, got, want)
 		}
 	})
 }

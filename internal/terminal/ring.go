@@ -146,12 +146,12 @@ func (r *Ring) breakLongLineLocked() {
 			break
 		}
 	}
-	r.commitLocked(string(p[:cut]))
+	r.commitLocked(p[:cut])
 	r.pending = r.pending[:copy(r.pending, p[cut:])]
 }
 
 func (r *Ring) commitPendingLocked() {
-	r.commitLocked(string(r.pending))
+	r.commitLocked(r.pending)
 	r.pending = r.pending[:0]
 }
 
@@ -190,7 +190,7 @@ func (r *Ring) LatestSeq() int64 {
 func (r *Ring) Pending() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return stripANSI(string(r.pending))
+	return stripANSIBytes(r.pending)
 }
 
 // Changed returns a channel that is closed at the next change to the
@@ -268,8 +268,10 @@ func (r *Ring) CloseSubscribers() {
 	r.notifyLocked()
 }
 
-func (r *Ring) commitLocked(text string) {
-	line := Line{Seq: r.nextSeq, Text: stripANSI(text), At: time.Now()}
+// commitLocked commits text, which the ring may reuse afterwards, as a
+// line.
+func (r *Ring) commitLocked(text []byte) {
+	line := Line{Seq: r.nextSeq, Text: stripANSIBytes(text), At: time.Now()}
 	r.nextSeq++
 
 	cost := len(line.Text) + lineOverhead
@@ -336,7 +338,7 @@ func (r *Ring) snapshotLocked(sinceSeq int64, tail int) OutputSnapshot {
 	return OutputSnapshot{
 		Lines:     r.linesAfterLocked(sinceSeq, tail),
 		LatestSeq: r.nextSeq - 1,
-		Pending:   stripANSI(string(r.pending)),
+		Pending:   stripANSIBytes(r.pending),
 	}
 }
 
