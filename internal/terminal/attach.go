@@ -22,8 +22,8 @@ type attacher struct {
 	mu       sync.Mutex
 	buf      []byte
 	spare    []byte // a buffer the reader is done with, reused by push
-	overflow bool // dropped output; the next read is a repaint
-	ended    bool // the terminal's output has ended
+	overflow bool   // dropped output; the next read is a repaint
+	ended    bool   // the terminal's output has ended
 	wake     chan struct{}
 }
 

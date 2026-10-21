@@ -1,0 +1,740 @@
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   15187	     77600 ns/op	 159.44 MB/s	  103941 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    3170	    351227 ns/op	 202.15 MB/s	   80138 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  182268	      6680 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1530	    965680 ns/op	     16384 heap-B/term	    2858 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     370	   2995682 ns/op	    360448 heap-B/term	  864617 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     285	   4242231 ns/op	    483328 heap-B/term	  992036 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   47503	     24312 ns/op	 282.65 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   21912	     54283 ns/op	  95.33 MB/s	  118788 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     205	   5845918 ns/op	 179.53 MB/s	12406451 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     260	   4552043 ns/op	 230.36 MB/s	 1152975 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     835	   1441730 ns/op	 727.46 MB/s	   24037 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   87643	     14353 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   15625	     79184 ns/op	1242.66 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   51777	     21432 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    8130	    142325 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    1792	    637762 ns/op	 154.29 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1232	    936516 ns/op	1119.84 MB/s	  695268 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	10508826	       114.4 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1615003	       751.9 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1372	    929231 ns/op	      8192 heap-B/ring	     180 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     493	   2334861 ns/op	    860160 heap-B/ring	 1338529 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      42	  30153997 ns/op	   1073152 heap-B/ring	163862765 B/op	   10008 allocs/op
+BenchmarkIdleTerminals-8             	       1	3135763792 ns/op	         2.000 fds/term	         2.500 goroutines/term	     14148 heap-B/term	         0.2890 idle-cpu-ms/s	     38146 maxrss-B/term	      1000 terminals	         1.001 threads/term	23308312 B/op	  143046 allocs/op
+BenchmarkConsume/claude-8            	     120	   9193323 ns/op	 114.16 MB/s	14524227 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     162	   7086273 ns/op	 147.98 MB/s	 3458398 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     676	   1664233 ns/op	 630.20 MB/s	   71830 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	     150	   8113496 ns/op	 129.36 MB/s	16033725 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     147	   8163030 ns/op	 128.57 MB/s	16737887 B/op	   18457 allocs/op
+BenchmarkAttachFanout/K=8-8          	     100	  10081945 ns/op	 104.10 MB/s	25877391 B/op	   19360 allocs/op
+BenchmarkAttachFanout/K=64-8         	      42	  25071232 ns/op	  41.86 MB/s	83163217 B/op	   26589 allocs/op
+BenchmarkCheckpoint-8                	     776	   1558442 ns/op	     98487 ckpt-B	  543381 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1317	   1079850 ns/op	 971.94 MB/s	 1213493 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1568	    745063 ns/op	 132.07 MB/s	  320084 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     156	   7796257 ns/op	 147.12 MB/s	13813027 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      38	  30257671 ns/op	 141.87 MB/s	54230768 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      57	  19974074 ns/op	 5226695 B/op	   50070 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 582390993 ns/op	975815620 B/op	  642415 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   45429	     26447 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  439784	      2505 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	10522819	       116.5 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     726	   1681439 ns/op	    4724 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    3859	    303019 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   47956	     24538 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	10286643	       116.5 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      55	  20809316 ns/op	   27062 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     470	   2243641 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    9484	    147845 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	 9355734	       117.8 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	       9	 112762125 ns/op	  127383 B/op	    5021 allocs/op
+BenchmarkRingSubscribe-8                      	   43394	     30110 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       4	 303577890 ns/op	 3643320 B/op	   28171 allocs/op
+BenchmarkStripANSI/plain-8                    	354236797	         3.181 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	14122213	        83.78 ns/op	     144 B/op	       3 allocs/op
+BenchmarkStripANSI/colored-8                  	18729643	        63.65 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2327523	       503.3 ns/op	      96 B/op	       4 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    4387	    262843 ns/op	  178683 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  237105	      5300 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   37627	     28808 ns/op	   24946 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1064	   1083895 ns/op	   17761 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  159321	      7548 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1395	    894669 ns/op	      4473 ns/line	   47242 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1335	    845100 ns/op	  393754 B/op	    2010 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   16092	     76927 ns/op	 160.84 MB/s	  103942 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    2960	    386383 ns/op	 183.76 MB/s	   80146 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  160365	      7716 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1293	    898948 ns/op	     16384 heap-B/term	    2846 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     376	   3871702 ns/op	    360448 heap-B/term	  864623 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     241	   4777785 ns/op	    483328 heap-B/term	  992038 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   42481	     27190 ns/op	 252.74 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   22753	     52572 ns/op	  98.44 MB/s	  118788 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     204	   6003458 ns/op	 174.82 MB/s	12406460 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     259	   4561746 ns/op	 229.87 MB/s	 1152981 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     795	   1510935 ns/op	 694.14 MB/s	   24063 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   82485	     14285 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   16570	     75680 ns/op	1300.19 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   53580	     21419 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    8161	    148348 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    1864	    654805 ns/op	 150.27 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1124	   1106151 ns/op	 948.11 MB/s	  695319 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	 9122325	       134.1 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1421757	       831.2 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1050	   1059490 ns/op	      8192 heap-B/ring	     176 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     474	   2538901 ns/op	    868352 heap-B/ring	 1338527 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      36	  30957384 ns/op	   1073152 heap-B/ring	163862758 B/op	   10008 allocs/op
+BenchmarkIdleTerminals-8             	       1	3131058473 ns/op	         2.000 fds/term	         2.500 goroutines/term	     14377 heap-B/term	         0.4970 idle-cpu-ms/s	     36954 maxrss-B/term	      1000 terminals	         1.002 threads/term	23340176 B/op	  143146 allocs/op
+BenchmarkConsume/claude-8            	     147	   7968254 ns/op	 131.72 MB/s	14522825 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     172	   6815127 ns/op	 153.87 MB/s	 3458012 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     673	   1724486 ns/op	 608.18 MB/s	   71837 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	     146	   8117186 ns/op	 129.30 MB/s	16033424 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     156	   7757301 ns/op	 135.30 MB/s	16831832 B/op	   18458 allocs/op
+BenchmarkAttachFanout/K=8-8          	     120	  10031873 ns/op	 104.62 MB/s	25972682 B/op	   19359 allocs/op
+BenchmarkAttachFanout/K=64-8         	      43	  26410207 ns/op	  39.74 MB/s	83231788 B/op	   26587 allocs/op
+BenchmarkCheckpoint-8                	     703	   1498606 ns/op	     98487 ckpt-B	  543392 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1887	    938008 ns/op	1118.91 MB/s	 1213493 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1710	    689919 ns/op	 142.62 MB/s	  320033 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     170	   7154280 ns/op	 160.32 MB/s	13813418 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      43	  27513913 ns/op	 156.02 MB/s	54230768 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      56	  20833222 ns/op	 5243821 B/op	   50070 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 622789744 ns/op	975748776 B/op	  642394 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   43905	     28484 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  440562	      2542 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	10681656	       116.5 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     723	   1671699 ns/op	    4776 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    3408	    306235 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   48075	     25333 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	10480206	       118.3 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      52	  20308575 ns/op	   27102 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     499	   2323613 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    8266	    138594 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	 9442100	       120.1 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	       9	 120558961 ns/op	  127383 B/op	    5021 allocs/op
+BenchmarkRingSubscribe-8                      	   32649	     35877 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       3	 410497229 ns/op	 3569773 B/op	   27976 allocs/op
+BenchmarkStripANSI/plain-8                    	296328742	         3.911 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	11249054	       103.2 ns/op	     144 B/op	       3 allocs/op
+BenchmarkStripANSI/colored-8                  	15464029	        71.48 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2128015	       556.2 ns/op	      96 B/op	       4 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    5050	    240551 ns/op	  178605 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  233364	      5235 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   39244	     31119 ns/op	   24946 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1045	   1162454 ns/op	   17763 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  144702	      7981 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1346	    936748 ns/op	      4684 ns/line	   47272 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1318	    897145 ns/op	  396168 B/op	    2010 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   15012	     78030 ns/op	 158.57 MB/s	  103942 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    3237	    378285 ns/op	 187.69 MB/s	   80134 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  169058	      7047 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1324	    976707 ns/op	     16384 heap-B/term	    2851 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     358	   3234694 ns/op	    360448 heap-B/term	  864616 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     270	   4428187 ns/op	    483328 heap-B/term	  992040 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   47076	     25718 ns/op	 267.21 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   21956	     55287 ns/op	  93.60 MB/s	  118788 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     205	   6072236 ns/op	 172.84 MB/s	12406452 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     238	   4925369 ns/op	 212.90 MB/s	 1153127 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     781	   1562113 ns/op	 671.40 MB/s	   24073 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   82087	     15352 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   13797	     86074 ns/op	1143.20 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   54163	     21977 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    7381	    163558 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    1519	    743818 ns/op	 132.29 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1200	    984478 ns/op	1065.29 MB/s	  695283 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	 8901139	       134.6 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1504356	       802.5 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1153	   1021404 ns/op	      8192 heap-B/ring	     173 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     466	   2583677 ns/op	    860160 heap-B/ring	 1338531 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      31	  33872642 ns/op	   1073152 heap-B/ring	163862784 B/op	   10008 allocs/op
+BenchmarkIdleTerminals-8             	       1	3102019688 ns/op	         2.000 fds/term	         2.500 goroutines/term	     14017 heap-B/term	         0.2495 idle-cpu-ms/s	     37966 maxrss-B/term	      1000 terminals	         1.001 threads/term	23035576 B/op	  142322 allocs/op
+BenchmarkConsume/claude-8            	     202	   6722126 ns/op	 156.13 MB/s	14521127 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     175	   6900364 ns/op	 151.96 MB/s	 3457905 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     651	   1998957 ns/op	 524.67 MB/s	   71891 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	      86	  12891950 ns/op	  81.41 MB/s	16039834 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     108	  13191469 ns/op	  79.56 MB/s	16732084 B/op	   18447 allocs/op
+BenchmarkAttachFanout/K=8-8          	      69	  16163913 ns/op	  64.93 MB/s	26319569 B/op	   19332 allocs/op
+BenchmarkAttachFanout/K=64-8         	      44	  26157205 ns/op	  40.12 MB/s	83415876 B/op	   26588 allocs/op
+BenchmarkCheckpoint-8                	     904	   1296235 ns/op	     98487 ckpt-B	  543312 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1285	   1230714 ns/op	 852.79 MB/s	 1213493 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1488	    733473 ns/op	 134.15 MB/s	  320088 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     162	   7410214 ns/op	 154.78 MB/s	13813473 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      43	  27450448 ns/op	 156.38 MB/s	54230768 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      57	  20402206 ns/op	 5242389 B/op	   50069 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 633696180 ns/op	975696500 B/op	  642384 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   44996	     26774 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  468961	      2572 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	10037190	       120.2 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     712	   1671910 ns/op	    4777 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    3727	    321266 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   47025	     27811 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	 9306678	       117.9 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      48	  27875466 ns/op	   26392 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     396	   2870792 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    8990	    131703 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	10710387	       120.1 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	       9	 116207146 ns/op	  123265 B/op	    5021 allocs/op
+BenchmarkRingSubscribe-8                      	   35816	     34621 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       4	 260547139 ns/op	 3658440 B/op	   28178 allocs/op
+BenchmarkStripANSI/colored-8                  	15916039	        68.09 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2276797	       517.9 ns/op	      96 B/op	       4 allocs/op
+BenchmarkStripANSI/plain-8                    	395665204	         2.845 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	14692652	        85.19 ns/op	     144 B/op	       3 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    4785	    222637 ns/op	  178524 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  273820	      4524 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   45819	     25259 ns/op	   24947 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1190	   1057508 ns/op	   17717 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  159696	      7457 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1539	    797623 ns/op	      3988 ns/line	   47176 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1527	    750298 ns/op	  394935 B/op	    2010 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   17070	     71273 ns/op	 173.60 MB/s	  103941 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    3333	    349413 ns/op	 203.20 MB/s	   80130 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  182304	      6701 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1335	    888671 ns/op	     16384 heap-B/term	    2854 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     422	   2830856 ns/op	    360448 heap-B/term	  864633 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     303	   3865923 ns/op	    483328 heap-B/term	  992035 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   50343	     23549 ns/op	 291.82 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   23565	     51101 ns/op	 101.27 MB/s	  118787 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     213	   5559017 ns/op	 188.80 MB/s	12406417 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     266	   4549263 ns/op	 230.50 MB/s	 1152937 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     866	   1404105 ns/op	 746.95 MB/s	   24018 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   90660	     13647 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   16647	     70680 ns/op	1392.17 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   58222	     19336 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    8930	    135205 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    2035	    605805 ns/op	 162.43 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1375	    913265 ns/op	1148.35 MB/s	  695214 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	10158049	       119.9 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1656278	       726.6 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1248	    896224 ns/op	      8192 heap-B/ring	     185 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     525	   2268275 ns/op	    860160 heap-B/ring	 1338532 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      46	  27418915 ns/op	   1073152 heap-B/ring	163862810 B/op	   10008 allocs/op
+BenchmarkIdleTerminals-8             	       1	3011668917 ns/op	         2.000 fds/term	         2.500 goroutines/term	     13951 heap-B/term	         0.2835 idle-cpu-ms/s	     36557 maxrss-B/term	      1000 terminals	         1.001 threads/term	23311416 B/op	  143001 allocs/op
+BenchmarkConsume/claude-8            	     187	   6775265 ns/op	 154.91 MB/s	14521491 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     196	   5955818 ns/op	 176.06 MB/s	 3457246 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     784	   1522292 ns/op	 688.96 MB/s	   71611 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	     129	   9062058 ns/op	 115.82 MB/s	16034257 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     151	   7825170 ns/op	 134.12 MB/s	16804995 B/op	   18458 allocs/op
+BenchmarkAttachFanout/K=8-8          	     121	   9829194 ns/op	 106.78 MB/s	25954784 B/op	   19359 allocs/op
+BenchmarkAttachFanout/K=64-8         	      50	  25090183 ns/op	  41.83 MB/s	83938846 B/op	   26588 allocs/op
+BenchmarkCheckpoint-8                	    1033	   1087941 ns/op	     98488 ckpt-B	  543352 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1644	   1011627 ns/op	1037.48 MB/s	 1213493 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1642	    661971 ns/op	 148.65 MB/s	  320118 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     175	   6766638 ns/op	 169.50 MB/s	13813122 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      44	  24486372 ns/op	 175.31 MB/s	54230768 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      55	  18628281 ns/op	 5243359 B/op	   50069 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 591353328 ns/op	975802332 B/op	  642410 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   48879	     24528 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  520635	      2280 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	10781937	       108.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     782	   1668024 ns/op	    4768 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    4159	    293885 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   51105	     23489 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	10904372	       106.1 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      57	  19220978 ns/op	   27691 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     536	   2001275 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    8944	    133777 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	10150974	       113.7 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	      10	 108983878 ns/op	  126957 B/op	    5021 allocs/op
+BenchmarkRingSubscribe-8                      	   40410	     30393 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       4	 251018731 ns/op	 3658380 B/op	   28178 allocs/op
+BenchmarkStripANSI/colored-8                  	18462013	        59.36 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2447102	       494.5 ns/op	      96 B/op	       4 allocs/op
+BenchmarkStripANSI/plain-8                    	401973199	         2.896 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	15383653	        83.04 ns/op	     144 B/op	       3 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    5158	    205293 ns/op	  178390 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  250140	      4490 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   41812	     26450 ns/op	   24946 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1226	    984886 ns/op	   17716 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  162224	      6741 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1611	    804600 ns/op	      4023 ns/line	   47150 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1496	    786168 ns/op	  396394 B/op	    2010 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   17386	     69274 ns/op	 178.61 MB/s	  103941 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    3430	    339012 ns/op	 209.43 MB/s	   80126 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  179366	      6713 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1423	    858603 ns/op	     16384 heap-B/term	    2856 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     420	   2819770 ns/op	    360448 heap-B/term	  864620 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     310	   3798555 ns/op	    483328 heap-B/term	  992031 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   50526	     23606 ns/op	 291.11 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   23379	     50690 ns/op	 102.09 MB/s	  118787 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     223	   5547878 ns/op	 189.18 MB/s	12406348 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     250	   4576549 ns/op	 229.13 MB/s	 1153040 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     864	   1368141 ns/op	 766.59 MB/s	   24020 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   87549	     13540 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   15925	     74022 ns/op	1329.33 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   58669	     19450 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    9205	    131776 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    1846	    620467 ns/op	 158.59 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1302	    894769 ns/op	1172.09 MB/s	  695241 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	10523036	       112.5 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1653924	       725.3 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1339	    901895 ns/op	      8192 heap-B/ring	     180 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     529	   2213311 ns/op	    860160 heap-B/ring	 1338529 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      43	  29180892 ns/op	   1073152 heap-B/ring	163862728 B/op	   10007 allocs/op
+BenchmarkIdleTerminals-8             	       1	2971464777 ns/op	         2.000 fds/term	         2.500 goroutines/term	     13984 heap-B/term	         0.3000 idle-cpu-ms/s	     36458 maxrss-B/term	      1000 terminals	         1.001 threads/term	23327752 B/op	  143112 allocs/op
+BenchmarkConsume/claude-8            	     186	   6698480 ns/op	 156.68 MB/s	14521518 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     198	   5903785 ns/op	 177.62 MB/s	 3457191 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     758	   1772426 ns/op	 591.73 MB/s	   71658 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	     147	   8024273 ns/op	 130.80 MB/s	16039922 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     151	   7999357 ns/op	 131.20 MB/s	16758815 B/op	   18457 allocs/op
+BenchmarkAttachFanout/K=8-8          	     123	   9659053 ns/op	 108.66 MB/s	26181333 B/op	   19356 allocs/op
+BenchmarkAttachFanout/K=64-8         	      46	  25567749 ns/op	  41.05 MB/s	83481243 B/op	   26587 allocs/op
+BenchmarkCheckpoint-8                	    1132	    997277 ns/op	     98488 ckpt-B	  543316 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1813	   1067034 ns/op	 983.61 MB/s	 1213493 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1780	    646423 ns/op	 152.22 MB/s	  320075 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     175	   6875288 ns/op	 166.83 MB/s	13813304 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      42	  26207031 ns/op	 163.80 MB/s	54230768 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      63	  18750600 ns/op	 5242773 B/op	   50069 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 584106056 ns/op	975627960 B/op	  642362 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   45412	     25481 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  490540	      2312 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	 9115059	       124.5 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     712	   1617902 ns/op	    4777 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    3982	    298607 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   51590	     22010 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	10566312	       105.9 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      64	  19297970 ns/op	   26965 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     546	   2174001 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    9742	    126802 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	11584194	       108.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	      10	 106188386 ns/op	  130679 B/op	    5022 allocs/op
+BenchmarkRingSubscribe-8                      	   40959	     30529 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       5	 220892709 ns/op	 3730160 B/op	   28327 allocs/op
+BenchmarkStripANSI/plain-8                    	413335609	         2.791 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	15025672	        80.96 ns/op	     144 B/op	       3 allocs/op
+BenchmarkStripANSI/colored-8                  	19857847	        59.78 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2450538	       493.4 ns/op	      96 B/op	       4 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    5050	    217712 ns/op	  178501 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  270010	      4401 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   44714	     26477 ns/op	   24947 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1201	    981055 ns/op	   17751 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  149419	      7129 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1568	    769899 ns/op	      3849 ns/line	   47170 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1604	    728961 ns/op	  396108 B/op	    2010 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   17427	     68559 ns/op	 180.47 MB/s	  103941 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    3420	    355219 ns/op	 199.88 MB/s	   80126 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  178659	      6668 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1480	    889253 ns/op	     16384 heap-B/term	    2859 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     315	   3653975 ns/op	    360448 heap-B/term	  864619 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     274	   4162135 ns/op	    483328 heap-B/term	  992036 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   50304	     22892 ns/op	 300.19 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   24116	     50434 ns/op	 102.61 MB/s	  118787 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     206	   5733790 ns/op	 183.05 MB/s	12406453 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     265	   4390667 ns/op	 238.83 MB/s	 1152943 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     860	   1360192 ns/op	 771.07 MB/s	   24022 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   90607	     13508 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   15279	     81081 ns/op	1213.59 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   58182	     19936 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    8976	    136631 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    1951	    610356 ns/op	 161.22 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1293	    881610 ns/op	1189.59 MB/s	  695243 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	11076796	       105.0 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1760263	       688.5 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1371	    876416 ns/op	      8192 heap-B/ring	     183 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     526	   2227558 ns/op	    868352 heap-B/ring	 1338527 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      42	  27352617 ns/op	   1073152 heap-B/ring	163862752 B/op	   10008 allocs/op
+BenchmarkIdleTerminals-8             	       1	2999718950 ns/op	         2.000 fds/term	         2.500 goroutines/term	     13877 heap-B/term	         0.4230 idle-cpu-ms/s	     36184 maxrss-B/term	      1000 terminals	         1.001 threads/term	23335640 B/op	  143144 allocs/op
+BenchmarkConsume/claude-8            	     192	   6467248 ns/op	 162.29 MB/s	14521364 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     198	   5851052 ns/op	 179.22 MB/s	 3457191 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     810	   1502795 ns/op	 697.90 MB/s	   71567 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	     158	   7592030 ns/op	 138.24 MB/s	16034248 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     154	   7733726 ns/op	 135.71 MB/s	16842394 B/op	   18457 allocs/op
+BenchmarkAttachFanout/K=8-8          	     127	   9415918 ns/op	 111.47 MB/s	26235894 B/op	   19356 allocs/op
+BenchmarkAttachFanout/K=64-8         	      48	  24617710 ns/op	  42.63 MB/s	84107561 B/op	   26589 allocs/op
+BenchmarkCheckpoint-8                	     750	   1433329 ns/op	     98487 ckpt-B	  543334 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1468	    975300 ns/op	1076.13 MB/s	 1213493 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1826	    666070 ns/op	 147.73 MB/s	  320078 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     166	   7036585 ns/op	 163.00 MB/s	13813254 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      48	  24337581 ns/op	 176.38 MB/s	54230768 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      61	  19065550 ns/op	 5242864 B/op	   50068 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 587624460 ns/op	975727076 B/op	  642389 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   46885	     25383 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  530128	      2309 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	10726550	       107.8 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     726	   1594976 ns/op	    4724 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    4075	    292812 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   50764	     23257 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	10613281	       107.5 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      56	  18932950 ns/op	   26389 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     541	   2159584 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    9220	    128790 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	10988605	       110.4 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	      10	 108147747 ns/op	  130660 B/op	    5021 allocs/op
+BenchmarkRingSubscribe-8                      	   40485	     32721 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       4	 270304668 ns/op	 3657422 B/op	   28173 allocs/op
+BenchmarkStripANSI/plain-8                    	409062198	         2.851 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	14783948	        80.36 ns/op	     144 B/op	       3 allocs/op
+BenchmarkStripANSI/colored-8                  	19193923	        60.52 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2478034	       482.7 ns/op	      96 B/op	       4 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    4905	    216426 ns/op	  178620 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  286286	      4484 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   46102	     25912 ns/op	   24946 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1228	    976264 ns/op	   17749 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  176864	      6992 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1628	    808544 ns/op	      4043 ns/line	   47149 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1538	    731614 ns/op	  393547 B/op	    2010 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   17377	     69121 ns/op	 179.00 MB/s	  103941 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    3403	    350722 ns/op	 202.44 MB/s	   80127 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  169219	      6655 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1478	    884087 ns/op	     16384 heap-B/term	    2853 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     415	   2806350 ns/op	    360448 heap-B/term	  864618 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     320	   3824002 ns/op	    483328 heap-B/term	  992039 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   49762	     23348 ns/op	 294.34 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   24430	     49684 ns/op	 104.16 MB/s	  118787 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     219	   5424580 ns/op	 193.48 MB/s	12406377 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     279	   4298089 ns/op	 243.97 MB/s	 1152861 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     880	   1352779 ns/op	 775.29 MB/s	   24011 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   89376	     13641 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   12824	     94525 ns/op	1040.99 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   59286	     19430 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    8739	    138593 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    1968	    606127 ns/op	 162.34 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1293	    894542 ns/op	1172.39 MB/s	  695245 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	 9218958	       130.3 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1653963	       726.1 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1305	    908558 ns/op	      8192 heap-B/ring	     181 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     514	   2222209 ns/op	    860160 heap-B/ring	 1338529 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      43	  29122605 ns/op	   1081344 heap-B/ring	163862757 B/op	   10008 allocs/op
+BenchmarkIdleTerminals-8             	       1	3005542632 ns/op	         2.000 fds/term	         2.500 goroutines/term	     14328 heap-B/term	         0.3580 idle-cpu-ms/s	     37544 maxrss-B/term	      1000 terminals	         1.001 threads/term	23325368 B/op	  143092 allocs/op
+BenchmarkConsume/claude-8            	     188	   6479786 ns/op	 161.97 MB/s	14521465 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     204	   5766795 ns/op	 181.84 MB/s	 3457031 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     777	   1501027 ns/op	 698.72 MB/s	   71624 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	     154	   7630300 ns/op	 137.55 MB/s	16034080 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     153	   7786923 ns/op	 134.78 MB/s	16858421 B/op	   18457 allocs/op
+BenchmarkAttachFanout/K=8-8          	     123	   9631379 ns/op	 108.97 MB/s	26110192 B/op	   19357 allocs/op
+BenchmarkAttachFanout/K=64-8         	      45	  25728945 ns/op	  40.79 MB/s	83618217 B/op	   26588 allocs/op
+BenchmarkCheckpoint-8                	    1008	   1113216 ns/op	     98488 ckpt-B	  543355 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1346	    915760 ns/op	1146.09 MB/s	 1213494 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1778	    665011 ns/op	 147.97 MB/s	  320095 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     190	   6362993 ns/op	 180.26 MB/s	13813531 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      43	  25068078 ns/op	 171.24 MB/s	54230852 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      54	  18805307 ns/op	 5225676 B/op	   50068 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 573901752 ns/op	975686992 B/op	  642383 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   46980	     24971 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  479259	      2381 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	11405314	       109.5 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     765	   1581940 ns/op	    4721 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    4246	    282075 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   52191	     24523 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	10773139	       108.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      60	  19840164 ns/op	   27004 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     537	   1995294 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    9241	    131095 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	10668208	       125.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	       9	 120354572 ns/op	  127400 B/op	    5021 allocs/op
+BenchmarkRingSubscribe-8                      	   37657	     32476 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       5	 244312961 ns/op	 3732043 B/op	   28338 allocs/op
+BenchmarkStripANSI/plain-8                    	400977234	         2.854 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	13758834	        83.43 ns/op	     144 B/op	       3 allocs/op
+BenchmarkStripANSI/colored-8                  	19156530	        60.56 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2437904	       488.3 ns/op	      96 B/op	       4 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    4922	    228669 ns/op	  178460 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  239857	      4441 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   44404	     26180 ns/op	   24947 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1219	    967816 ns/op	   17750 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  167971	      6994 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1603	    790787 ns/op	      3954 ns/line	   47148 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1653	    733799 ns/op	  396628 B/op	    2010 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   15279	     76149 ns/op	 162.48 MB/s	  103942 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    3418	    337911 ns/op	 210.11 MB/s	   80126 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  181880	      6524 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1288	    914240 ns/op	     16384 heap-B/term	    2854 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     399	   2914915 ns/op	    360448 heap-B/term	  864614 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     300	   3853200 ns/op	    483328 heap-B/term	  992037 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   53019	     23165 ns/op	 296.65 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   24117	     50026 ns/op	 103.45 MB/s	  118787 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     216	   5543411 ns/op	 189.33 MB/s	12406391 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     279	   4275967 ns/op	 245.23 MB/s	 1152860 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     860	   1372561 ns/op	 764.12 MB/s	   24022 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   87574	     13539 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   14110	     87682 ns/op	1122.22 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   57277	     19576 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    8990	    136335 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    2012	    617780 ns/op	 159.28 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1182	   1136192 ns/op	 923.04 MB/s	  695291 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	 9260724	       129.2 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1533123	       780.7 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1287	    982084 ns/op	      8192 heap-B/ring	     185 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     430	   2748484 ns/op	    876544 heap-B/ring	 1338533 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      36	  32183115 ns/op	   1073152 heap-B/ring	163862826 B/op	   10008 allocs/op
+BenchmarkIdleTerminals-8             	       1	3043322858 ns/op	         2.000 fds/term	         2.500 goroutines/term	     14123 heap-B/term	         0.3855 idle-cpu-ms/s	     36782 maxrss-B/term	      1000 terminals	         1.001 threads/term	23323928 B/op	  143066 allocs/op
+BenchmarkConsume/claude-8            	     192	   6495767 ns/op	 161.57 MB/s	14521364 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     195	   6055516 ns/op	 173.17 MB/s	 3457275 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     769	   1532144 ns/op	 684.53 MB/s	   71638 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	     157	   7577837 ns/op	 138.50 MB/s	16036193 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     156	   7909804 ns/op	 132.69 MB/s	16810581 B/op	   18457 allocs/op
+BenchmarkAttachFanout/K=8-8          	     100	  10734184 ns/op	  97.78 MB/s	25680824 B/op	   19361 allocs/op
+BenchmarkAttachFanout/K=64-8         	      45	  25419944 ns/op	  41.29 MB/s	83804717 B/op	   26588 allocs/op
+BenchmarkCheckpoint-8                	    1120	   1033410 ns/op	     98488 ckpt-B	  543377 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1827	   1064261 ns/op	 986.17 MB/s	 1213493 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1621	    664438 ns/op	 148.09 MB/s	  320034 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     187	   6696152 ns/op	 171.29 MB/s	13813545 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      45	  25549413 ns/op	 168.02 MB/s	54230768 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      58	  20170586 ns/op	 5242595 B/op	   50069 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 565588562 ns/op	975670772 B/op	  642375 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   47420	     25269 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  470241	      2399 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	10651471	       109.1 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     782	   1597766 ns/op	    4721 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    4021	    295651 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   51037	     23294 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	 9931328	       111.9 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      60	  19689362 ns/op	   27628 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     504	   2095086 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    9556	    135975 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	10389585	       108.4 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	      10	 107214018 ns/op	  126957 B/op	    5021 allocs/op
+BenchmarkRingSubscribe-8                      	   42211	     29643 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       5	 248613560 ns/op	 3717832 B/op	   28334 allocs/op
+BenchmarkStripANSI/plain-8                    	401265638	         2.891 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	14818957	        80.22 ns/op	     144 B/op	       3 allocs/op
+BenchmarkStripANSI/colored-8                  	20221640	        59.63 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2466625	       487.7 ns/op	      96 B/op	       4 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    4932	    220842 ns/op	  178670 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  288675	      4335 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   47919	     25499 ns/op	   24946 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1195	    983896 ns/op	   17779 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  169803	      6883 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1473	    800558 ns/op	      4003 ns/line	   47208 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1502	    743884 ns/op	  402662 B/op	    2010 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   16136	     72530 ns/op	 170.59 MB/s	  103941 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    3279	    362170 ns/op	 196.04 MB/s	   80132 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  181870	      6524 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1609	    773734 ns/op	     16384 heap-B/term	    2857 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     429	   2719680 ns/op	    360448 heap-B/term	  864642 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     316	   3687722 ns/op	    483328 heap-B/term	  992038 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   50073	     23570 ns/op	 291.55 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   25597	     47864 ns/op	 108.12 MB/s	  118787 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     223	   5433969 ns/op	 193.15 MB/s	12406349 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     273	   4323982 ns/op	 242.51 MB/s	 1152895 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     867	   1352676 ns/op	 775.35 MB/s	   24018 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   89949	     13384 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   17434	     69135 ns/op	1423.29 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   60360	     19173 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    9060	    144446 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    1846	    606038 ns/op	 162.36 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1226	    961937 ns/op	1090.25 MB/s	  695271 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	10553877	       114.4 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1630292	       737.2 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1273	    931207 ns/op	      8192 heap-B/ring	     183 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     506	   2250860 ns/op	    876544 heap-B/ring	 1338527 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      39	  29862529 ns/op	   1073152 heap-B/ring	163862780 B/op	   10008 allocs/op
+BenchmarkIdleTerminals-8             	       1	3061018179 ns/op	         2.000 fds/term	         2.500 goroutines/term	     14082 heap-B/term	         0.3715 idle-cpu-ms/s	     36868 maxrss-B/term	      1000 terminals	         1.001 threads/term	23321832 B/op	  143082 allocs/op
+BenchmarkConsume/claude-8            	     184	   6788156 ns/op	 154.61 MB/s	14521571 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     192	   6163331 ns/op	 170.14 MB/s	 3457361 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     753	   1636978 ns/op	 640.69 MB/s	   71668 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	     139	   8596795 ns/op	 122.09 MB/s	16039693 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     138	   8568427 ns/op	 122.49 MB/s	16635831 B/op	   18457 allocs/op
+BenchmarkAttachFanout/K=8-8          	     100	  13123749 ns/op	  79.97 MB/s	25471704 B/op	   19358 allocs/op
+BenchmarkAttachFanout/K=64-8         	      37	  31293609 ns/op	  33.54 MB/s	83612215 B/op	   26580 allocs/op
+BenchmarkCheckpoint-8                	     949	   1206836 ns/op	     98487 ckpt-B	  543353 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1455	    923191 ns/op	1136.87 MB/s	 1213493 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1773	    693233 ns/op	 141.94 MB/s	  320081 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     170	   6968577 ns/op	 164.59 MB/s	13813514 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      39	  26596571 ns/op	 161.40 MB/s	54230768 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      58	  19820330 ns/op	 5226362 B/op	   50069 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 592724216 ns/op	975661852 B/op	  642375 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   48223	     25492 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  507104	      2313 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	10919664	       111.3 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     723	   1604992 ns/op	    4827 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    4077	    288315 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   51374	     24168 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	10931593	       110.2 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      57	  21055757 ns/op	   27041 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     531	   2013337 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    9670	    127325 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	11403446	       107.7 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	      10	 108558104 ns/op	  126956 B/op	    5021 allocs/op
+BenchmarkRingSubscribe-8                      	   37394	     32640 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       5	 235582950 ns/op	 3717216 B/op	   28336 allocs/op
+BenchmarkStripANSI/plain-8                    	398086148	         2.804 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	13952601	        82.15 ns/op	     144 B/op	       3 allocs/op
+BenchmarkStripANSI/colored-8                  	18532122	        60.16 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2487900	       481.9 ns/op	      96 B/op	       4 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    4688	    221301 ns/op	  178701 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  274975	      4414 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   47650	     25036 ns/op	   24947 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1278	    993530 ns/op	   17775 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  183511	      6890 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1466	    796304 ns/op	      3982 ns/line	   47209 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1551	    737999 ns/op	  387379 B/op	    2010 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/vt
+BenchmarkWrite-8         	   17952	     67816 ns/op	 182.45 MB/s	  103941 B/op	      58 allocs/op
+BenchmarkWriteLines-8    	    3447	    343578 ns/op	 206.65 MB/s	   80125 B/op	    1000 allocs/op
+BenchmarkRepaint-8       	  175456	      6731 ns/op	    4096 B/op	       1 allocs/op
+BenchmarkMemory/prompt-80x24-8         	    1327	    911017 ns/op	     16384 heap-B/term	    2851 B/op	       3 allocs/op
+BenchmarkMemory/full-80x24-8           	     429	   2772940 ns/op	    360448 heap-B/term	  864615 B/op	    5023 allocs/op
+BenchmarkMemory/full-200x50-8          	     316	   3822268 ns/op	    483328 heap-B/term	  992040 B/op	    5023 allocs/op
+BenchmarkWriteStream/vim-8             	   49400	     23538 ns/op	 291.96 MB/s	       1 B/op	       0 allocs/op
+BenchmarkWriteStream/less-8            	   22758	     51955 ns/op	  99.61 MB/s	  118788 B/op	      58 allocs/op
+BenchmarkWriteStream/claude-8          	     219	   5485834 ns/op	 191.32 MB/s	12406377 B/op	    6220 allocs/op
+BenchmarkWriteStream/logs-8            	     276	   4811668 ns/op	 217.93 MB/s	 1152879 B/op	   10281 allocs/op
+BenchmarkWriteStream/progress-8        	     650	   1702546 ns/op	 616.02 MB/s	   24184 B/op	     210 allocs/op
+BenchmarkSerialize/RepaintScreen-8     	   79807	     14101 ns/op	   14336 B/op	       2 allocs/op
+BenchmarkSerialize/RepaintScrollback-8 	   16323	     75732 ns/op	1299.31 MB/s	  434818 B/op	      11 allocs/op
+BenchmarkSerialize/Lines-8             	   58194	     19165 ns/op	   11912 B/op	     200 allocs/op
+BenchmarkSerialize/ScrollbackLines-8   	    8757	    137152 ns/op	  117352 B/op	    2754 allocs/op
+BenchmarkReplay-8                      	    2059	    601511 ns/op	 163.59 MB/s	  211248 B/op	     684 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+BenchmarkRingWrite-8                 	    1297	    939917 ns/op	1115.79 MB/s	  695242 B/op	    7591 allocs/op
+BenchmarkRingSnapshotSinceRecent-8   	12085843	       108.0 ns/op	     480 B/op	       1 allocs/op
+BenchmarkRingSnapshotTail-8          	 1810341	       666.0 ns/op	    4864 B/op	       1 allocs/op
+BenchmarkRingMemory/empty-8          	    1436	    823594 ns/op	      8192 heap-B/ring	     183 B/op	       1 allocs/op
+BenchmarkRingMemory/typical-8        	     540	   2193607 ns/op	    868352 heap-B/ring	 1338529 B/op	    7605 allocs/op
+BenchmarkRingMemory/worst-8          	      38	  27396236 ns/op	   1073152 heap-B/ring	163862775 B/op	   10008 allocs/op
+BenchmarkIdleTerminals-8             	       1	3019239888 ns/op	         2.000 fds/term	         2.500 goroutines/term	     14164 heap-B/term	         0.2430 idle-cpu-ms/s	     38244 maxrss-B/term	      1000 terminals	         1.001 threads/term	23325952 B/op	  143088 allocs/op
+BenchmarkConsume/claude-8            	     192	   6460999 ns/op	 162.44 MB/s	14521364 B/op	   18332 allocs/op
+BenchmarkConsume/logs-8              	     200	   5814540 ns/op	 180.34 MB/s	 3457137 B/op	   30843 allocs/op
+BenchmarkConsume/progress-8          	     776	   1501246 ns/op	 698.62 MB/s	   71625 B/op	     630 allocs/op
+BenchmarkConsume/claude-persist-8    	     158	   7657700 ns/op	 137.06 MB/s	16034359 B/op	   18478 allocs/op
+BenchmarkAttachFanout/K=1-8          	     152	   7762620 ns/op	 135.21 MB/s	16846952 B/op	   18457 allocs/op
+BenchmarkAttachFanout/K=8-8          	     127	   9324527 ns/op	 112.56 MB/s	26153297 B/op	   19356 allocs/op
+BenchmarkAttachFanout/K=64-8         	      54	  25027368 ns/op	  41.94 MB/s	84210502 B/op	   26588 allocs/op
+BenchmarkCheckpoint-8                	     776	   1400232 ns/op	     98487 ckpt-B	  543332 B/op	      36 allocs/op
+BenchmarkTailAppend-8                	    1819	    930702 ns/op	1127.69 MB/s	 1213493 B/op	     130 allocs/op
+BenchmarkLoadScreen/tail=0KiB-8      	    1820	    638534 ns/op	 154.10 MB/s	  320051 B/op	     706 allocs/op
+BenchmarkLoadScreen/tail=1024KiB-8   	     187	   6437232 ns/op	 178.18 MB/s	13813899 B/op	    7071 allocs/op
+BenchmarkLoadScreen/tail=4096KiB-8   	      45	  24094045 ns/op	 178.16 MB/s	54230797 B/op	   26089 allocs/op
+BenchmarkStartup1000/Manager-8       	      63	  18550868 ns/op	 5243587 B/op	   50069 allocs/op
+BenchmarkStartup1000/Screens-8       	       2	 564043703 ns/op	975700184 B/op	  642389 allocs/op
+BenchmarkManagerScale/List/N=100-8   	   45639	     26317 ns/op	   45384 B/op	     204 allocs/op
+BenchmarkManagerScale/Metrics/N=100-8         	  469417	      2314 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=100-8             	10920304	       109.7 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=100-8          	     547	   2086589 ns/op	    4810 B/op	     121 allocs/op
+BenchmarkManagerScale/List/N=1000-8           	    3333	    345520 ns/op	  384488 B/op	    2004 allocs/op
+BenchmarkManagerScale/Metrics/N=1000-8        	   49440	     23349 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=1000-8            	11108210	       107.2 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=1000-8         	      52	  20212324 ns/op	   27815 B/op	    1021 allocs/op
+BenchmarkManagerScale/List/N=5000-8           	     517	   2093774 ns/op	 1887976 B/op	   10004 allocs/op
+BenchmarkManagerScale/Metrics/N=5000-8        	    9705	    126202 ns/op	     256 B/op	       2 allocs/op
+BenchmarkManagerScale/Get/N=5000-8            	10636828	       107.3 ns/op	      40 B/op	       2 allocs/op
+BenchmarkManagerScale/Search/N=5000-8         	      10	 105948582 ns/op	  126957 B/op	    5021 allocs/op
+BenchmarkRingSubscribe-8                      	   44912	     29315 ns/op	  259448 B/op	       4 allocs/op
+BenchmarkRestoreGhosts-8                      	       4	 251571729 ns/op	 3658480 B/op	   28179 allocs/op
+BenchmarkStripANSI/plain-8                    	402177014	         2.953 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStripANSI/plain/regexp-8             	14211116	        81.95 ns/op	     144 B/op	       3 allocs/op
+BenchmarkStripANSI/colored-8                  	19500027	        60.52 ns/op	      64 B/op	       1 allocs/op
+BenchmarkStripANSI/colored/regexp-8           	 2411336	       496.3 ns/op	      96 B/op	       4 allocs/op
+PASS
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+BenchmarkHTTP/List-8    	    5968	    198932 ns/op	  178435 B/op	     625 allocs/op
+BenchmarkHTTP/OutputSinceRecent-8         	  263568	      4551 ns/op	    8864 B/op	      39 allocs/op
+BenchmarkHTTP/OutputTail100-8             	   44688	     26316 ns/op	   24946 B/op	     128 allocs/op
+BenchmarkHTTP/Search-8                    	    1210	   1031354 ns/op	   17750 B/op	      85 allocs/op
+BenchmarkHTTP/Metrics-8                   	  159229	      7663 ns/op	    6960 B/op	      26 allocs/op
+BenchmarkStream-8                         	    1462	    798879 ns/op	      3994 ns/line	   47222 B/op	    1400 allocs/op
+BenchmarkEncodeList-8                     	    1478	    751732 ns/op	  397153 B/op	    2010 allocs/op
+PASS

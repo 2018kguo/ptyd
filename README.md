@@ -357,7 +357,7 @@ idle terminals on Linux: ~13.5 KiB heap, 2.5 goroutines, 1 OS thread and
 2 file descriptors per terminal, and about 0.2 ms of CPU per second in
 total. The screen model added ~2 KiB per idle terminal (Linux, 1000
 terminals: 11.1–12.1 → 13.4–13.6 KiB; macOS, 400: 18.7 → 20.5 KiB; idle
-CPU unchanged) and processes output at 230–260 MB/s.
+CPU unchanged).
 
 Limits to know about when running thousands of terminals:
 
@@ -374,8 +374,32 @@ Limits to know about when running thousands of terminals:
 - **Processes:** every terminal is at least one process, so the user's
   process limit (`ulimit -u`) applies.
 
-Benchmarks: `go test -run '^$' -bench . ./...`; the idle-terminal one
-spawns `PTYD_SCALE_N` terminals (default 1000, 400 on macOS).
+### Performance
+
+Measured on an Apple M5 Pro, on macOS and in Docker on the same machine
+(Linux arm64, 8 CPUs). [`bench/README.md`](bench/README.md) has the
+method, the results and the cost of every route and loop.
+
+- **Emulator:** 300–400 MB/s per core on agent TUI, log and vim output,
+  ~850 MB/s on progress bars; redrawing a frame allocates nothing.
+  Everything one PTY read goes through (screen, line ring, attached
+  clients, persisted tail) runs at 250–310 MB/s.
+- **Under load:** 32 terminals each printing 1 MiB/s of agent output,
+  each attached and streamed, with `--persist-dir`: 1.5 cores on Linux
+  (2.6 on macOS); a keystroke typed through `attach` is echoed back in
+  0.23 ms at the median and 0.55 ms at p99 on Linux (0.12 and 0.6 ms on
+  macOS); one GC cycle per second; 1.03 bytes written to disk per byte of
+  output.
+- **Flat out:** 8 terminals printing as fast as they can reach ~195 MB/s
+  on Linux and ~85 MB/s on macOS, where a PTY read returns at most 1 KiB
+  and each read is also a write to the tail.
+- **Restore:** ~0.6 ms per terminal on Linux and ~10 ms on macOS (where
+  fsync flushes the drive), 16 at a time at startup.
+
+Reproduce with `bench/run.sh` (benchmarks), `bench/ab.sh` (A/B against a
+revision) and `bench/load.sh` (end-to-end load test, build tag
+`loadtest`). The idle-terminal benchmark spawns `PTYD_SCALE_N` terminals
+(default 1000, 400 on macOS).
 
 ## Security
 

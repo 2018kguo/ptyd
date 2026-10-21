@@ -1,0 +1,321 @@
+goos: linux
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/api
+                         │     old      │                  new                  │
+                         │    sec/op    │    sec/op      vs base                │
+HTTP/List-8                221.1µ ±  9%    240.4µ ±  6%   +8.72% (p=0.043 n=10)
+HTTP/OutputSinceRecent-8   4.487µ ± 17%    4.702µ ± 12%        ~ (p=0.105 n=10)
+HTTP/OutputTail100-8       26.25µ ± 10%    26.96µ ±  8%        ~ (p=0.105 n=10)
+HTTP/Search-8              989.2µ ± 10%   1017.0µ ±  9%        ~ (p=0.912 n=10)
+HTTP/Metrics-8             7.062µ ±  9%    4.529µ ± 21%  -35.86% (p=0.000 n=10)
+Stream-8                   799.7µ ± 12%    254.2µ ± 16%  -68.21% (p=0.000 n=10)
+EncodeList-8               747.1µ ± 13%    778.0µ ± 14%   +4.14% (p=0.043 n=10)
+geomean                    101.2µ          83.27µ        -17.71%
+
+                         │     old      │                  new                   │
+                         │     B/op     │     B/op      vs base                  │
+HTTP/List-8                174.4Ki ± 0%   174.4Ki ± 0%        ~ (p=0.143 n=10)
+HTTP/OutputSinceRecent-8   8.656Ki ± 0%   8.656Ki ± 0%        ~ (p=1.000 n=10) ¹
+HTTP/OutputTail100-8       24.36Ki ± 0%   24.36Ki ± 0%        ~ (p=0.303 n=10)
+HTTP/Search-8              17.33Ki ± 0%   17.34Ki ± 0%        ~ (p=0.897 n=10)
+HTTP/Metrics-8             6.797Ki ± 0%   6.891Ki ± 0%   +1.38% (p=0.000 n=10)
+Stream-8                   46.09Ki ± 0%   22.21Ki ± 0%  -51.81% (p=0.000 n=10)
+EncodeList-8               386.9Ki ± 1%   385.8Ki ± 1%        ~ (p=0.971 n=10)
+geomean                    35.93Ki        32.42Ki        -9.76%
+¹ all samples are equal
+
+                         │     old     │                  new                  │
+                         │  allocs/op  │  allocs/op   vs base                  │
+HTTP/List-8                 625.0 ± 0%    625.0 ± 0%        ~ (p=1.000 n=10) ¹
+HTTP/OutputSinceRecent-8    39.00 ± 0%    39.00 ± 0%        ~ (p=1.000 n=10) ¹
+HTTP/OutputTail100-8        128.0 ± 0%    128.0 ± 0%        ~ (p=1.000 n=10) ¹
+HTTP/Search-8               85.00 ± 0%    85.00 ± 0%        ~ (p=1.000 n=10) ¹
+HTTP/Metrics-8              26.00 ± 0%    26.00 ± 0%        ~ (p=1.000 n=10) ¹
+Stream-8                   1400.0 ± 0%    809.0 ± 0%  -42.21% (p=0.000 n=10)
+EncodeList-8               2.010k ± 0%   2.010k ± 0%        ~ (p=1.000 n=10) ¹
+geomean                     212.2         196.3        -7.54%
+¹ all samples are equal
+
+         │     old      │                 new                  │
+         │   sec/line   │   sec/line    vs base                │
+Stream-8   3.999µ ± 12%   1.271µ ± 16%  -68.21% (p=0.000 n=10)
+
+pkg: github.com/2018kguo/ptyd/internal/terminal
+                              │      old      │                 new                  │
+                              │    sec/op     │    sec/op     vs base                │
+RingWrite-8                      938.2µ ± 18%   626.2µ ±  4%  -33.26% (p=0.000 n=10)
+RingSnapshotSinceRecent-8        117.2n ± 14%   113.4n ±  7%        ~ (p=0.210 n=10)
+RingSnapshotTail-8               731.9n ± 10%   692.5n ±  6%        ~ (p=0.165 n=10)
+RingMemory/empty-8               918.9µ ± 11%   921.8µ ±  6%        ~ (p=0.971 n=10)
+RingMemory/typical-8             2.260m ± 14%   1.971m ± 14%  -12.78% (p=0.002 n=10)
+RingMemory/worst-8               29.52m ±  9%   31.09m ±  6%        ~ (p=0.165 n=10)
+IdleTerminals-8                   3.031 ±  3%    2.942 ±  2%   -2.94% (p=0.000 n=10)
+Consume/claude-8                 6.710m ± 19%   3.841m ±  5%  -42.75% (p=0.000 n=10)
+Consume/logs-8                   6.006m ± 15%   4.694m ±  9%  -21.84% (p=0.000 n=10)
+Consume/progress-8               1.585m ± 12%   1.506m ±  6%   -4.96% (p=0.035 n=10)
+Consume/claude-persist-8         8.069m ± 12%   4.567m ±  5%  -43.40% (p=0.000 n=10)
+AttachFanout/K=1-8               7.867m ±  9%   4.311m ±  3%  -45.20% (p=0.000 n=10)
+AttachFanout/K=8-8               9.931m ± 32%   4.673m ± 11%  -52.95% (p=0.000 n=10)
+AttachFanout/K=64-8              25.49m ±  4%   13.78m ± 15%  -45.94% (p=0.000 n=10)
+Checkpoint-8                     1.252m ± 20%   1.276m ± 50%        ~ (p=0.853 n=10)
+TailAppend-8                     993.5µ ±  9%   869.5µ ± 22%  -12.48% (p=0.029 n=10)
+LoadScreen/tail=0KiB-8           665.5µ ± 10%   669.5µ ±  7%        ~ (p=0.579 n=10)
+LoadScreen/tail=1024KiB-8        6.922m ±  7%   3.857m ± 10%  -44.28% (p=0.000 n=10)
+LoadScreen/tail=4096KiB-8        25.88m ±  6%   13.91m ± 18%  -46.26% (p=0.000 n=10)
+Startup1000/Manager-8            19.44m ±  5%   20.01m ± 17%        ~ (p=0.436 n=10)
+Startup1000/Screens-8            585.9m ±  6%   438.5m ±  9%  -25.15% (p=0.000 n=10)
+ManagerScale/List/N=100-8        25.49µ ±  5%   25.83µ ±  9%        ~ (p=0.912 n=10)
+ManagerScale/Metrics/N=100-8     2.348µ ±  8%   1.100µ ±  9%  -53.14% (p=0.000 n=10)
+ManagerScale/Get/N=100-8         110.5n ±  9%   111.9n ± 10%        ~ (p=0.753 n=10)
+ManagerScale/Search/N=100-8      1.643m ±  3%   1.510m ±  6%   -8.08% (p=0.002 n=10)
+ManagerScale/List/N=1000-8       297.1µ ±  8%   293.4µ ± 14%        ~ (p=0.631 n=10)
+ManagerScale/Metrics/N=1000-8    23.83µ ±  6%   10.79µ ±  8%  -54.73% (p=0.000 n=10)
+ManagerScale/Get/N=1000-8        109.4n ±  8%   111.5n ± 19%        ~ (p=0.143 n=10)
+ManagerScale/Search/N=1000-8     20.03m ±  5%   16.00m ± 16%  -20.11% (p=0.000 n=10)
+ManagerScale/List/N=5000-8       2.127m ±  9%   2.267m ± 21%        ~ (p=0.247 n=10)
+ManagerScale/Metrics/N=5000-8   131.40µ ±  5%   59.04µ ± 31%  -55.07% (p=0.000 n=10)
+ManagerScale/Get/N=5000-8        112.0n ±  7%   113.0n ± 16%        ~ (p=0.424 n=10)
+ManagerScale/Search/N=5000-8    108.77m ± 11%   81.12m ± 12%  -25.42% (p=0.000 n=10)
+RingSubscribe-8                 31.503µ ± 10%   1.224µ ± 12%  -96.12% (p=0.000 n=10)
+RestoreGhosts-8                 251.30m ± 21%   63.42m ± 16%  -74.76% (p=0.000 n=10)
+StripANSI/plain-8                2.873n ± 11%   3.359n ± 16%  +16.94% (p=0.005 n=10)
+StripANSI/plain/regexp-8         82.59n ±  3%   80.67n ± 20%        ~ (p=0.280 n=10)
+StripANSI/colored-8              60.52n ± 13%   66.34n ± 12%        ~ (p=0.469 n=10)
+StripANSI/colored/regexp-8       493.9n ±  5%   493.8n ± 15%        ~ (p=0.869 n=10)
+geomean                          288.1µ         207.4µ        -28.02%
+
+                          │      old       │                   new                   │
+                          │      B/s       │      B/s        vs base                 │
+RingWrite-8                  1.041Gi ± 15%    1.560Gi ±  4%   +49.85% (p=0.000 n=10)
+Consume/claude-8             149.2Mi ± 16%    260.6Mi ±  5%   +74.69% (p=0.000 n=10)
+Consume/logs-8               166.5Mi ± 13%    213.0Mi ±  8%   +27.93% (p=0.000 n=10)
+Consume/progress-8           631.9Mi ± 11%    664.2Mi ±  5%    +5.11% (p=0.035 n=10)
+Consume/claude-persist-8     124.1Mi ± 11%    219.2Mi ±  5%   +76.66% (p=0.000 n=10)
+AttachFanout/K=1-8           127.2Mi ±  8%    232.2Mi ±  3%   +82.48% (p=0.000 n=10)
+AttachFanout/K=8-8           100.8Mi ± 24%    214.2Mi ± 10%  +112.51% (p=0.000 n=10)
+AttachFanout/K=64-8          39.26Mi ±  3%    72.64Mi ± 13%   +85.00% (p=0.000 n=10)
+TailAppend-8                1007.8Mi ±  8%   1151.2Mi ± 19%   +14.22% (p=0.029 n=10)
+LoadScreen/tail=0KiB-8       141.0Mi ±  9%    140.2Mi ±  7%         ~ (p=0.579 n=10)
+LoadScreen/tail=1024KiB-8    158.0Mi ±  8%    283.6Mi ±  9%   +79.45% (p=0.000 n=10)
+LoadScreen/tail=4096KiB-8    158.2Mi ±  6%    294.4Mi ± 15%   +86.08% (p=0.000 n=10)
+geomean                      198.4Mi          304.2Mi         +53.35%
+
+                              │        old        │                   new                   │
+                              │       B/op        │     B/op       vs base                  │
+RingWrite-8                        679.0Ki ± 0%     586.7Ki ±  0%  -13.58% (p=0.000 n=10)
+RingSnapshotSinceRecent-8            480.0 ± 0%       480.0 ±  0%        ~ (p=1.000 n=10) ¹
+RingSnapshotTail-8                 4.750Ki ± 0%     4.750Ki ±  0%        ~ (p=1.000 n=10) ¹
+RingMemory/empty-8                   182.0 ± 3%       210.5 ±  3%  +15.66% (p=0.000 n=10)
+RingMemory/typical-8               1.277Mi ± 0%     1.187Mi ±  0%   -7.04% (p=0.000 n=10)
+RingMemory/worst-8                 156.3Mi ± 0%     156.3Mi ±  0%        ~ (p=0.148 n=10)
+IdleTerminals-8                    22.24Mi ± 0%     22.27Mi ±  0%   +0.13% (p=0.000 n=10)
+Consume/claude-8                  13.849Mi ± 0%     1.035Mi ±  0%  -92.52% (p=0.000 n=10)
+Consume/logs-8                     3.297Mi ± 0%     2.199Mi ±  0%  -33.31% (p=0.000 n=10)
+Consume/progress-8                 69.97Ki ± 0%     47.11Ki ±  0%  -32.66% (p=0.000 n=10)
+Consume/claude-persist-8          15.292Mi ± 0%     1.324Mi ±  0%  -91.34% (p=0.000 n=10)
+AttachFanout/K=1-8                16.029Mi ± 0%     1.055Mi ±  2%  -93.42% (p=0.000 n=10)
+AttachFanout/K=8-8                24.835Mi ± 1%     1.051Mi ±  1%  -95.77% (p=0.000 n=10)
+AttachFanout/K=64-8               79.742Mi ± 1%     1.181Mi ± 12%  -98.52% (p=0.000 n=10)
+Checkpoint-8                       530.6Ki ± 0%     530.6Ki ±  0%        ~ (p=0.089 n=10)
+TailAppend-8                    1213493.00 ± 0%       62.50 ±  6%  -99.99% (p=0.000 n=10)
+LoadScreen/tail=0KiB-8             312.6Ki ± 0%     312.6Ki ±  0%        ~ (p=0.159 n=10)
+LoadScreen/tail=1024KiB-8        13489.7Ki ± 0%     439.0Ki ±  0%  -96.75% (p=0.000 n=10)
+LoadScreen/tail=4096KiB-8        52959.7Ki ± 0%     552.2Ki ±  0%  -98.96% (p=0.000 n=10)
+Startup1000/Manager-8              5.000Mi ± 0%     4.993Mi ±  0%        ~ (p=0.796 n=10)
+Startup1000/Screens-8              930.5Mi ± 0%     210.4Mi ±  0%  -77.39% (p=0.000 n=10)
+ManagerScale/List/N=100-8          44.32Ki ± 0%     44.32Ki ±  0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Metrics/N=100-8         256.0 ± 0%       256.0 ±  0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Get/N=100-8             40.00 ± 0%       40.00 ±  0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Search/N=100-8        4.660Ki ± 1%     4.614Ki ±  1%   -0.98% (p=0.041 n=10)
+ManagerScale/List/N=1000-8         375.5Ki ± 0%     375.5Ki ±  0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Metrics/N=1000-8        256.0 ± 0%       256.0 ±  0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Get/N=1000-8            40.00 ± 0%       40.00 ±  0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Search/N=1000-8       26.42Ki ± 2%     26.41Ki ±  1%        ~ (p=0.869 n=10)
+ManagerScale/List/N=5000-8         1.801Mi ± 0%     1.801Mi ±  0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Metrics/N=5000-8        256.0 ± 0%       256.0 ±  0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Get/N=5000-8            40.00 ± 0%       40.00 ±  0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Search/N=5000-8       124.2Ki ± 3%     123.2Ki ±  2%        ~ (p=0.209 n=10)
+RingSubscribe-8                   253.37Ki ± 0%     13.37Ki ±  0%  -94.72% (p=0.000 n=10)
+RestoreGhosts-8                    3.489Mi ± 2%     4.507Mi ±  3%  +29.18% (p=0.000 n=10)
+StripANSI/plain-8                    0.000 ± 0%       0.000 ±  0%        ~ (p=1.000 n=10) ¹
+StripANSI/plain/regexp-8             144.0 ± 0%       144.0 ±  0%        ~ (p=1.000 n=10) ¹
+StripANSI/colored-8                  64.00 ± 0%       64.00 ±  0%        ~ (p=1.000 n=10) ¹
+StripANSI/colored/regexp-8           96.00 ± 0%       96.00 ±  0%        ~ (p=1.000 n=10) ¹
+geomean                                         ²                  -62.32%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                              │      old       │                  new                  │
+                              │   allocs/op    │  allocs/op   vs base                  │
+RingWrite-8                      7.591k ± 0%     5.905k ± 0%  -22.21% (p=0.000 n=10)
+RingSnapshotSinceRecent-8         1.000 ± 0%      1.000 ± 0%        ~ (p=1.000 n=10) ¹
+RingSnapshotTail-8                1.000 ± 0%      1.000 ± 0%        ~ (p=1.000 n=10) ¹
+RingMemory/empty-8                1.000 ± 0%      1.000 ± 0%        ~ (p=1.000 n=10) ¹
+RingMemory/typical-8             7.605k ± 0%     5.919k ± 0%  -22.17% (p=0.000 n=10)
+RingMemory/worst-8               10.01k ± 0%     10.01k ± 0%   -0.01% (p=0.005 n=10)
+IdleTerminals-8                  143.1k ± 0%     143.1k ± 0%        ~ (p=0.912 n=10)
+Consume/claude-8                18.332k ± 0%     6.232k ± 0%  -66.00% (p=0.000 n=10)
+Consume/logs-8                   30.84k ± 0%     20.56k ± 0%  -33.33% (p=0.000 n=10)
+Consume/progress-8                630.0 ± 0%      420.0 ± 0%  -33.33% (p=0.000 n=10)
+Consume/claude-persist-8        18.478k ± 0%     6.248k ± 0%  -66.19% (p=0.000 n=10)
+AttachFanout/K=1-8              18.457k ± 0%     6.232k ± 0%  -66.24% (p=0.000 n=10)
+AttachFanout/K=8-8              19.358k ± 0%     6.232k ± 0%  -67.81% (p=0.000 n=10)
+AttachFanout/K=64-8             26.588k ± 0%     6.237k ± 0%  -76.54% (p=0.000 n=10)
+Checkpoint-8                      36.00 ± 0%      36.00 ± 0%        ~ (p=1.000 n=10) ¹
+TailAppend-8                    130.000 ± 0%      1.000 ± 0%  -99.23% (p=0.000 n=10)
+LoadScreen/tail=0KiB-8            706.0 ± 0%      706.0 ± 0%        ~ (p=1.000 n=10) ¹
+LoadScreen/tail=1024KiB-8        7071.0 ± 0%      897.0 ± 0%  -87.31% (p=0.000 n=10)
+LoadScreen/tail=4096KiB-8       26.089k ± 0%     1.388k ± 0%  -94.68% (p=0.000 n=10)
+Startup1000/Manager-8            50.07k ± 0%     50.07k ± 0%        ~ (p=0.216 n=10)
+Startup1000/Screens-8            642.4k ± 0%     264.1k ± 0%  -58.89% (p=0.000 n=10)
+ManagerScale/List/N=100-8         204.0 ± 0%      204.0 ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Metrics/N=100-8      2.000 ± 0%      2.000 ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Get/N=100-8          2.000 ± 0%      2.000 ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Search/N=100-8       121.0 ± 0%      121.0 ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/List/N=1000-8       2.004k ± 0%     2.004k ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Metrics/N=1000-8     2.000 ± 0%      2.000 ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Get/N=1000-8         2.000 ± 0%      2.000 ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Search/N=1000-8     1.021k ± 0%     1.021k ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/List/N=5000-8       10.00k ± 0%     10.00k ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Metrics/N=5000-8     2.000 ± 0%      2.000 ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Get/N=5000-8         2.000 ± 0%      2.000 ± 0%        ~ (p=1.000 n=10) ¹
+ManagerScale/Search/N=5000-8     5.021k ± 0%     5.021k ± 0%        ~ (p=1.000 n=10)
+RingSubscribe-8                   4.000 ± 0%      3.000 ± 0%  -25.00% (p=0.000 n=10)
+RestoreGhosts-8                  28.18k ± 1%     30.14k ± 1%   +6.97% (p=0.000 n=10)
+StripANSI/plain-8                 0.000 ± 0%      0.000 ± 0%        ~ (p=1.000 n=10) ¹
+StripANSI/plain/regexp-8          3.000 ± 0%      3.000 ± 0%        ~ (p=1.000 n=10) ¹
+StripANSI/colored-8               1.000 ± 0%      1.000 ± 0%        ~ (p=1.000 n=10) ¹
+StripANSI/colored/regexp-8        4.000 ± 0%      4.000 ± 0%        ~ (p=1.000 n=10) ¹
+geomean                                      ²                -37.16%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                │     old      │              new               │
+                │ heap-B/term  │ heap-B/term   vs base          │
+IdleTerminals-8   13.77Ki ± 2%   13.74Ki ± 1%  ~ (p=0.592 n=10)
+
+                     │     old      │                    new                    │
+                     │ heap-B/ring  │ heap-B/ring   vs base                     │
+RingMemory/empty-8     8.000Ki ± 0%   0.000Ki ± 0%  -100.00% (p=0.000 n=10)
+RingMemory/typical-8   844.0Ki ± 1%   760.0Ki ± 1%    -9.95% (p=0.000 n=10)
+RingMemory/worst-8     1.023Mi ± 0%   1.016Mi ± 0%    -0.76% (p=0.000 n=10)
+geomean                192.0Ki                      ?                       ¹ ²
+¹ summaries must be >0 to compute geomean
+² ratios must be >0 to compute geomean
+
+                │    old     │              new               │
+                │  fds/term  │  fds/term   vs base            │
+IdleTerminals-8   2.000 ± 0%   2.000 ± 0%  ~ (p=1.000 n=10) ¹
+¹ all samples are equal
+
+                │       old       │                 new                 │
+                │ goroutines/term │ goroutines/term  vs base            │
+IdleTerminals-8        2.500 ± 0%        2.500 ± 0%  ~ (p=1.000 n=10) ¹
+¹ all samples are equal
+
+                │      old      │               new               │
+                │ idle-cpu-ms/s │ idle-cpu-ms/s  vs base          │
+IdleTerminals-8    329.0m ± 29%    326.3m ± 21%  ~ (p=0.986 n=10)
+
+                │      old      │               new               │
+                │ maxrss-B/term │ maxrss-B/term  vs base          │
+IdleTerminals-8    36.05Ki ± 3%    37.10Ki ± 2%  ~ (p=0.089 n=10)
+
+                │     old     │               new               │
+                │  terminals  │  terminals   vs base            │
+IdleTerminals-8   1.000k ± 0%   1.000k ± 0%  ~ (p=1.000 n=10) ¹
+¹ all samples are equal
+
+                │     old      │              new               │
+                │ threads/term │ threads/term  vs base          │
+IdleTerminals-8     1.001 ± 0%     1.001 ± 0%  ~ (p=0.263 n=10)
+
+             │     old      │              new               │
+             │    ckpt-B    │    ckpt-B     vs base          │
+Checkpoint-8   96.18Ki ± 0%   96.18Ki ± 0%  ~ (p=0.628 n=10)
+
+pkg: github.com/2018kguo/ptyd/internal/vt
+                              │     old      │                 new                  │
+                              │    sec/op    │    sec/op     vs base                │
+Write-8                         71.90µ ±  8%   44.60µ ±  6%  -37.97% (p=0.000 n=10)
+WriteLines-8                    351.0µ ±  8%   313.9µ ±  9%  -10.57% (p=0.005 n=10)
+Repaint-8                       6.691µ ±  5%   6.793µ ±  8%        ~ (p=0.072 n=10)
+Memory/prompt-80x24-8           894.1µ ±  8%   891.5µ ± 16%        ~ (p=0.912 n=10)
+Memory/full-80x24-8             2.873m ± 27%   2.808m ±  9%        ~ (p=0.218 n=10)
+Memory/full-200x50-8            3.860m ± 15%   3.569m ±  8%   -7.52% (p=0.007 n=10)
+WriteStream/vim-8               23.56µ ±  9%   21.91µ ±  4%   -7.02% (p=0.001 n=10)
+WriteStream/less-8              50.90µ ±  7%   22.88µ ±  8%  -55.04% (p=0.000 n=10)
+WriteStream/claude-8            5.553m ±  8%   3.074m ±  7%  -44.64% (p=0.000 n=10)
+WriteStream/logs-8              4.551m ±  6%   3.982m ±  5%  -12.50% (p=0.000 n=10)
+WriteStream/progress-8          1.388m ± 13%   1.332m ±  6%   -4.07% (p=0.029 n=10)
+Serialize/RepaintScreen-8       13.64µ ±  5%   14.79µ ±  9%   +8.42% (p=0.009 n=10)
+Serialize/RepaintScrollback-8   77.46µ ± 13%   86.00µ ±  8%        ~ (p=0.052 n=10)
+Serialize/Lines-8               19.51µ ± 10%   21.08µ ± 10%        ~ (p=0.063 n=10)
+Serialize/ScrollbackLines-8     137.9µ ±  8%   140.7µ ±  7%        ~ (p=0.631 n=10)
+Replay-8                        614.1µ ±  7%   622.5µ ±  6%        ~ (p=1.000 n=10)
+geomean                         240.2µ         211.7µ        -11.86%
+
+                              │      old      │                  new                   │
+                              │      B/s      │      B/s       vs base                 │
+Write-8                         164.1Mi ±  7%    264.6Mi ± 5%   +61.22% (p=0.000 n=10)
+WriteLines-8                    192.9Mi ±  7%    215.7Mi ± 8%   +11.81% (p=0.005 n=10)
+WriteStream/vim-8               278.2Mi ±  8%    299.2Mi ± 4%    +7.55% (p=0.001 n=10)
+WriteStream/less-8              96.97Mi ±  6%   215.66Mi ± 7%  +122.40% (p=0.000 n=10)
+WriteStream/claude-8            180.2Mi ±  7%    325.7Mi ± 6%   +80.72% (p=0.000 n=10)
+WriteStream/logs-8              219.8Mi ±  6%    251.2Mi ± 6%   +14.30% (p=0.000 n=10)
+WriteStream/progress-8          720.5Mi ± 11%    751.1Mi ± 6%    +4.24% (p=0.029 n=10)
+Serialize/RepaintScrollback-8   1.184Gi ± 12%    1.068Gi ± 8%         ~ (p=0.052 n=10)
+Replay-8                        152.8Mi ±  6%    150.8Mi ± 6%         ~ (p=1.000 n=10)
+geomean                         254.7Mi          322.1Mi        +26.45%
+
+                              │       old       │                   new                    │
+                              │      B/op       │     B/op       vs base                   │
+Write-8                         103941.000 ± 0%     2.000 ± 50%  -100.00% (p=0.000 n=10)
+WriteLines-8                       78.25Ki ± 0%   78.24Ki ±  0%    -0.01% (p=0.003 n=10)
+Repaint-8                          4.000Ki ± 0%   4.000Ki ±  0%         ~ (p=1.000 n=10) ¹
+Memory/prompt-80x24-8              2.787Ki ± 0%   2.790Ki ±  0%         ~ (p=0.137 n=10)
+Memory/full-80x24-8                844.4Ki ± 0%   844.4Ki ±  0%         ~ (p=0.196 n=10)
+Memory/full-200x50-8               968.8Ki ± 0%   968.8Ki ±  0%         ~ (p=0.668 n=10)
+WriteStream/vim-8                    1.000 ± 0%     1.000 ±  0%         ~ (p=1.000 n=10) ¹
+WriteStream/less-8              118787.000 ± 0%     1.000 ±  0%  -100.00% (p=0.000 n=10)
+WriteStream/claude-8            12115.63Ki ± 0%   27.21Ki ±  0%   -99.78% (p=0.000 n=10)
+WriteStream/logs-8                 1.100Mi ± 0%   1.099Mi ±  0%    -0.02% (p=0.000 n=10)
+WriteStream/progress-8             23.46Ki ± 0%   23.45Ki ±  0%    -0.06% (p=0.050 n=10)
+Serialize/RepaintScreen-8          14.00Ki ± 0%   14.00Ki ±  0%         ~ (p=1.000 n=10) ¹
+Serialize/RepaintScrollback-8      424.6Ki ± 0%   424.6Ki ±  0%         ~ (p=1.000 n=10) ¹
+Serialize/Lines-8                  11.63Ki ± 0%   11.88Ki ±  0%    +2.08% (p=0.000 n=10)
+Serialize/ScrollbackLines-8        114.6Ki ± 0%   114.6Ki ±  0%         ~ (p=1.000 n=10) ¹
+Replay-8                           206.3Ki ± 0%   206.3Ki ±  0%         ~ (p=1.000 n=10) ¹
+geomean                            53.34Ki        8.916Ki         -83.28%
+¹ all samples are equal
+
+                              │      old      │                   new                    │
+                              │   allocs/op   │  allocs/op   vs base                     │
+Write-8                          58.00 ± 0%       0.00 ± 0%  -100.00% (p=0.000 n=10)
+WriteLines-8                    1.000k ± 0%     1.000k ± 0%         ~ (p=1.000 n=10) ¹
+Repaint-8                        1.000 ± 0%      1.000 ± 0%         ~ (p=1.000 n=10) ¹
+Memory/prompt-80x24-8            3.000 ± 0%      3.000 ± 0%         ~ (p=1.000 n=10) ¹
+Memory/full-80x24-8             5.023k ± 0%     5.023k ± 0%         ~ (p=1.000 n=10) ¹
+Memory/full-200x50-8            5.023k ± 0%     5.023k ± 0%         ~ (p=1.000 n=10) ¹
+WriteStream/vim-8                0.000 ± 0%      0.000 ± 0%         ~ (p=1.000 n=10) ¹
+WriteStream/less-8               58.00 ± 0%       0.00 ± 0%  -100.00% (p=0.000 n=10)
+WriteStream/claude-8            6220.0 ± 0%      176.0 ± 0%   -97.17% (p=0.000 n=10)
+WriteStream/logs-8              10.28k ± 0%     10.28k ± 0%         ~ (p=1.000 n=10) ¹
+WriteStream/progress-8           210.0 ± 0%      210.0 ± 0%         ~ (p=1.000 n=10) ¹
+Serialize/RepaintScreen-8        2.000 ± 0%      2.000 ± 0%         ~ (p=1.000 n=10) ¹
+Serialize/RepaintScrollback-8    11.00 ± 0%      11.00 ± 0%         ~ (p=1.000 n=10) ¹
+Serialize/Lines-8                200.0 ± 0%      205.0 ± 0%    +2.50% (p=0.000 n=10)
+Serialize/ScrollbackLines-8     2.754k ± 0%     2.754k ± 0%         ~ (p=1.000 n=10) ¹
+Replay-8                         684.0 ± 0%      684.0 ± 0%         ~ (p=1.000 n=10) ¹
+geomean                                     ²                ?                       ² ³
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean
+
+                      │     old      │                  new                  │
+                      │ heap-B/term  │ heap-B/term   vs base                 │
+Memory/prompt-80x24-8   16.00Ki ± 0%   16.00Ki ± 0%       ~ (p=1.000 n=10) ¹
+Memory/full-80x24-8     352.0Ki ± 0%   352.0Ki ± 0%       ~ (p=1.000 n=10) ¹
+Memory/full-200x50-8    472.0Ki ± 0%   472.0Ki ± 0%       ~ (p=1.000 n=10) ¹
+geomean                 138.5Ki        138.5Ki       +0.00%
+¹ all samples are equal
