@@ -1,0 +1,16 @@
+# systemd user unit. Install:
+#   cp infra/systemd/ptyd.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now ptyd
+[Unit]
+Description=ptyd PTY session daemon
+Documentation=https://github.com/2018kguo/ptyd
+
+[Service]
+ExecStart=%h/go/bin/ptyd --bind 127.0.0.1:4242 --persist-dir %h/.local/state/ptyd/terminals
+# Let ptyd terminate its own terminals on SIGTERM; systemd SIGKILLs leftovers.
+KillMode=mixed
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

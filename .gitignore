@@ -1,0 +1,5 @@
+/ptyd
+*.log
+*.tmp
+.DS_Store
+

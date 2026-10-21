@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Example launchd agent for ptyd. Replace __HOME__ with your home directory:
+
+    sed "s|__HOME__|$HOME|g" infra/launchd/com.ptyd.plist > ~/Library/LaunchAgents/com.ptyd.plist
+    mkdir -p ~/Library/Logs/ptyd
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ptyd.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ptyd</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/go/bin/ptyd</string>
+    <string>--bind</string>
+    <string>127.0.0.1:4242</string>
+    <string>--persist-dir</string>
+    <string>__HOME__/Library/Application Support/ptyd/terminals</string>
+  </array>
+
+  <!-- Start at login; restart if it exits. -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+
+  <key>WorkingDirectory</key>
+  <string>__HOME__</string>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/ptyd/ptyd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/ptyd/ptyd.log</string>
+
+  <!-- launchd's default PATH is minimal; commands are looked up in this PATH. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>SHELL</key>
+    <string>/bin/zsh</string>
+  </dict>
+</dict>
+</plist>
