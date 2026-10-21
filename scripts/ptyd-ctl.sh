@@ -3,11 +3,14 @@
 #
 # Env:
 #   PTYD_API     base URL (default http://127.0.0.1:4242)
-#   PTYD_TOKEN   auth token (sent as X-Ptyd-Token header)
+#   PTYD_TOKEN   auth token (sent as X-Ptyd-Token header); default: the one
+#                the daemon saved in ~/.local/state/ptyd/token-<port>
 set -euo pipefail
 
 API="${PTYD_API:-http://127.0.0.1:4242}"
-TOKEN="${PTYD_TOKEN:-}"
+port="${API##*:}"
+port="${port%%/*}"
+TOKEN="${PTYD_TOKEN:-$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/ptyd/token-$port" 2>/dev/null || true)}"
 
 curl_args=(-sS)
 if [[ -n "$TOKEN" ]]; then

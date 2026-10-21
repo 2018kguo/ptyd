@@ -92,8 +92,8 @@ func eventually(t *testing.T, what string, cond func() bool) {
 }
 
 type result struct {
-	msg string
-	err error
+	detached bool
+	err      error
 }
 
 func startDaemon(t *testing.T) (*terminal.Manager, string) {
@@ -107,8 +107,8 @@ func startDaemon(t *testing.T) (*terminal.Manager, string) {
 func attach(u *userTerminal, addr, id string, winch chan os.Signal) chan result {
 	done := make(chan result, 1)
 	go func() {
-		msg, err := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: id}, u.slave, u.slave, winch)
-		done <- result{msg, err}
+		detached, err := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: id}, u.slave, u.slave, winch)
+		done <- result{detached, err}
 	}()
 	return done
 }
@@ -189,14 +189,14 @@ func TestAttachInteractiveShell(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("did not detach")
 	}
-	if r.err != nil || !strings.Contains(r.msg, "detached") {
+	if r.err != nil || !r.detached {
 		t.Fatalf("detach result %+v", r)
 	}
 	after, _ := term.GetState(int(u.slave.Fd()))
 	if *after != *before {
 		t.Fatal("local terminal mode not restored")
 	}
-	eventually(t, "local modes reset", func() bool { return strings.HasSuffix(u.rawOutput(), resetLocal) })
+	eventually(t, "local modes reset", func() bool { return strings.HasSuffix(u.rawOutput(), resetLocal+scrollOff(30)) })
 	// The terminal keeps running without the client.
 	if got, _ := mgr.Get(info.ID); got.Status != terminal.StatusRunning {
 		t.Fatalf("terminal status after detach: %s", got.Status)
@@ -212,7 +212,7 @@ func TestAttachInteractiveShell(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("attachment did not end with the terminal")
 	}
-	if r.err != nil || !strings.Contains(r.msg, "ended") {
+	if r.err != nil || r.detached {
 		t.Fatalf("end result %+v", r)
 	}
 }
@@ -252,5 +252,34 @@ func TestAttachErrors(t *testing.T) {
 	_, err = Attach(context.Background(), Options{Addr: addr, Token: "wrong", ID: "nope"}, u.slave, u.slave, nil)
 	if err == nil || !strings.Contains(err.Error(), "token") {
 		t.Fatalf("bad token: %v", err)
+	}
+}
+
+func TestFind(t *testing.T) {
+	list := []terminal.Info{
+		{ID: "term-1-aaaa", Name: "web"},
+		{ID: "term-10-bbbb", Name: "db"},
+		{ID: "term-11-cccc", Name: "db"},
+		{ID: "term-12-dddd", Name: "term-1-aaaa"},
+	}
+	for target, want := range map[string]string{
+		"term-1-aaaa":  "term-1-aaaa", // an id beats a name
+		"web":          "term-1-aaaa",
+		"1":            "term-1-aaaa", // a number, not a prefix of term-10
+		"10":           "term-10-bbbb",
+		"term-11":      "term-11-cccc",
+		"db":           `"db" matches 2 terminals (term-10-bbbb, term-11-cccc); use the id`,
+		"term-1":       `"term-1" matches 4 terminals (term-1-aaaa, term-10-bbbb, term-11-cccc, term-12-dddd); use the id`,
+		"nope":         `no terminal "nope" (see ` + "`ptyd ls`)",
+		"term-12-dddd": "term-12-dddd",
+	} {
+		got, err := Find(list, target)
+		if err != nil {
+			if err.Error() != want {
+				t.Errorf("%q: %v, want %s", target, err, want)
+			}
+		} else if string(got.ID) != want {
+			t.Errorf("%q: %s, want %s", target, got.ID, want)
+		}
 	}
 }

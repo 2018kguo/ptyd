@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/2018kguo/ptyd/internal/client"
 )
 
 // End-to-end tests run the real binary, so they cover kill -9 of the
@@ -28,6 +30,9 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	ptydBin = filepath.Join(dir, "ptyd")
+	// Daemons save their tokens here, and the CLI and d.do read them.
+	os.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	os.Unsetenv("PTYD_TOKEN")
 	if out, err := exec.Command("go", "build", "-o", ptydBin, ".").CombinedOutput(); err != nil {
 		panic(fmt.Sprintf("build: %v\n%s", err, out))
 	}
@@ -54,10 +59,15 @@ func freeAddr(t *testing.T) string {
 
 func startDaemon(t *testing.T, addr string, args ...string) *daemon {
 	t.Helper()
+	return startDaemonEnv(t, addr, nil, args...)
+}
+
+func startDaemonEnv(t *testing.T, addr string, env []string, args ...string) *daemon {
+	t.Helper()
 	d := &daemon{t: t, addr: addr, log: &bytes.Buffer{}}
 	d.cmd = exec.Command(ptydBin, append([]string{"--bind", addr}, args...)...)
+	d.cmd.Env = append(os.Environ(), env...)
 	d.cmd.Stdout, d.cmd.Stderr = d.log, d.log
-	d.cmd.Env = append(os.Environ(), "PTYD_TOKEN=")
 	if err := d.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +106,7 @@ func (d *daemon) do(method, path string, body any, out any) int {
 		r = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest(method, "http://"+d.addr+path, r)
+	req.Header.Set("X-Ptyd-Token", client.Token(d.addr))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		d.t.Fatalf("%s %s: %v", method, path, err)
