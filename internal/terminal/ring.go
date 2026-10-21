@@ -44,6 +44,10 @@ type Ring struct {
 	maxBytes int
 	nextSeq  int64 // seq of the next line; retained seqs are nextSeq-n .. nextSeq-1
 
+	// now is the commit time of the lines of the current Write: read
+	// once, at its first line (zero outside Write).
+	now time.Time
+
 	pending   []byte // partial line being built (no newline yet)
 	pendingCR bool   // last byte was a bare '\r' awaiting disambiguation
 
@@ -80,6 +84,7 @@ func (r *Ring) Write(chunk []byte) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer func() { r.now = time.Time{} }()
 
 	nl := -1 // index of the next '\n' in chunk, once searched for
 	for len(chunk) > 0 {
@@ -163,6 +168,7 @@ func (r *Ring) FlushPending() {
 	r.pendingCR = false
 	if len(r.pending) > 0 {
 		r.commitPendingLocked()
+		r.now = time.Time{}
 		r.notifyLocked()
 	}
 }
@@ -271,7 +277,12 @@ func (r *Ring) CloseSubscribers() {
 // commitLocked commits text, which the ring may reuse afterwards, as a
 // line.
 func (r *Ring) commitLocked(text []byte) {
-	line := Line{Seq: r.nextSeq, Text: stripANSIBytes(text), At: time.Now()}
+	at := r.now
+	if at.IsZero() {
+		at = time.Now()
+		r.now = at
+	}
+	line := Line{Seq: r.nextSeq, Text: stripANSIBytes(text), At: at}
 	r.nextSeq++
 
 	cost := len(line.Text) + lineOverhead
