@@ -207,6 +207,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	defer ping.Stop()
 	lines := make([]terminal.Line, 256)
 	var buf []byte
+	var flushed time.Time
+	hold := time.NewTimer(0)
+	defer hold.Stop()
 	for {
 		// Send everything new, then flush once: a flush is a write to
 		// the connection.
@@ -222,11 +225,22 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.WriteString(w, "event: end\ndata: {\"reason\":\"terminal closed\"}\n\n")
 		}
 		flusher.Flush()
+		flushed = time.Now()
 		if ended {
 			return
 		}
 		select {
 		case <-changed:
+			// Like an attached client, a busy stream is sent at most
+			// once per terminal.Coalesce.
+			if wait := terminal.Coalesce - time.Since(flushed); wait > 0 {
+				hold.Reset(wait)
+				select {
+				case <-hold.C:
+				case <-r.Context().Done():
+					return
+				}
+			}
 		case <-ping.C:
 			_, _ = fmt.Fprint(w, ": ping\n\n")
 		case <-r.Context().Done():

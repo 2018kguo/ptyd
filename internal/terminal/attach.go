@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"time"
 )
 
 // maxAttachBuffer bounds the output queued for one attached client. A
@@ -11,8 +12,19 @@ import (
 // slow client never holds up the PTY reader or grows memory.
 const maxAttachBuffer = 1 << 20
 
-// maxSpare is the largest queue buffer an idle attacher keeps for reuse.
-const maxSpare = 256 << 10
+// maxIdleBuffer is the largest queue buffer a quiet client keeps.
+const maxIdleBuffer = 256 << 10
+
+// A client being sent a stream of output gets it at most once per
+// Coalesce: the reader waits out the rest of that time before the next
+// write, so bulk output goes out in fewer, larger writes and wakeups
+// (kitty's input_delay, ghostty's read batching, tmux's redraw timer).
+// Output after a quiet spell, and less than coalesceMin of it, such as a
+// keystroke's echo, goes out at once.
+const (
+	Coalesce    = 4 * time.Millisecond
+	coalesceMin = 1 << 10
+)
 
 // attacher is one attached client's output queue. The PTY reader appends
 // to it under the terminal's scrMu (in the same critical section that
@@ -63,7 +75,10 @@ type Attachment struct {
 	t        *terminal // nil for a ghost
 	a        *attacher
 	initial  []byte
-	last     []byte // returned by the previous Read
+	last     []byte    // returned by the previous Read
+	sent     time.Time // when the previous Read returned output
+	held     bool      // the queue was held back once for Coalesce
+	timer    *time.Timer
 	readOnly bool
 	once     sync.Once
 
@@ -123,33 +138,70 @@ func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
 			a.mu.Unlock()
 			return at.repaint(), nil
 		}
-		if len(a.buf) > 0 {
+		if n := len(a.buf); n > 0 {
+			if wait := Coalesce - time.Since(at.sent); wait > 0 && !at.held && n >= coalesceMin {
+				a.mu.Unlock()
+				at.held = true
+				if err := at.sleep(ctx, wait); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			at.held, at.sent = false, time.Now()
 			// The caller is done with what the previous Read returned:
-			// the queue reuses it, so a client that keeps up swaps two
-			// buffers instead of allocating one per read.
+			// the queue reuses it, so a busy client swaps two buffers
+			// instead of allocating one per read.
 			b := a.buf
 			a.buf, a.spare = nil, at.last
 			at.last = b
 			a.mu.Unlock()
 			return b, nil
 		}
-		// Going idle: keep no large buffer for a quiet client.
-		if cap(a.spare) > maxSpare {
-			a.spare = nil
-		}
-		if cap(at.last) > maxSpare {
-			at.last = nil
-		}
 		ended := a.ended
+		big := cap(a.spare) > maxIdleBuffer || cap(at.last) > maxIdleBuffer
 		a.mu.Unlock()
 		if ended {
 			return nil, io.EOF
 		}
+		// A client that stays quiet for a second gives back the large
+		// buffers a burst left it.
+		var idle <-chan time.Time
+		if big {
+			idle = at.arm(time.Second)
+		}
 		select {
 		case <-a.wake:
+		case <-idle:
+			a.mu.Lock()
+			if cap(a.spare) > maxIdleBuffer {
+				a.spare = nil
+			}
+			a.mu.Unlock()
+			if cap(at.last) > maxIdleBuffer {
+				at.last = nil
+			}
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
+	}
+}
+
+// arm starts the attachment's timer for d and returns its channel.
+func (at *Attachment) arm(d time.Duration) <-chan time.Time {
+	if at.timer == nil {
+		at.timer = time.NewTimer(d)
+	} else {
+		at.timer.Reset(d)
+	}
+	return at.timer.C
+}
+
+func (at *Attachment) sleep(ctx context.Context, d time.Duration) error {
+	select {
+	case <-at.arm(d):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

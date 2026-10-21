@@ -115,3 +115,45 @@ func TestTypingClientGetsItsSize(t *testing.T) {
 		t.Fatalf("attached %d after a detach", got.Attached)
 	}
 }
+
+// Bulk output to a busy client is sent at most once per Coalesce, in one
+// piece; a keystroke's echo is not held back, and a quiet client gives
+// back a large buffer.
+func TestAttachCoalescesBulkOutput(t *testing.T) {
+	a := &attacher{wake: make(chan struct{}, 1)}
+	at := &Attachment{a: a}
+	ctx := context.Background()
+	bulk := bytes.Repeat([]byte("x"), 300<<10)
+
+	a.push(bulk)
+	start := time.Now()
+	if b, _ := at.Read(ctx); len(b) != len(bulk) || time.Since(start) > Coalesce*3/4 {
+		t.Fatalf("first output after a quiet spell: %d bytes after %v", len(b), time.Since(start))
+	}
+	a.push([]byte("e"))
+	if b, _ := at.Read(ctx); string(b) != "e" || time.Since(start) > Coalesce*3/4 {
+		t.Fatalf("echo held back: %q after %v", b, time.Since(start))
+	}
+	sent := time.Now()
+	a.push(bulk[:2048])
+	go func() {
+		time.Sleep(Coalesce / 4)
+		a.push(bulk[:2048])
+	}()
+	b, _ := at.Read(ctx)
+	if len(b) != 4096 || time.Since(sent) < Coalesce*3/4 {
+		t.Fatalf("bulk output: %d bytes after %v, want 4096 after about %v", len(b), time.Since(sent), Coalesce)
+	}
+
+	// Quiet: after a second the large buffer is released.
+	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+	if _, err := at.Read(ctx); err == nil {
+		t.Fatal("read without output")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if cap(a.spare) > maxIdleBuffer || cap(at.last) > maxIdleBuffer {
+		t.Fatalf("quiet client keeps %d and %d bytes", cap(a.spare), cap(at.last))
+	}
+}
