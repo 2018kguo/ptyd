@@ -28,7 +28,7 @@ func TestStripANSI(t *testing.T) {
 }
 
 func TestRingBasic(t *testing.T) {
-	r := NewRing(3)
+	r := NewRing(3, DefaultScrollbackBytes)
 	r.Write([]byte("a\nb\nc\nd\n"))
 	snap := r.Snapshot(-1, 0)
 	if len(snap.Lines) != 3 {
@@ -43,7 +43,7 @@ func TestRingBasic(t *testing.T) {
 }
 
 func TestRingSince(t *testing.T) {
-	r := NewRing(10)
+	r := NewRing(10, DefaultScrollbackBytes)
 	r.Write([]byte("a\nb\nc\n"))
 	snap := r.Snapshot(1, 0)
 	if len(snap.Lines) != 1 {
@@ -55,7 +55,7 @@ func TestRingSince(t *testing.T) {
 }
 
 func TestRingTail(t *testing.T) {
-	r := NewRing(10)
+	r := NewRing(10, DefaultScrollbackBytes)
 	r.Write([]byte("a\nb\nc\nd\n"))
 	snap := r.Snapshot(-1, 2)
 	if len(snap.Lines) != 2 || snap.Lines[0].Text != "c" || snap.Lines[1].Text != "d" {
@@ -64,7 +64,7 @@ func TestRingTail(t *testing.T) {
 }
 
 func TestRingPending(t *testing.T) {
-	r := NewRing(10)
+	r := NewRing(10, DefaultScrollbackBytes)
 	r.Write([]byte("hi\n$ "))
 	snap := r.Snapshot(-1, 0)
 	if snap.Pending != "$ " {
@@ -76,7 +76,7 @@ func TestRingPending(t *testing.T) {
 }
 
 func TestRingFlushPending(t *testing.T) {
-	r := NewRing(10)
+	r := NewRing(10, DefaultScrollbackBytes)
 	r.Write([]byte("$ "))
 	r.FlushPending()
 	snap := r.Snapshot(-1, 0)
@@ -89,7 +89,7 @@ func TestRingFlushPending(t *testing.T) {
 }
 
 func TestRingCarriageReturn(t *testing.T) {
-	r := NewRing(10)
+	r := NewRing(10, DefaultScrollbackBytes)
 	// Progress-bar-style overwrite: each \r resets, then \n finalizes.
 	r.Write([]byte("10%\r20%\r30%\n"))
 	snap := r.Snapshot(-1, 0)
@@ -99,7 +99,7 @@ func TestRingCarriageReturn(t *testing.T) {
 }
 
 func TestRingCRLF(t *testing.T) {
-	r := NewRing(10)
+	r := NewRing(10, DefaultScrollbackBytes)
 	r.Write([]byte("hello\r\nworld\r\n"))
 	snap := r.Snapshot(-1, 0)
 	if len(snap.Lines) != 2 || snap.Lines[0].Text != "hello" || snap.Lines[1].Text != "world" {
@@ -108,7 +108,7 @@ func TestRingCRLF(t *testing.T) {
 }
 
 func TestRingSubscribe(t *testing.T) {
-	r := NewRing(10)
+	r := NewRing(10, DefaultScrollbackBytes)
 	r.Write([]byte("a\n"))
 	id, ch, snap := r.Subscribe(8)
 	if len(snap.Lines) != 1 {
@@ -130,7 +130,7 @@ func TestRingSubscribe(t *testing.T) {
 }
 
 func TestRingCloseSubscribers(t *testing.T) {
-	r := NewRing(10)
+	r := NewRing(10, DefaultScrollbackBytes)
 	_, ch, _ := r.Subscribe(8)
 	r.CloseSubscribers()
 	if _, ok := <-ch; ok {

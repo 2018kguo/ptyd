@@ -14,7 +14,7 @@ import (
 
 // A program that never prints a newline must not grow memory without bound.
 func TestRingPendingIsBounded(t *testing.T) {
-	r := NewRing(10)
+	r := NewRing(10, DefaultScrollbackBytes)
 	chunk := []byte(strings.Repeat("é", 1000)) // 2 bytes per rune
 	for range 1000 {
 		r.Write(chunk)

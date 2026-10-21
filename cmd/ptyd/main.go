@@ -19,11 +19,13 @@ func main() {
 	token := flag.String("token", os.Getenv("PTYD_TOKEN"), "Auth token required as X-Ptyd-Token header (default $PTYD_TOKEN)")
 	logDir := flag.String("log-dir", os.Getenv("PTYD_LOG_DIR"), "Optional directory to mirror raw PTY output to <id>.log files (default $PTYD_LOG_DIR)")
 	persistDir := flag.String("persist-dir", os.Getenv("PTYD_PERSIST_DIR"), "Optional directory to persist per-terminal metadata sidecars so terminals are recoverable as 'ghosts' across daemon restarts (default $PTYD_PERSIST_DIR)")
+	scrollback := flag.Int("scrollback-bytes", terminal.DefaultScrollbackBytes, "Per-terminal memory budget for retained output lines; worst-case memory is about terminals x this")
 	flag.Parse()
 
 	mgr := terminal.NewManagerWithOptions(terminal.Options{
-		LogDir:     *logDir,
-		PersistDir: *persistDir,
+		LogDir:          *logDir,
+		PersistDir:      *persistDir,
+		ScrollbackBytes: *scrollback,
 	})
 	srv := api.New(mgr, api.Config{Addr: *bind, Token: *token})
 

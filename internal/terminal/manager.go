@@ -51,6 +51,9 @@ type Options struct {
 	// PersistGhostTTL is how long an exited/closed terminal's metadata
 	// is retained before being pruned. Default 7 days.
 	PersistGhostTTL time.Duration
+	// ScrollbackBytes is the per-terminal budget for retained output
+	// lines (see Ring). Default DefaultScrollbackBytes.
+	ScrollbackBytes int
 }
 
 // Manager owns a set of PTY-backed terminal sessions.
@@ -91,6 +94,7 @@ type terminal struct {
 	done chan struct{} // closed when waitLoop returns
 
 	logFile *os.File // optional, for raw output mirror
+	logSize int64    // bytes written to logFile since it was last emptied
 	// logCap overrides defaultMaxLogFileBytes in tests. 0 uses the default.
 	logCap int64
 
@@ -102,6 +106,10 @@ type terminal struct {
 	// watches so we don't re-fire the same attention event for an idle
 	// prompt that hasn't changed.
 	pendingFired string
+
+	// passes counts watch and wait loop passes, so tests can check that
+	// an idle terminal does not wake up.
+	passes atomic.Int64
 }
 
 type compiledWatch struct {
@@ -143,6 +151,9 @@ func NewManagerWithOptions(opts Options) *Manager {
 	}
 	if opts.PersistGhostTTL == 0 {
 		opts.PersistGhostTTL = 7 * 24 * time.Hour
+	}
+	if opts.ScrollbackBytes <= 0 {
+		opts.ScrollbackBytes = DefaultScrollbackBytes
 	}
 	m := &Manager{
 		opts:      opts,
@@ -234,6 +245,7 @@ func (m *Manager) Create(cfg CreateConfig) (Info, error) {
 	if err != nil {
 		return Info{}, fmt.Errorf("failed to start pty: %w", err)
 	}
+	ptmx = pollable(ptmx)
 
 	id := ID(fmt.Sprintf("term-%d-%s", m.next.Add(1), randHex(2)))
 
@@ -263,7 +275,7 @@ func (m *Manager) Create(cfg CreateConfig) (Info, error) {
 		cfg:     cfg,
 		ptmx:    ptmx,
 		cmd:     cmd,
-		ring:    NewRing(ringCapacity),
+		ring:    NewRing(ringCapacity, m.opts.ScrollbackBytes),
 		done:    make(chan struct{}),
 		logFile: logFile,
 		watches: compiled,
@@ -285,7 +297,9 @@ func (m *Manager) Create(cfg CreateConfig) (Info, error) {
 
 	go t.readLoop()
 	go t.waitLoop()
-	go t.watchLoop()
+	if len(compiled) > 0 {
+		go t.watchLoop()
+	}
 
 	return t.snapshot(), nil
 }
@@ -398,9 +412,6 @@ func (m *Manager) Wait(ctx context.Context, id ID, pattern string, sinceSeq int6
 	}
 	beforeContext = max(beforeContext, 0)
 
-	subID, ch, snap := t.ring.Subscribe(1024)
-	defer t.ring.Unsubscribe(subID)
-
 	// recent holds the matching candidate plus up to beforeContext lines.
 	var recent []Line
 	check := func(lines []Line) (Line, []Line, bool) {
@@ -415,102 +426,80 @@ func (m *Manager) Wait(ctx context.Context, id ID, pattern string, sinceSeq int6
 		}
 		return Line{}, nil, false
 	}
-	pending := func() (Line, []Line, bool) {
-		if line, ok := t.matchPending(re); ok {
-			return line, contextBefore(recent, len(recent), beforeContext), true
-		}
-		return Line{}, nil, false
-	}
 
-	// History first, then a prompt that may already be sitting in pending.
-	if line, before, ok := check(snap.Lines); ok {
-		return line, before, nil
+	// Lines at or before sinceSeq only matter as context for a match.
+	cur := cursor{ring: t.ring, last: -1}
+	if sinceSeq >= 0 {
+		cur.last = max(sinceSeq-int64(beforeContext), -1)
 	}
-	if line, before, ok := pending(); ok {
-		return line, before, nil
-	}
-
-	cur := cursor{ring: t.ring, last: snap.LatestSeq}
-	ticker := time.NewTicker(pendingQuietTime)
-	defer ticker.Stop()
+	var quiet *time.Timer
 	for {
+		// Retained lines first, then a prompt sitting in pending. Nothing
+		// polls: the loop sleeps until the ring changes or, while the
+		// pending text is still settling, until it has been quiet long
+		// enough to match.
+		t.passes.Add(1)
+		changed, closed := t.ring.Changed()
+		if line, before, ok := check(cur.catchUp()); ok {
+			return line, before, nil
+		}
+		text, settleIn := t.settledPending()
+		if text != "" && settleIn == 0 && re.MatchString(text) {
+			return Line{Seq: -1, Text: text, At: time.Now()}, contextBefore(recent, len(recent), beforeContext), nil
+		}
+		if closed {
+			return Line{}, nil, ErrNotRunning
+		}
+		var settled <-chan time.Time
+		if settleIn > 0 {
+			if quiet == nil {
+				quiet = time.NewTimer(settleIn)
+				defer quiet.Stop()
+			} else {
+				quiet.Reset(settleIn)
+			}
+			settled = quiet.C
+		}
 		select {
-		case line, ok := <-ch:
-			if !ok {
-				if line, before, ok := check(cur.catchUp()); ok {
-					return line, before, nil
-				}
-				if line, before, ok := pending(); ok {
-					return line, before, nil
-				}
-				return Line{}, nil, ErrNotRunning
-			}
-			if line, before, ok := check(cur.take(line)); ok {
-				return line, before, nil
-			}
-		case <-ticker.C:
-			if line, before, ok := check(cur.catchUp()); ok {
-				return line, before, nil
-			}
-			if line, before, ok := pending(); ok {
-				return line, before, nil
-			}
+		case <-changed:
+		case <-settled:
 		case <-ctx.Done():
 			return Line{}, nil, ctx.Err()
 		}
 	}
 }
 
-// cursor turns a lossy Ring subscription into an in-order stream of every
-// line still retained by the ring. Subscriptions drop lines when a burst
-// outruns the channel buffer; the cursor notices the gap (or, on a tick,
-// that the ring has moved past it) and re-reads the missing lines.
+// cursor reads a ring in order, remembering the last line it returned.
 type cursor struct {
 	ring *Ring
 	last int64
 }
 
-// take returns the lines to process for a line received from the channel.
-func (c *cursor) take(line Line) []Line {
-	switch {
-	case line.Seq <= c.last:
-		return nil
-	case line.Seq == c.last+1:
-		c.last = line.Seq
-		return []Line{line}
-	}
-	return c.catchUp()
-}
-
 // catchUp returns any retained lines after the cursor.
 func (c *cursor) catchUp() []Line {
-	if c.ring.LatestSeq() <= c.last {
-		return nil
-	}
-	lines := c.ring.Snapshot(c.last, 0).Lines
+	lines := c.ring.linesAfter(c.last)
 	if n := len(lines); n > 0 {
 		c.last = lines[n-1].Seq
 	}
 	return lines
 }
 
-// matchPending returns a synthesized Line if the current pending buffer
-// has been quiet for pendingQuietTime and matches re.
-func (t *terminal) matchPending(re *regexp.Regexp) (Line, bool) {
+// settledPending returns the pending text and, if output arrived less than
+// pendingQuietTime ago, how long until it counts as settled (0 = settled).
+func (t *terminal) settledPending() (string, time.Duration) {
 	pending := t.ring.Pending()
 	if pending == "" {
-		return Line{}, false
+		return "", 0
 	}
 	t.mu.Lock()
-	quiet := t.lastOutputAt.IsZero() || time.Since(t.lastOutputAt) >= pendingQuietTime
+	last := t.lastOutputAt
 	t.mu.Unlock()
-	if !quiet {
-		return Line{}, false
+	if !last.IsZero() {
+		if wait := pendingQuietTime - time.Since(last); wait > 0 {
+			return pending, wait
+		}
 	}
-	if !re.MatchString(pending) {
-		return Line{}, false
-	}
-	return Line{Seq: -1, Text: pending, At: time.Now()}, true
+	return pending, 0
 }
 
 func contextBefore(lines []Line, matchIdx, n int) []Line {
@@ -596,7 +585,7 @@ func (m *Manager) Resize(id ID, cols, rows uint16) error {
 	if !t.running() {
 		return ErrNotRunning
 	}
-	return pty.Setsize(t.ptmx, &pty.Winsize{Cols: cols, Rows: rows})
+	return setSize(t.ptmx, cols, rows)
 }
 
 // Signal delivers a signal to the terminal's process group, falling back to
@@ -811,6 +800,9 @@ func (m *Manager) Search(pattern string, within time.Duration, limit int, tagFil
 		terms = append(terms, t)
 	}
 	m.mu.RUnlock()
+	// Lines are copied out a chunk at a time and matched outside the ring
+	// lock, so a long search never stalls a terminal's output.
+	buf := make([]Line, 256)
 	for _, t := range terms {
 		t.mu.Lock()
 		tags := append([]string(nil), t.info.Tags...)
@@ -820,17 +812,20 @@ func (m *Manager) Search(pattern string, within time.Duration, limit int, tagFil
 		if !matchTag(tags) {
 			continue
 		}
-		snap := t.ring.Snapshot(-1, 0)
-		for _, line := range snap.Lines {
-			if !cutoff.IsZero() && line.At.Before(cutoff) {
-				continue
-			}
-			if re.MatchString(line.Text) {
-				hits = append(hits, SearchHit{TerminalID: id, Name: name, Tags: tags, Line: line})
-				if limit > 0 && len(hits) >= limit {
-					return hits, nil
+		since := int64(-1)
+		if !cutoff.IsZero() {
+			since = t.ring.seqBefore(cutoff)
+		}
+		for n := t.ring.read(buf, since); n > 0; n = t.ring.read(buf, since) {
+			for _, line := range buf[:n] {
+				if re.MatchString(line.Text) {
+					hits = append(hits, SearchHit{TerminalID: id, Name: name, Tags: tags, Line: line})
+					if limit > 0 && len(hits) >= limit {
+						return hits, nil
+					}
 				}
 			}
+			since = buf[n-1].Seq
 		}
 	}
 	return hits, nil
@@ -885,7 +880,9 @@ func (t *terminal) readLoop() {
 			}
 		}
 		if err != nil {
-			if !errors.Is(err, io.EOF) && !errors.Is(err, syscall.EIO) {
+			// EIO: the child side hung up. ErrClosed: Close closed the
+			// master under us (a pollable read returns at once).
+			if !errors.Is(err, io.EOF) && !errors.Is(err, syscall.EIO) && !errors.Is(err, os.ErrClosed) {
 				t.ring.Write([]byte(fmt.Sprintf("[ptyd read error] %v\n", err)))
 			}
 			t.ring.FlushPending()
@@ -914,11 +911,13 @@ func (t *terminal) writeLog(p []byte) {
 	if f == nil {
 		return
 	}
-	if info, err := f.Stat(); err == nil && info.Size() >= t.logLimit() {
+	if t.logSize >= t.logLimit() {
 		_ = f.Truncate(0)
 		_, _ = f.Seek(0, io.SeekStart)
+		t.logSize = 0
 	}
-	_, _ = f.Write(p)
+	n, _ := f.Write(p)
+	t.logSize += int64(n)
 }
 
 // finishLog closes the mirror and deletes it. The ring still has the
@@ -998,34 +997,30 @@ func (t *terminal) waitLoop() {
 // watchLoop evaluates watches against (a) every newly committed line and
 // (b) the pending buffer once it has been quiet for pendingQuietTime. The
 // pending check catches programs waiting at a prompt that never gets a
-// trailing newline.
+// trailing newline. It only runs for terminals that have watches, and it
+// sleeps until the ring changes (or pending text is about to settle), so
+// an idle terminal costs no CPU.
 func (t *terminal) watchLoop() {
-	_, ch, snap := t.ring.Subscribe(4096)
-	for _, line := range snap.Lines {
-		t.processLine(line)
-	}
-	cur := cursor{ring: t.ring, last: snap.LatestSeq}
-
-	ticker := time.NewTicker(pendingQuietTime)
-	defer ticker.Stop()
-
+	cur := cursor{ring: t.ring, last: -1}
+	quiet := time.NewTimer(time.Hour)
+	quiet.Stop()
 	for {
+		t.passes.Add(1)
+		changed, closed := t.ring.Changed()
+		for _, l := range cur.catchUp() {
+			t.processLine(l)
+		}
+		if closed {
+			return
+		}
+		var settled <-chan time.Time
+		if settleIn := t.processPending(); settleIn > 0 {
+			quiet.Reset(settleIn)
+			settled = quiet.C
+		}
 		select {
-		case line, ok := <-ch:
-			if !ok {
-				for _, l := range cur.catchUp() {
-					t.processLine(l)
-				}
-				return
-			}
-			for _, l := range cur.take(line) {
-				t.processLine(l)
-			}
-		case <-ticker.C:
-			for _, l := range cur.catchUp() {
-				t.processLine(l)
-			}
-			t.processPending()
+		case <-changed:
+		case <-settled:
 		}
 	}
 }
@@ -1037,23 +1032,23 @@ func (t *terminal) processLine(line Line) {
 }
 
 // processPending evaluates watches against the current pending buffer if it
-// looks settled (no new bytes for pendingQuietTime). It de-duplicates
-// against the last evaluated pending value so the same prompt does not
-// generate repeated attention events.
-func (t *terminal) processPending() {
-	pending := t.ring.Pending()
-	if pending == "" {
-		return
+// has settled (no new bytes for pendingQuietTime), and otherwise returns how
+// long until it does. It de-duplicates against the last evaluated pending
+// value so the same prompt does not generate repeated attention events.
+func (t *terminal) processPending() time.Duration {
+	pending, settleIn := t.settledPending()
+	if pending == "" || settleIn > 0 {
+		return settleIn
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	quiet := t.lastOutputAt.IsZero() || time.Since(t.lastOutputAt) >= pendingQuietTime
-	if !quiet || t.pendingFired == pending {
-		return
+	if t.pendingFired == pending {
+		return 0
 	}
 	t.pendingFired = pending
 	// Seq=-1 marks a pending (uncommitted) match.
 	t.fireLocked(Line{Seq: -1, Text: pending, At: time.Now()})
+	return 0
 }
 
 // fireLocked records an attention event for every watch matching line,

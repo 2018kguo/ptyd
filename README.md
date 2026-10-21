@@ -107,7 +107,9 @@ state. Each line gets a sequence number that only increases:
 
 `pending` is the unfinished current line, typically a prompt. To poll
 incrementally, pass the last `latest_seq` back as `since`. Each terminal
-keeps its last 5000 lines; a line longer than 16 KiB is split. Exited
+keeps its newest lines up to 5000 lines or `--scrollback-bytes` (default
+1 MiB, counting 48 bytes of overhead per line), whichever is smaller; older
+lines are dropped, and a line longer than 16 KiB is split. Exited
 terminals stay listed with their output and `exit_code` until deleted.
 
 ### Waiting
@@ -139,9 +141,38 @@ and control keys as `ctrl+c`, `c-c` or `^c`.
 | `--token` | `PTYD_TOKEN` | none | If set, every request except `/healthz` and `/metrics` must send it in the `X-Ptyd-Token` header. |
 | `--persist-dir` | `PTYD_PERSIST_DIR` | none | Keep each terminal's metadata here. After a restart, terminals that had not been deleted are listed as **ghosts** (`status: "exited"`, metadata only) until deleted; ghosts older than 7 days are pruned at startup. |
 | `--log-dir` | `PTYD_LOG_DIR` | none | Mirror each live terminal's raw output to `<id>.log` (capped at 32 MiB, wraps; removed when the terminal ends). |
+| `--scrollback-bytes` | | `1048576` | Memory budget per terminal for retained output lines. |
 
 On SIGINT or SIGTERM, ptyd stops accepting requests, ends open streams and
 waits, terminates every terminal's process group and exits.
+
+## Scaling
+
+A terminal costs memory in proportion to the output it retains, never more
+than its scrollback budget, so worst-case memory is about
+terminals × `--scrollback-bytes`. An idle terminal costs roughly 10–20 KiB of
+heap and no CPU: nothing polls, and watches and waits sleep until output
+arrives. Measured with 1000 idle terminals on Linux: ~7–11 KiB heap,
+2–2.5 goroutines, 1 OS thread and 2 file descriptors per terminal, and
+under 0.3 ms of CPU per second in total.
+
+Limits to know about when running thousands of terminals:
+
+- **File descriptors:** 2 per terminal on Linux (the PTY and a pidfd), 1 on
+  macOS, plus 1 with `--log-dir`. Go raises the soft `RLIMIT_NOFILE` to the
+  hard limit at startup, so raise the hard limit (`LimitNOFILE=` in the
+  systemd unit) if it is low.
+- **PTYs:** Linux allows 4096 by default (`/proc/sys/kernel/pty/max`);
+  macOS only 511 (`sysctl kern.tty.ptmx_max`).
+- **Threads:** each terminal holds one OS thread waiting for its process
+  to exit (two on macOS, where PTY reads block too). Go aborts above 10000
+  threads, which caps a daemon at roughly 9000 terminals on Linux and 4500
+  on macOS.
+- **Processes:** every terminal is at least one process, so the user's
+  process limit (`ulimit -u`) applies.
+
+Benchmarks: `go test -run '^$' -bench . ./...`; the idle-terminal one
+spawns `PTYD_SCALE_N` terminals (default 1000, 400 on macOS).
 
 ## Security
 

@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"bytes"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -11,8 +12,18 @@ import (
 // most this size instead of growing the pending buffer without bound.
 const maxLineBytes = 16 << 10
 
+// lineOverhead is what a retained line costs beyond its text: the Line
+// struct itself (seq, string header, timestamp). Counting it keeps a flood
+// of empty lines inside the byte budget too.
+const lineOverhead = 48
+
+// DefaultScrollbackBytes is the default per-terminal byte budget for
+// retained lines (text plus lineOverhead per line).
+const DefaultScrollbackBytes = 1 << 20
+
 // Ring is a line-aware ring buffer with monotonic sequence numbers and
-// fan-out subscribers.
+// fan-out subscribers. It retains the newest lines that fit in both a line
+// cap and a byte budget, and its memory grows with what it actually holds.
 //
 // Bytes are written via Write; the ring splits on '\n' and treats a bare
 // '\r' (without a following '\n') as "reset the current line", which lets
@@ -23,12 +34,15 @@ const maxLineBytes = 16 << 10
 // almost always want. Raw bytes are not retained; use the log mirror
 // (Options.LogDir) for raw output.
 type Ring struct {
-	mu      sync.Mutex
-	lines   []Line
-	cap     int
-	head    int // next write position
-	full    bool
-	nextSeq int64
+	mu sync.Mutex
+	// lines is a circular buffer holding n lines starting at head (the
+	// oldest). It grows on demand up to maxLines slots.
+	lines    []Line
+	head, n  int
+	bytes    int // retained cost: text bytes + lineOverhead per line
+	maxLines int
+	maxBytes int
+	nextSeq  int64 // seq of the next line; retained seqs are nextSeq-n .. nextSeq-1
 
 	pending   []byte // partial line being built (no newline yet)
 	pendingCR bool   // last byte was a bare '\r' awaiting disambiguation
@@ -36,21 +50,23 @@ type Ring struct {
 	subs    map[int]*subscriber
 	nextSub int
 	closed  bool
+	changed chan struct{} // closed on the next change; nil until someone asks
 }
 
 type subscriber struct {
 	ch chan Line
 }
 
-// NewRing returns a ring that retains the last `capacity` finalized lines.
-func NewRing(capacity int) *Ring {
-	if capacity < 1 {
-		capacity = 1
-	}
+// closedChan is returned by Changed once the ring is closed.
+var closedChan = func() chan struct{} { c := make(chan struct{}); close(c); return c }()
+
+// NewRing returns a ring that retains the newest finalized lines, at most
+// maxLines of them and at most maxBytes in total (see lineOverhead). The
+// byte budget always admits at least one maximal line.
+func NewRing(maxLines, maxBytes int) *Ring {
 	return &Ring{
-		lines: make([]Line, capacity),
-		cap:   capacity,
-		subs:  map[int]*subscriber{},
+		maxLines: max(maxLines, 1),
+		maxBytes: max(maxBytes, maxLineBytes+lineOverhead),
 	}
 }
 
@@ -65,30 +81,54 @@ func (r *Ring) Write(chunk []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, b := range chunk {
+	nl := -1 // index of the next '\n' in chunk, once searched for
+	for len(chunk) > 0 {
 		if r.pendingCR {
 			r.pendingCR = false
-			if b == '\n' {
+			if chunk[0] == '\n' {
 				// CRLF: finalize without the CR.
-				r.commitLocked(string(r.pending))
-				r.pending = r.pending[:0]
+				r.commitPendingLocked()
+				chunk, nl = chunk[1:], -1
 				continue
 			}
 			// Bare CR followed by something else: overwrite from
-			// the start of the line, then process this byte.
+			// the start of the line.
 			r.pending = r.pending[:0]
 		}
-		switch b {
-		case '\n':
-			r.commitLocked(string(r.pending))
-			r.pending = r.pending[:0]
-		case '\r':
-			r.pendingCR = true
-		default:
-			r.pending = append(r.pending, b)
-			if len(r.pending) >= maxLineBytes {
-				r.breakLongLineLocked()
+		if nl < 0 {
+			if nl = bytes.IndexByte(chunk, '\n'); nl < 0 {
+				nl = len(chunk)
 			}
+		}
+		end := nl
+		if cr := bytes.IndexByte(chunk[:nl], '\r'); cr >= 0 {
+			end = cr
+		}
+		r.appendPendingLocked(chunk[:end])
+		if end == len(chunk) {
+			break
+		}
+		if chunk[end] == '\n' {
+			r.commitPendingLocked()
+			nl = -1
+		} else {
+			r.pendingCR = true
+			nl -= end + 1
+		}
+		chunk = chunk[end+1:]
+	}
+	r.notifyLocked()
+}
+
+// appendPendingLocked adds p to the partial line, committing it each time
+// it reaches maxLineBytes.
+func (r *Ring) appendPendingLocked(p []byte) {
+	for len(p) > 0 {
+		n := min(len(p), maxLineBytes-len(r.pending))
+		r.pending = append(r.pending, p[:n]...)
+		p = p[n:]
+		if len(r.pending) >= maxLineBytes {
+			r.breakLongLineLocked()
 		}
 	}
 }
@@ -110,6 +150,11 @@ func (r *Ring) breakLongLineLocked() {
 	r.pending = r.pending[:copy(r.pending, p[cut:])]
 }
 
+func (r *Ring) commitPendingLocked() {
+	r.commitLocked(string(r.pending))
+	r.pending = r.pending[:0]
+}
+
 // FlushPending finalizes any partial line currently in the pending buffer.
 // Called when the underlying PTY closes so the final prompt is captured.
 func (r *Ring) FlushPending() {
@@ -117,14 +162,14 @@ func (r *Ring) FlushPending() {
 	defer r.mu.Unlock()
 	r.pendingCR = false
 	if len(r.pending) > 0 {
-		r.commitLocked(string(r.pending))
-		r.pending = r.pending[:0]
+		r.commitPendingLocked()
+		r.notifyLocked()
 	}
 }
 
 // Snapshot returns committed lines whose Seq > sinceSeq. If tail > 0, only
 // the trailing `tail` such lines are returned. The returned snapshot also
-// includes the current pending bytes.
+// includes the current pending bytes. It costs O(lines returned).
 func (r *Ring) Snapshot(sinceSeq int64, tail int) OutputSnapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -148,6 +193,29 @@ func (r *Ring) Pending() string {
 	return stripANSI(string(r.pending))
 }
 
+// Changed returns a channel that is closed at the next change to the
+// committed lines or the pending text, and whether the ring is already
+// closed (the channel is then closed too). Take it before reading the
+// state it guards so no change is missed.
+func (r *Ring) Changed() (<-chan struct{}, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return closedChan, true
+	}
+	if r.changed == nil {
+		r.changed = make(chan struct{})
+	}
+	return r.changed, false
+}
+
+func (r *Ring) notifyLocked() {
+	if r.changed != nil {
+		close(r.changed)
+		r.changed = nil
+	}
+}
+
 // Subscribe returns a buffered channel that receives newly committed lines,
 // a unique subscription id, and a snapshot of the current ring contents at
 // subscribe time. Slow subscribers will drop lines; consumers should detect
@@ -166,6 +234,9 @@ func (r *Ring) Subscribe(buf int) (int, <-chan Line, OutputSnapshot) {
 		// receive loop terminates immediately.
 		close(sub.ch)
 	} else {
+		if r.subs == nil {
+			r.subs = map[int]*subscriber{}
+		}
 		r.subs[id] = sub
 	}
 	return id, sub.ch, r.snapshotLocked(-1, 0)
@@ -194,18 +265,29 @@ func (r *Ring) CloseSubscribers() {
 		close(sub.ch)
 		delete(r.subs, id)
 	}
+	r.notifyLocked()
 }
 
 func (r *Ring) commitLocked(text string) {
 	line := Line{Seq: r.nextSeq, Text: stripANSI(text), At: time.Now()}
 	r.nextSeq++
 
-	r.lines[r.head] = line
-	r.head++
-	if r.head >= r.cap {
-		r.head = 0
-		r.full = true
+	cost := len(line.Text) + lineOverhead
+	for r.n > 0 && (r.n >= r.maxLines || r.bytes+cost > r.maxBytes) {
+		old := &r.lines[r.head]
+		r.bytes -= len(old.Text) + lineOverhead
+		*old = Line{} // drop the text reference
+		r.head = (r.head + 1) % len(r.lines)
+		r.n--
 	}
+	if r.n == len(r.lines) {
+		grown := make([]Line, min(max(2*r.n, 16), r.maxLines))
+		r.copyLocked(grown, 0)
+		r.lines, r.head = grown, 0
+	}
+	r.lines[(r.head+r.n)%len(r.lines)] = line
+	r.n++
+	r.bytes += cost
 
 	// Fan out, dropping if buffers are full.
 	for _, sub := range r.subs {
@@ -216,32 +298,77 @@ func (r *Ring) commitLocked(text string) {
 	}
 }
 
-func (r *Ring) sizeLocked() int {
-	if r.full {
-		return r.cap
+// indexAfterLocked returns the position (0 = oldest retained) of the first
+// line with Seq > sinceSeq, or r.n if there is none. Seqs are contiguous,
+// so this is arithmetic, not a scan.
+func (r *Ring) indexAfterLocked(sinceSeq int64) int {
+	oldest := r.nextSeq - int64(r.n)
+	if d := sinceSeq + 1 - oldest; d > 0 {
+		return int(min(d, int64(r.n)))
 	}
-	return r.head
+	return 0
+}
+
+// copyLocked copies retained lines starting at position start into dst and
+// returns how many it copied.
+func (r *Ring) copyLocked(dst []Line, start int) int {
+	k := min(len(dst), r.n-start)
+	if k <= 0 {
+		return 0
+	}
+	i := (r.head + start) % len(r.lines)
+	c := copy(dst[:k], r.lines[i:])
+	copy(dst[c:k], r.lines)
+	return k
+}
+
+func (r *Ring) linesAfterLocked(sinceSeq int64, tail int) []Line {
+	start := r.indexAfterLocked(sinceSeq)
+	if tail > 0 && r.n-start > tail {
+		start = r.n - tail
+	}
+	out := make([]Line, r.n-start)
+	r.copyLocked(out, start)
+	return out
 }
 
 func (r *Ring) snapshotLocked(sinceSeq int64, tail int) OutputSnapshot {
-	n := r.sizeLocked()
-	out := make([]Line, 0, n)
-	for i := 0; i < n; i++ {
-		idx := i
-		if r.full {
-			idx = (r.head + i) % r.cap
-		}
-		ln := r.lines[idx]
-		if ln.Seq > sinceSeq {
-			out = append(out, ln)
-		}
-	}
-	if tail > 0 && len(out) > tail {
-		out = out[len(out)-tail:]
-	}
 	return OutputSnapshot{
-		Lines:     out,
+		Lines:     r.linesAfterLocked(sinceSeq, tail),
 		LatestSeq: r.nextSeq - 1,
 		Pending:   stripANSI(string(r.pending)),
 	}
+}
+
+// linesAfter returns the committed lines with Seq > sinceSeq.
+func (r *Ring) linesAfter(sinceSeq int64) []Line {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.linesAfterLocked(sinceSeq, 0)
+}
+
+// read copies up to len(dst) committed lines with Seq > sinceSeq into dst
+// and returns how many it copied, so callers can walk the ring in bounded
+// chunks without holding the lock for the whole scan.
+func (r *Ring) read(dst []Line, sinceSeq int64) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.copyLocked(dst, r.indexAfterLocked(sinceSeq))
+}
+
+// seqBefore returns the seq just before the first line committed at or
+// after t (lines are in time order, so this is a binary search).
+func (r *Ring) seqBefore(t time.Time) int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	lo, hi := 0, r.n
+	for lo < hi {
+		mid := int(uint(lo+hi) >> 1)
+		if r.lines[(r.head+mid)%len(r.lines)].At.Before(t) {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return r.nextSeq - int64(r.n) + int64(lo) - 1
 }
