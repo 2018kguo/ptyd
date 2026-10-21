@@ -192,13 +192,12 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	since := parseSince(r.URL.Query().Get("since"))
-	subID, ch, snap, err := s.mgr.Subscribe(id, 256, since)
+	cur, err := s.mgr.Follow(id, parseSince(r.URL.Query().Get("since")))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	defer s.mgr.Unsubscribe(id, subID)
+	defer cur.Close()
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -206,45 +205,30 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	sse := sseWriter{w: w}
-	for _, line := range snap.Lines {
-		sse.send("line", line)
-	}
-	flusher.Flush()
-
 	ping := time.NewTicker(15 * time.Second)
 	defer ping.Stop()
-
-	end := func() {
-		sse.send("end", map[string]string{"reason": "terminal closed"})
-		flusher.Flush()
-	}
+	sse := sseWriter{w: w}
+	lines := make([]terminal.Line, 256)
 	for {
-		select {
-		case line, ok := <-ch:
-			// Send the lines already queued behind this one, then flush
-			// once: a flush is a write to the connection, and one per line
-			// was most of the cost of a busy stream.
-		batch:
-			for n := 0; ok; n++ {
+		// Send everything new, then flush once: a flush is a write to
+		// the connection.
+		changed, ended := cur.Changed()
+		for n := cur.Read(lines); n > 0; n = cur.Read(lines) {
+			for _, line := range lines[:n] {
 				sse.send("line", line)
-				if n == cap(ch) {
-					break
-				}
-				select {
-				case line, ok = <-ch:
-				default:
-					break batch
-				}
 			}
-			if !ok {
-				end()
-				return
-			}
-			flusher.Flush()
+		}
+		if ended {
+			sse.send("end", map[string]string{"reason": "terminal closed"})
+		}
+		flusher.Flush()
+		if ended {
+			return
+		}
+		select {
+		case <-changed:
 		case <-ping.C:
 			_, _ = fmt.Fprint(w, ": ping\n\n")
-			flusher.Flush()
 		case <-r.Context().Done():
 			return
 		}

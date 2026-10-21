@@ -313,9 +313,10 @@ func BenchmarkManagerScale(b *testing.B) {
 func BenchmarkRingSubscribe(b *testing.B) {
 	r := fullBenchRing()
 	b.ReportAllocs()
+	buf := make([]Line, 256)
 	for b.Loop() {
-		id, _, _ := r.Subscribe(256, r.LatestSeq())
-		r.Unsubscribe(id)
+		c := Cursor{ring: r, last: r.LatestSeq()}
+		c.Read(buf)
 	}
 }
 

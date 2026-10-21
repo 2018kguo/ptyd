@@ -107,39 +107,30 @@ func TestRingCRLF(t *testing.T) {
 	}
 }
 
-func TestRingSubscribe(t *testing.T) {
+func TestCursorFollowsRing(t *testing.T) {
 	r := NewRing(10, DefaultScrollbackBytes)
 	r.Write([]byte("a\n"))
-	id, ch, snap := r.Subscribe(8, -1)
-	if len(snap.Lines) != 1 {
-		t.Fatalf("snap want 1, got %d", len(snap.Lines))
+	c := Cursor{ring: r, last: -1}
+	buf := make([]Line, 8)
+	if n := c.Read(buf); n != 1 || buf[0].Text != "a" {
+		t.Fatalf("first read: %d %+v", n, buf[:n])
 	}
-	r.Write([]byte("b\n"))
+	changed, ended := c.Changed()
+	if c.Read(buf) != 0 || ended {
+		t.Fatal("nothing new yet")
+	}
+	r.Write([]byte("b\nc\n"))
 	select {
-	case line := <-ch:
-		if line.Text != "b" {
-			t.Fatalf("got %q want b", line.Text)
-		}
+	case <-changed:
 	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for subscribed line")
+		t.Fatal("no wake for new lines")
 	}
-	r.Unsubscribe(id)
-	if _, ok := <-ch; ok {
-		t.Fatal("channel should be closed after Unsubscribe")
+	if n := c.Read(buf); n != 2 || buf[0].Text != "b" || buf[1].Seq != 2 {
+		t.Fatalf("second read: %d %+v", n, buf[:n])
 	}
-}
-
-func TestRingCloseSubscribers(t *testing.T) {
-	r := NewRing(10, DefaultScrollbackBytes)
-	_, ch, _ := r.Subscribe(8, -1)
-	r.CloseSubscribers()
-	if _, ok := <-ch; ok {
-		t.Fatal("channel should be closed after CloseSubscribers")
-	}
-	// Subsequent subscribe returns an already-closed channel.
-	_, ch2, _ := r.Subscribe(8, -1)
-	if _, ok := <-ch2; ok {
-		t.Fatal("post-close subscribe should return closed channel")
+	r.Close()
+	if _, ended := c.Changed(); !ended {
+		t.Fatal("Changed should report the end after Close")
 	}
 }
 

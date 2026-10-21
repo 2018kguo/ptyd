@@ -510,26 +510,16 @@ func (m *Manager) Output(id ID, sinceSeq int64, tail int) (OutputSnapshot, error
 	return t.ring.Snapshot(sinceSeq, tail), nil
 }
 
-// Subscribe attaches a streaming consumer. The snapshot holds the retained
-// lines with Seq > sinceSeq.
-func (m *Manager) Subscribe(id ID, buf int, sinceSeq int64) (int, <-chan Line, OutputSnapshot, error) {
+// Follow returns a cursor over the lines of a terminal with Seq >
+// sinceSeq (all retained lines for -1) and every line after them. A
+// sinceSeq past the latest line starts at the next one.
+func (m *Manager) Follow(id ID, sinceSeq int64) (*Cursor, error) {
 	t, err := m.get(id)
 	if err != nil {
-		return 0, nil, OutputSnapshot{}, err
+		return nil, err
 	}
-	subID, ch, snap := t.ring.Subscribe(buf, sinceSeq)
 	m.activeSubs.Add(1)
-	return subID, ch, snap, nil
-}
-
-// Unsubscribe detaches a streaming consumer.
-func (m *Manager) Unsubscribe(id ID, subID int) {
-	defer m.activeSubs.Add(-1)
-	t, err := m.get(id)
-	if err != nil {
-		return
-	}
-	t.ring.Unsubscribe(subID)
+	return &Cursor{ring: t.ring, last: min(sinceSeq, t.ring.LatestSeq()), mgr: m}, nil
 }
 
 // Wait blocks until a line matching `pattern` is committed (with seq>sinceSeq)
@@ -565,7 +555,7 @@ func (m *Manager) Wait(ctx context.Context, id ID, pattern string, sinceSeq int6
 	}
 
 	// Lines at or before sinceSeq only matter as context for a match.
-	cur := cursor{ring: t.ring, last: -1}
+	cur := Cursor{ring: t.ring, last: -1}
 	if sinceSeq >= 0 {
 		cur.last = max(sinceSeq-int64(beforeContext), -1)
 	}
@@ -606,19 +596,44 @@ func (m *Manager) Wait(ctx context.Context, id ID, pattern string, sinceSeq int6
 	}
 }
 
-// cursor reads a ring in order, remembering the last line it returned.
-type cursor struct {
+// Cursor reads a terminal's lines in order. Nothing is pushed to it: a
+// reader sleeps on Changed and then reads everything new at once, so a
+// busy terminal wakes it once per output, not once per line, and a slow
+// reader skips (visible as a gap in Seq) only lines the ring no longer
+// retains.
+type Cursor struct {
 	ring *Ring
-	last int64
+	last int64 // Seq of the last line read
+	mgr  *Manager
+	once sync.Once
 }
 
-// catchUp returns any retained lines after the cursor.
-func (c *cursor) catchUp() []Line {
+// Changed is the ring's Changed: a channel closed at its next change, and
+// whether the output has ended.
+func (c *Cursor) Changed() (<-chan struct{}, bool) { return c.ring.Changed() }
+
+// Read copies the next lines, at most len(dst), into dst and returns how
+// many.
+func (c *Cursor) Read(dst []Line) int {
+	n := c.ring.read(dst, c.last)
+	if n > 0 {
+		c.last = dst[n-1].Seq
+	}
+	return n
+}
+
+// catchUp returns all retained lines after the cursor.
+func (c *Cursor) catchUp() []Line {
 	lines := c.ring.linesAfter(c.last)
 	if n := len(lines); n > 0 {
 		c.last = lines[n-1].Seq
 	}
 	return lines
+}
+
+// Close ends a cursor from Follow.
+func (c *Cursor) Close() {
+	c.once.Do(func() { c.mgr.activeSubs.Add(-1) })
 }
 
 // settledPending returns the pending text and, if output arrived less than
@@ -1047,7 +1062,7 @@ func (t *terminal) closePtmx() {
 // interactive shell sitting at a prompt is correctly reported as recently
 // active.
 func (t *terminal) readLoop() {
-	defer t.ring.CloseSubscribers()
+	defer t.ring.Close()
 	defer t.endAttachers()
 	defer t.finishLog()
 	defer t.finalCheckpoint() // the program's last screen
@@ -1202,7 +1217,7 @@ func (t *terminal) waitLoop() {
 // sleeps until the ring changes (or pending text is about to settle), so
 // an idle terminal costs no CPU.
 func (t *terminal) watchLoop() {
-	cur := cursor{ring: t.ring, last: -1}
+	cur := Cursor{ring: t.ring, last: -1}
 	quiet := time.NewTimer(time.Hour)
 	quiet.Stop()
 	for {

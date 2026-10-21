@@ -62,20 +62,31 @@ func TestOutputLineCostIndependentOfState(t *testing.T) {
 
 // Connecting a stream that only wants new lines costs the same against a
 // full ring as against an empty one.
-func TestSubscribeCostsWhatItReturns(t *testing.T) {
-	measure := func(lines int) float64 {
-		r := NewRing(ringCapacity, DefaultScrollbackBytes)
-		r.Write([]byte(strings.Repeat("some output line\n", lines)))
+func TestFollowCostsWhatItReturns(t *testing.T) {
+	m := NewManager()
+	t.Cleanup(m.CloseAll)
+	info, err := m.Create(CreateConfig{Name: "f", Command: "cat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm, _ := m.get(info.ID)
+	buf := make([]Line, 256)
+	measure := func() float64 {
 		_, bytes := allocs(func() {
-			id, _, snap := r.Subscribe(256, r.LatestSeq())
-			if len(snap.Lines) != 0 {
-				t.Fatalf("snapshot has %d lines", len(snap.Lines))
+			c, err := m.Follow(info.ID, tm.ring.LatestSeq())
+			if err != nil {
+				t.Fatal(err)
 			}
-			r.Unsubscribe(id)
+			if n := c.Read(buf); n != 0 {
+				t.Fatalf("read %d lines", n)
+			}
+			c.Close()
 		})
 		return bytes
 	}
-	if empty, full := measure(0), measure(ringCapacity); full > empty+64 {
-		t.Fatalf("subscribe allocates %.0f B against a full ring, %.0f B against an empty one", full, empty)
+	empty := measure()
+	tm.ring.Write([]byte(strings.Repeat("some output line\n", ringCapacity)))
+	if full := measure(); full > empty+64 {
+		t.Fatalf("follow allocates %.0f B against a full ring, %.0f B against an empty one", full, empty)
 	}
 }

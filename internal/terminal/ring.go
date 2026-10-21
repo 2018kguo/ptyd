@@ -21,8 +21,7 @@ const lineOverhead = 48
 // retained lines (text plus lineOverhead per line).
 const DefaultScrollbackBytes = 1 << 20
 
-// Ring is a line-aware ring buffer with monotonic sequence numbers and
-// fan-out subscribers. It retains the newest lines that fit in both a line
+// Ring is a line-aware ring buffer with monotonic sequence numbers. It retains the newest lines that fit in both a line
 // cap and a byte budget, and its memory grows with what it actually holds.
 //
 // Bytes are written via Write; the ring splits on '\n' and treats a bare
@@ -51,14 +50,8 @@ type Ring struct {
 	pending   []byte // partial line being built (no newline yet)
 	pendingCR bool   // last byte was a bare '\r' awaiting disambiguation
 
-	subs    map[int]*subscriber
-	nextSub int
 	closed  bool
 	changed chan struct{} // closed on the next change; nil until someone asks
-}
-
-type subscriber struct {
-	ch chan Line
 }
 
 // closedChan is returned by Changed once the ring is closed.
@@ -222,56 +215,11 @@ func (r *Ring) notifyLocked() {
 	}
 }
 
-// Subscribe returns a buffered channel that receives newly committed lines,
-// a unique subscription id, and a snapshot of the retained lines with
-// Seq > sinceSeq at subscribe time (so it costs what it returns). Slow
-// subscribers will drop lines; consumers should detect gaps via Line.Seq
-// and refetch via Snapshot if needed.
-func (r *Ring) Subscribe(buf int, sinceSeq int64) (int, <-chan Line, OutputSnapshot) {
-	if buf < 1 {
-		buf = 256
-	}
+// Close marks the end of the output: Changed reports it from now on.
+func (r *Ring) Close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	id := r.nextSub
-	r.nextSub++
-	sub := &subscriber{ch: make(chan Line, buf)}
-	if r.closed {
-		// Already closed: hand back a closed channel so the caller's
-		// receive loop terminates immediately.
-		close(sub.ch)
-	} else {
-		if r.subs == nil {
-			r.subs = map[int]*subscriber{}
-		}
-		r.subs[id] = sub
-	}
-	return id, sub.ch, r.snapshotLocked(sinceSeq, 0)
-}
-
-// Unsubscribe removes a subscriber. Idempotent.
-func (r *Ring) Unsubscribe(id int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if sub, ok := r.subs[id]; ok {
-		close(sub.ch)
-		delete(r.subs, id)
-	}
-}
-
-// CloseSubscribers closes all current subscribers and rejects new ones.
-// Called when the underlying terminal exits or is killed.
-func (r *Ring) CloseSubscribers() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return
-	}
 	r.closed = true
-	for id, sub := range r.subs {
-		close(sub.ch)
-		delete(r.subs, id)
-	}
 	r.notifyLocked()
 }
 
@@ -302,14 +250,6 @@ func (r *Ring) commitLocked(text []byte) {
 	r.lines[(r.head+r.n)%len(r.lines)] = line
 	r.n++
 	r.bytes += cost
-
-	// Fan out, dropping if buffers are full.
-	for _, sub := range r.subs {
-		select {
-		case sub.ch <- line:
-		default:
-		}
-	}
 }
 
 // indexAfterLocked returns the position (0 = oldest retained) of the first
