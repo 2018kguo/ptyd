@@ -2,5 +2,5 @@
 *.log
 *.tmp
 .DS_Store
-
 *.test
+!internal/vt/testdata/**/*.test
