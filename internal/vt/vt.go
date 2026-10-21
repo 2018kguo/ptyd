@@ -1375,28 +1375,36 @@ func (t *Terminal) Resize(cols, rows int) {
 	t.saved1049.y = min(t.saved1049.y, rows-1)
 }
 
-// ArchiveScreen moves what the screen shows into scrollback and resets
-// the terminal for a new program, so its output starts on a clean screen
-// below the old content: the main screen down to its last non-blank row,
-// then, if a full-screen program was showing the alternate screen, that
-// too.
+// ArchiveScreen resets the terminal for a new program while keeping what
+// the screen showed in view above it, as if the old content had been
+// printed and the new program started on the next line: the main screen
+// down to its last non-blank row, then, if a full-screen program was
+// showing the alternate screen, that too. Whatever does not fit above
+// the new program's first row scrolls into scrollback.
 func (t *Terminal) ArchiveScreen() {
-	archive := func(scr [][]Cell) {
+	var old [][]Cell
+	keep := func(scr [][]Cell) {
 		last := -1
 		for y, row := range scr {
 			if !rowBlank(row) {
 				last = y
 			}
 		}
-		for _, row := range scr[:last+1] {
-			t.pushScrollback(row)
-		}
+		old = append(old, scr[:last+1]...)
 	}
-	archive(t.main)
+	keep(t.main)
 	if t.altActive {
-		archive(t.alt)
+		keep(t.alt)
 	}
 	t.reset()
+	if over := len(old) - (t.rows - 1); over > 0 {
+		for _, row := range old[:over] {
+			t.pushScrollback(row)
+		}
+		old = old[over:]
+	}
+	copy(t.main, old)
+	t.cur.y = len(old)
 }
 
 func rowBlank(row []Cell) bool {

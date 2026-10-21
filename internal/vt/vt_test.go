@@ -109,13 +109,22 @@ func TestResize(t *testing.T) {
 }
 
 func TestArchiveScreen(t *testing.T) {
-	term := feed(10, 3, "old1\r\nold2\x1b[?1049hALT")
+	// The old content stays in view; the new program starts below it.
+	term := feed(10, 4, "old1\r\nold2")
 	term.ArchiveScreen()
-	if got := term.ScrollbackLines(); !slices.Equal(got, []string{"old1", "old2", "", "    ALT"}) {
+	term.Write([]byte("$ "))
+	if got := term.Lines(); !slices.Equal(got, []string{"old1", "old2", "$", ""}) || term.ScrollbackLen() != 0 {
+		t.Fatalf("lines %q, scrollback %q", got, term.ScrollbackLines())
+	}
+
+	// What does not fit above the first row scrolls into scrollback.
+	term = feed(10, 3, "old1\r\nold2\x1b[?1049hALT")
+	term.ArchiveScreen()
+	if got := term.ScrollbackLines(); !slices.Equal(got, []string{"old1", "old2"}) {
 		t.Fatalf("scrollback %q", got)
 	}
-	if term.AltScreen() || !slices.Equal(term.Lines(), []string{"", "", ""}) {
-		t.Fatalf("screen not reset: %q", term.Lines())
+	if got := term.Lines(); term.AltScreen() || !slices.Equal(got, []string{"", "    ALT", ""}) {
+		t.Fatalf("screen %q, alt %v", got, term.AltScreen())
 	}
 }
 

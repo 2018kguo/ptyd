@@ -64,12 +64,12 @@ var restoreParallelism = 16
 
 // Restore brings a ghost back under the same id, with policy (or its own
 // policy if empty): rerun starts the same command again, agent resumes
-// its exact agent session. The saved screen moves into the scrollback
-// above the new process. If the restore is refused (the agent session
-// cannot be identified with certainty, a previous process cannot be
-// stopped, the command fails to start), the terminal stays a ghost, the
-// notice is printed on its saved screen and recorded, and the error
-// wraps ErrRestoreDeclined.
+// its exact agent session. The saved screen stays in view above the new
+// process, scrolling into scrollback as needed. If the restore is refused
+// (the agent session cannot be identified with certainty, a previous
+// process cannot be stopped, the command fails to start), the terminal
+// stays a ghost, the notice is printed on its saved screen and recorded,
+// and the error wraps ErrRestoreDeclined.
 func (m *Manager) Restore(id ID, policy RestorePolicy) (Info, error) {
 	m.mu.Lock()
 	_, ghost := m.ghosts[id]

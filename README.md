@@ -243,7 +243,7 @@ back after a crash, `kill -9`, graceful stop or reboot:
 | Policy | On startup |
 | --- | --- |
 | `none` (default) | Stays a ghost showing its saved window. |
-| `rerun` | The same command, args, cwd and env start again under the **same id**, below the saved window, which moves into the scrollback (like zellij's resurrection). |
+| `rerun` | The same command, args, cwd and env start again under the **same id**, below the saved window, which stays in view (like zellij's resurrection). |
 | `agent` | The exact agent session the terminal was in is resumed under the same id, or, if that cannot be done with certainty, it stays a ghost with a notice on its last screen. |
 
 Only terminals that were running when the daemon went away are restored.
