@@ -209,18 +209,21 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	lines := make([]terminal.Line, 256)
 	var buf []byte
 	var flushed time.Time
+	var sent int // bytes in the last flush
 	hold := time.NewTimer(0)
 	defer hold.Stop()
 	for {
 		// Send everything new, then flush once: a flush is a write to
 		// the connection.
 		changed, ended := cur.Changed()
+		sent = 0
 		for n := cur.Read(lines); n > 0; n = cur.Read(lines) {
 			buf = buf[:0]
 			for _, line := range lines[:n] {
 				buf = appendLineEvent(buf, line)
 			}
 			_, _ = w.Write(buf)
+			sent += len(buf)
 		}
 		if ended {
 			_, _ = io.WriteString(w, "event: end\ndata: {\"reason\":\"terminal closed\"}\n\n")
@@ -234,7 +237,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		case <-changed:
 			// Like an attached client, a busy stream is sent at most
 			// once per terminal.Coalesce.
-			if wait := terminal.Coalesce - time.Since(flushed); wait > 0 {
+			if wait := terminal.Coalesce - time.Since(flushed); wait > 0 && sent >= terminal.CoalesceMin {
 				hold.Reset(wait)
 				select {
 				case <-hold.C:

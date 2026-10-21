@@ -19,11 +19,11 @@ const maxIdleBuffer = 256 << 10
 // Coalesce: the reader waits out the rest of that time before the next
 // write, so bulk output goes out in fewer, larger writes and wakeups
 // (kitty's input_delay, ghostty's read batching, tmux's redraw timer).
-// Output after a quiet spell, and less than coalesceMin of it, such as a
+// Output after a quiet spell, and less than CoalesceMin of it, such as a
 // keystroke's echo, goes out at once.
 const (
 	Coalesce    = 4 * time.Millisecond
-	coalesceMin = 1 << 10
+	CoalesceMin = 1 << 10
 )
 
 // attacher is one attached client's output queue. The PTY reader appends
@@ -139,7 +139,7 @@ func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
 			return at.repaint(), nil
 		}
 		if n := len(a.buf); n > 0 {
-			if wait := Coalesce - time.Since(at.sent); wait > 0 && !at.held && n >= coalesceMin {
+			if wait := Coalesce - time.Since(at.sent); wait > 0 && !at.held && n >= CoalesceMin {
 				a.mu.Unlock()
 				at.held = true
 				if err := at.sleep(ctx, wait); err != nil {
