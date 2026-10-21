@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("07u77\x0300:\xf10")
+byte('8')
+byte('»')

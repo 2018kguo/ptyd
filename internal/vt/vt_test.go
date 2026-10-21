@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"unsafe"
 )
 
 func feed(cols, rows int, in string) *Terminal {
@@ -101,10 +103,11 @@ func TestResize(t *testing.T) {
 	if x, y, _ := term.Cursor(); x != 1 || y != 1 {
 		t.Fatalf("cursor %d,%d", x, y)
 	}
+	// Growing brings the line back from the scrollback.
 	term.Resize(6, 3)
 	term.Write([]byte("\x1b[3;1Habcdef"))
-	if got := term.Lines(); !slices.Equal(got, []string{"2", "3", "abcdef"}) {
-		t.Fatalf("lines after grow %q", got)
+	if got := term.Lines(); !slices.Equal(got, []string{"1", "2", "abcdef"}) || term.ScrollbackLen() != 0 {
+		t.Fatalf("lines after grow %q, scrollback %q", got, term.ScrollbackLines())
 	}
 }
 
@@ -163,7 +166,7 @@ var tokens = []string{
 	"\x1b7", "\x1b8", "\x1b[s", "\x1b[u", "\x1bM", "\x1bD", "\x1bE",
 	"\x1b(0", "\x1b(B", "\x1b)0", "\x0e", "\x0f", "lqk",
 	"\x1b]2;t\x07", "\x1b[?1h", "\x1b[?2004h", "\x1b[?1000h", "\x1b[?1006h", "\x1b[?1004h", "\x1b[?25l", "\x1b[?25h",
-	"\x1b[>3u", "\x1b[<u", "\x1b[=5;1u", "\x1b[2 q", "\x1b=", "\x1b>", "\x1b[!p",
+	"\x1b[>3u", "\x1b[<u", "\x1b[?45h", "\x1b]8;;http://a\x1b\\", "\x1b]8;id=1;http://b\a", "\x1b]8;;\x1b\\", "\x1b[1\"q", "\x1b[0\"q", "\x1bV", "\x1bW", "\x1b[?J", "\x1b[?1K", "\x1b[?2K", "\x1b[?69h", "\x1b[?69l", "\x1b[2;4s", "\x1b[3;5s", "\x1b[?5h", "\x1b[?5l", "\x1b[?1045h", "\x1b[?45l", "\x1b[?1045l", "\x1b[3D", "\x1bH", "\x1b[g", "\x1b[3g", "\x1b[2Z", "\x1b[2I", "\u0301", "e\u0301\u0302", "\u200d", "\x1b*0", "\x1bn", "\x1bN", "\x1b[?1s", "\x1b[?7s", "\x1b[?7r", "\x1b[?1r", "\x1b[=5;1u", "\x1b[2 q", "\x1b=", "\x1b>", "\x1b[!p",
 }
 
 func randomStream(rng *rand.Rand, n int) string {
@@ -175,30 +178,56 @@ func randomStream(rng *rand.Rand, n int) string {
 }
 
 // state is a comparable summary of everything Repaint promises to carry.
-func state(t *Terminal) string {
+func state(t *Terminal) string { return stateOf(t, true) }
+
+func stateOf(t *Terminal, withScrollback bool) string {
 	var b strings.Builder
-	dump := func(name string, scr [][]Cell) {
+	dump := func(name string, scr [][]Cell, wrap []bool) {
 		for y, row := range scr {
-			cells := make([]Cell, t.cols)
-			copy(cells, row)
-			for x := range cells {
-				if cells[x].R == 0 {
-					cells[x].R = ' '
+			fmt.Fprintf(&b, "%s%d", name, y)
+			for x := range t.cols {
+				var c Cell
+				if row != nil {
+					c = row[x]
+				}
+				s := "' '"
+				switch {
+				case c.R == wideTail:
+					s = "tail"
+					c = Cell{} // a right half shows its left half's style
+				case c.R == spacerHead:
+				case c.R != 0 && c.R != ' ':
+					s = strconv.Quote(t.cellString(c))
+				}
+				fmt.Fprintf(&b, " %s/%x/%x/%x", s, c.Fg, c.Bg, c.A)
+				if c.L != 0 {
+					fmt.Fprintf(&b, "/%q", t.link(c.L))
 				}
 			}
-			fmt.Fprintf(&b, "%s%d %v\n", name, y, cells)
+			if wrap != nil && wrap[y] {
+				b.WriteString(" wrapped")
+			}
+			b.WriteByte('\n')
 		}
 	}
-	dump("main", t.main)
-	if t.altActive {
-		dump("alt", t.alt)
-		fmt.Fprintf(&b, "saved1049 %v %d,%d\n", t.saved1049.valid, t.saved1049.x, t.saved1049.y)
+	dump("main", t.main, t.mainWrap)
+	if t.alt != nil {
+		dump("alt", t.alt, t.altWrap)
+	}
+	if t.altActive && t.saved1049.valid {
+		fmt.Fprintf(&b, "saved1049 %d,%d\n", t.saved1049.x, t.saved1049.y)
 	}
 	cur := t.cur
 	if cur.origin {
+		// Repaint positions the cursor with origin mode on, which cannot
+		// reach outside the region (only DECRC can leave it there).
 		cur.wrapPending = false
+		cur.x = min(max(cur.x, t.left), t.right)
+		cur.y = min(max(cur.y, t.top), t.bot)
 	}
-	fmt.Fprintf(&b, "cur %+v region %d-%d\n", cur, t.top, t.bot)
+	cur.pen.L = 0
+	fmt.Fprintf(&b, "pen link %q\n", t.link(t.cur.pen.L))
+	fmt.Fprintf(&b, "cur %+v region %d-%d margins %v %d-%d ss %d iso %v\n", cur, t.top, t.bot, t.lrmm, t.left, t.right, t.ss, t.protISO)
 	slot := 0
 	if t.altActive {
 		slot = 1
@@ -206,14 +235,40 @@ func state(t *Terminal) string {
 	s := t.saved[slot]
 	if s.valid {
 		s.wrapPending = false
-		if s.origin { // restoring clamps into the region
-			s.y = min(max(s.y, t.top), t.bot)
-		}
 	}
-	fmt.Fprintf(&b, "saved %+v\n", s)
+	link := t.link(s.pen.L)
+	s.pen.L = 0
+	fmt.Fprintf(&b, "saved %+v link %q\n", s, link)
 	fmt.Fprintf(&b, "modes %v %v %v %v %v %v %v %v %d %d %d %v %q\n", t.autowrap, t.insert, t.newline, t.cursorHidden,
 		t.appCursor, t.appKeypad, t.bracketed, t.focus, t.mouse, t.mouseEnc, t.cursorStyle, t.kitty, t.title)
-	fmt.Fprintf(&b, "scrollback %q\n", bytes.Join(t.sb[t.sbStart:], []byte("\n")))
+	var tabs []int
+	for x := range t.cols {
+		if t.isTab(x) {
+			tabs = append(tabs, x)
+		}
+	}
+	var saved []savedMode
+	if t.x != nil {
+		saved = t.x.savedModes
+	}
+	fmt.Fprintf(&b, "tabs %v xtsave %v revwrap %v %v reverse %v\n", tabs, saved, t.revWrap, t.revWrapExt, t.reverseVideo)
+	if withScrollback {
+		// A line cut off from its continuation (by scrolling down at the
+		// top) keeps the form of a wrapped row: trailing blanks and no
+		// erase; replayed, it comes back closed. Compare them alike.
+		var lines [][]byte
+		for i, l := range t.sb[t.sbStart:] {
+			if !t.sbOpen || i < t.ScrollbackLen()-1 {
+				l = normLine(l)
+			}
+			lines = append(lines, l)
+		}
+		sb := bytes.Join(lines, []byte("\n"))
+		if t.sbOpen && t.sbSpacer && !startsWide(t.main[0]) {
+			sb = append(sb, ' ') // what Repaint puts back
+		}
+		fmt.Fprintf(&b, "scrollback %q open %v\n", sb, t.sbOpen)
+	}
 	return b.String()
 }
 
@@ -280,6 +335,29 @@ func FuzzWrite(f *testing.F) {
 	})
 }
 
+// normLine renders a closed scrollback line on one wide row and lists its
+// cells without the trailing blanks, whatever their background (a line
+// cut from its continuation keeps blanks a replay need not recreate).
+func normLine(line []byte) []byte {
+	tmp := New(2*len(line)+2, 1, Options{ScrollbackLines: -1})
+	tmp.Write(line)
+	row := tmp.main[0]
+	end := len(row)
+	for end > 0 {
+		c := row[end-1]
+		if (c.R == 0 || c.R == ' ' || c.R == spacerHead) && c.A&^attrProtected == 0 && c.Fg == 0 && c.L == 0 {
+			end--
+			continue
+		}
+		break
+	}
+	var b []byte
+	for _, c := range row[:end] {
+		b = fmt.Appendf(b, "%q/%x/%x/%x/%q ", tmp.cellString(c), c.Fg, c.Bg, c.A, tmp.link(c.L))
+	}
+	return b
+}
+
 func lineDiff(got, want string) string {
 	g, w := strings.Split(got, "\n"), strings.Split(want, "\n")
 	var b strings.Builder
@@ -323,5 +401,35 @@ func TestResizeDropsErasedRowsFirst(t *testing.T) {
 	term.Resize(10, 3)
 	if got := term.Lines(); !slices.Equal(got, []string{"top", "mid", ""}) || term.ScrollbackLen() != 0 {
 		t.Fatalf("lines %q, %d scrollback lines", got, term.ScrollbackLen())
+	}
+}
+
+// Hyperlinks (OSC 8) stay on the cells they were printed on, survive
+// Repaint and scrolling, and do not leak into the scrollback text.
+func TestHyperlinks(t *testing.T) {
+	term := feed(20, 2, "see \x1b]8;id=x;https://example.com/a\x1b\\docs\x1b]8;;\x1b\\ here\r\n")
+	if c := term.cellAt(4, 0); term.link(c.L) != "id=x;https://example.com/a" || term.cellAt(8, 0).L != 0 {
+		t.Fatalf("link %q on docs, %d after", term.link(c.L), term.cellAt(8, 0).L)
+	}
+	dst := New(20, 2, Options{})
+	dst.Write(term.Repaint(true))
+	if state(dst) != state(term) {
+		t.Fatalf("repaint lost the link:\n%s", lineDiff(state(dst), state(term)))
+	}
+	term.Write([]byte("\r\n\r\n"))
+	if got := term.ScrollbackLines(); !slices.Equal(got, []string{"see docs here", ""}) {
+		t.Fatalf("scrollback %q", got)
+	}
+	if !bytes.Contains(term.Repaint(true), []byte("\x1b]8;id=x;https://example.com/a\x1b\\docs")) {
+		t.Fatal("scrolled-off link not repainted")
+	}
+}
+
+// isZeroAt and appendRow read a cell as two words: R and Fg, then Bg, A
+// and L.
+func TestCellLayout(t *testing.T) {
+	var c Cell
+	if unsafe.Sizeof(c) != 16 || unsafe.Offsetof(c.Fg) != 4 || unsafe.Offsetof(c.Bg) != 8 || unsafe.Offsetof(c.L) != 14 {
+		t.Fatalf("Cell layout changed: size %d", unsafe.Sizeof(c))
 	}
 }

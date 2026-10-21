@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("00)0A0A\xf10000300\xf50")
+byte('\x18')
+byte('5')

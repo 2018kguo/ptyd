@@ -1,0 +1,188 @@
+[?1049h[30;1H[?1h=   0 scroll width machine emulator screen sequence cursor glyph parser emulator  中文字符 测试  café  naïve
+   1 margin emulator screen line line screen wrap screen sequence line emulator parser cursor wrap m achine machine
+   2 emulator parser parser width emulator wrap emulator sequence scroll buffer line scroll sequence  cursor parser buffer sequence attribute
+   3 cursor parser parser machine margin
+   4 cursor sequence color screen parser emulator state margin row attribute sequence
+   5 cell column parser column glyph buffer wrap region color wrap screen parser buffer
+   6 row cell column buffer state screen cursor escape line region cell scroll row line emulator att ribute
+   7 sequence parser
+   8 cell color glyph state row parser column screen screen reflow
+   9 color attribute screen emulator color buffer machine parser attribute column buffer color width  attribute glyph
+  10 
+  11 glyph region state cursor row emulator margin buffer scroll wrap width width row screen
+  12 column width sequence reflow scroll
+  13 sequence reflow color line glyph attribute width wrap scroll screen region scroll wrap
+  14 terminal row parser region reflow buffer terminal
+  15 line sequence glyph state
+  16 cell scroll color escape state machine attribute emulator column attribute sequence width width  width width cursor row machine
+  17 emulator margin screen margin column region cursor cell state emulator cursor terminal
+  18 scroll sequence cursor glyph state terminal screen margin state width scroll machine reflow gly ph state glyph row cursor
+  19 row column row
+  20 buffer screen scroll cursor cell reflow row color region escape terminal margin escape glyph sc roll
+[7msample.txt[27m[K[K  21 terminal escape buffer machine screen color reflow escape glyph region glyph wrap sequence sequ ence escape cell machine
+  22 state margin wrap width wrap margin escape
+  23 glyph terminal terminal reflow row reflow margin color state glyph column glyph glyph screen wr ap
+  24 wrap row margin
+  25 margin row state state terminal row machine glyph machine screen
+  26 width color margin
+  27 region line machine cell screen width column width screen region region scroll terminal scroll  parser
+  28 machine scroll state state row attribute glyph scroll sequence sequence scroll terminal termina l machine
+  29 escape scroll line
+  30 margin terminal reflow margin buffer escape
+  31 parser cell reflow sequence line scroll emulator
+  32 column attribute parser escape line escape scroll sequence scroll escape escape
+  33 
+  34 region state terminal scroll region scroll row state cursor sequence emulator cell attribute es cape
+  35 sequence row cursor sequence emulator wrap margin reflow emulator cursor escape column sequence  terminal screen column
+  36 state escape state escape margin color reflow column escape sequence
+  37 escape wrap color escape reflow sequence margin column scroll line cursor width column cell scr een  中文字符 测试
+  38 line screen margin attribute buffer cursor scroll
+  39 scroll reflow scroll column wrap cursor width row region attribute wrap
+  40 color line escape width cell
+  41 margin glyph cell screen glyph terminal cell sequence column column color terminal width  café  naïve
+:[K[K  42 escape state buffer escape screen cursor wrap cursor screen reflow
+  43 emulator region reflow scroll line attribute reflow width
+  44 sequence escape parser row
+  45 screen reflow emulator color region line screen reflow terminal machine
+  46 reflow screen
+  47 screen reflow cursor column terminal cell sequence
+  48 reflow state scroll emulator escape color wrap cursor region reflow emulator region margin
+  49 machine buffer escape margin buffer column escape attribute region
+  50 glyph terminal reflow emulator terminal terminal escape sequence
+  51 escape row wrap column cursor attribute
+  52 attribute row sequence width escape buffer color margin wrap cell margin color machine
+  53 width glyph emulator scroll
+  54 
+  55 machine reflow
+  56 region emulator screen attribute width escape attribute buffer state wrap color buffer emulator
+  57 region region reflow column terminal reflow glyph cell sequence cell wrap emulator buffer margi n
+  58 region terminal cell width screen row reflow escape machine margin wrap
+  59 terminal screen reflow screen scroll width parser emulator width terminal buffer buffer machine  wrap screen parser
+  60 scroll attribute color state width cell row scroll buffer state machine scroll emulator color e scape machine
+  61 color escape scroll escape escape parser terminal attribute parser color attribute color machin e
+  62 screen terminal emulator scroll machine glyph cursor
+  63 column sequence emulator machine terminal machine sequence attribute wrap row reflow terminal
+  64 screen escape sequence screen attribute escape screen row reflow screen reflow wrap margin wrap
+  65 row width screen row attribute buffer emulator state machine machine margin screen state scroll
+  66 reflow machine color buffer state parser scroll terminal row emulator
+:[K[K[HMnaïve
+[HM  41 margin glyph cell screen glyph terminal cell sequence column column color terminal width  café [HM  40 color line escape width cell
+[HM  39 scroll reflow scroll column wrap cursor width row region attribute wrap
+[HM  38 line screen margin attribute buffer cursor scroll
+[HMeen  中文字符 测试
+[HM  37 escape wrap color escape reflow sequence margin column scroll line cursor width column cell scr[HM  36 state escape state escape margin color reflow column escape sequence
+[HM terminal screen column
+[HM  35 sequence row cursor sequence emulator wrap margin reflow emulator cursor escape column sequence[HMcape
+[HM  34 region state terminal scroll region scroll row state cursor sequence emulator cell attribute es[HM  33 
+[HM  32 column attribute parser escape line escape scroll sequence scroll escape escape
+[HM  31 parser cell reflow sequence line scroll emulator
+[HM  30 margin terminal reflow margin buffer escape
+[HM  29 escape scroll line
+[HMl machine
+[HM  28 machine scroll state state row attribute glyph scroll sequence sequence scroll terminal termina[HMparser
+[HM  27 region line machine cell screen width column width screen region region scroll terminal scroll [HM  26 width color margin
+[HM  25 margin row state state terminal row machine glyph machine screen
+[HM  24 wrap row margin
+[HMap
+[HM  23 glyph terminal terminal reflow row reflow margin color state glyph column glyph glyph screen wr[HM  22 state margin wrap width wrap margin escape
+[HMence escape cell machine
+[HM  21 terminal escape buffer machine screen color reflow escape glyph region glyph wrap sequence sequ[30;1H[K:[K[K/[Kmm[Kaa[Krr[Kgg[Kii[Knn[K[1;1H[K  21 terminal escape buffer machine screen color reflow escape glyph region glyph wrap sequence sequ [2;1H[Kence escape cell machine
+[3;1H[K  22 state margin wrap width wrap margin escape
+[4;1H[K  23 glyph terminal terminal reflow row reflow margin color state glyph column glyph glyph screen wr [5;1H[Kap
+[6;1H[K  24 wrap row margin
+[7;1H[K  25 margin row state state terminal row machine glyph machine screen
+[8;1H[K  26 width color margin
+[9;1H[K  27 region line machine cell screen width column width screen region region scroll terminal scroll  [10;1H[Kparser
+[11;1H[K  28 machine scroll state state row attribute glyph scroll sequence sequence scroll terminal termina [12;1H[Kl machine
+[13;1H[K  29 escape scroll line
+[14;1H[K  30 margin terminal reflow margin buffer escape
+[15;1H[K  31 parser cell reflow sequence line scroll emulator
+[16;1H[K  32 column attribute parser escape line escape scroll sequence scroll escape escape
+[17;1H[K  33 
+[18;1H[K  34 region state terminal scroll region scroll row state cursor sequence emulator cell attribute es [19;1H[Kcape
+[20;1H[K  35 sequence row cursor sequence emulator wrap margin reflow emulator cursor escape column sequence [21;1H[K terminal screen column
+[22;1H[K  36 state escape state escape margin color reflow column escape sequence
+[23;1H[K  37 escape wrap color escape reflow sequence margin column scroll line cursor width column cell scr [24;1H[Keen  中文字符 测试
+[25;1H[K  38 line screen margin attribute buffer cursor scroll
+[26;1H[K  39 scroll reflow scroll column wrap cursor width row region attribute wrap
+[27;1H[K  40 color line escape width cell
+[28;1H[K  41 margin glyph cell screen glyph terminal cell sequence column column color terminal width  café  [29;1H[Knaïve
+[30;1H[1;1H[K  21 terminal escape buffer machine screen color reflow escape glyph region glyph wrap sequence sequ [2;1H[Kence escape cell machine
+[3;1H[K  22 state [7mmargin[27m wrap width wrap [7mmargin[27m escape
+[4;1H[K  23 glyph terminal terminal reflow row reflow [7mmargin[27m color state glyph column glyph glyph screen wr [5;1H[Kap
+[6;1H[K  24 wrap row [7mmargin[27m
+[7;1H[K  25 [7mmargin[27m row state state terminal row machine glyph machine screen
+[8;1H[K  26 width color [7mmargin[27m
+[9;1H[K  27 region line machine cell screen width column width screen region region scroll terminal scroll  [10;1H[Kparser
+[11;1H[K  28 machine scroll state state row attribute glyph scroll sequence sequence scroll terminal termina [12;1H[Kl machine
+[13;1H[K  29 escape scroll line
+[14;1H[K  30 [7mmargin[27m terminal reflow [7mmargin[27m buffer escape
+[15;1H[K  31 parser cell reflow sequence line scroll emulator
+[16;1H[K  32 column attribute parser escape line escape scroll sequence scroll escape escape
+[17;1H[K  33 
+[18;1H[K  34 region state terminal scroll region scroll row state cursor sequence emulator cell attribute es [19;1H[Kcape
+[20;1H[K  35 sequence row cursor sequence emulator wrap [7mmargin[27m reflow emulator cursor escape column sequence [21;1H[K terminal screen column
+[22;1H[K  36 state escape state escape [7mmargin[27m color reflow column escape sequence
+[23;1H[K  37 escape wrap color escape reflow sequence [7mmargin[27m column scroll line cursor width column cell scr [24;1H[Keen  中文字符 测试
+[25;1H[K  38 line screen [7mmargin[27m attribute buffer cursor scroll
+[26;1H[K  39 scroll reflow scroll column wrap cursor width row region attribute wrap
+[27;1H[K  40 color line escape width cell
+[28;1H[K  41 [7mmargin[27m glyph cell screen glyph terminal cell sequence column column color terminal width  café  [29;1H[Knaïve
+[30;1H  42 escape state buffer escape screen cursor wrap cursor screen reflow
+  43 emulator region reflow scroll line attribute reflow width
+:[K[K/[K  44 sequence escape parser row
+:[K[K...skipping...
+ow sequence color
+ 373 column terminal terminal cell scroll row escape row
+ 374 emulator
+ 375 region state
+ 376 row region color column width wrap state escape screen glyph cell escape
+ 377 buffer scroll parser state emulator [7mmargin[27m
+ 378 glyph column cell parser column
+ 379 glyph cell terminal cell parser row cell wrap terminal wrap column state
+ 380 machine
+ 381 attribute scroll reflow width
+ 382 screen escape reflow glyph parser parser escape parser
+ 383 color emulator sequence cursor
+ 384 line machine parser machine cursor glyph
+ 385 wrap scroll attribute screen buffer cell glyph escape machine
+ 386 glyph sequence color width cell emulator color
+ 387 attribute cell row escape glyph wrap wrap glyph scroll scroll
+ 388 terminal attribute column width column width
+ 389 buffer region parser screen scroll buffer buffer reflow parser sequence attribute cell screen [7mm[27m [7margin[27m parser screen parser region
+ 390 parser glyph column glyph color line screen row cell
+ 391 reflow reflow sequence terminal region
+ 392 wrap color terminal [7mmargin[27m emulator width column [7mmargin[27m
+ 393 escape machine cursor [7mmargin[27m wrap emulator scroll state emulator
+ 394 screen parser
+ 395 scroll terminal [7mmargin[27m reflow sequence machine terminal machine cell terminal
+ 396 cell cell terminal machine row width
+ 397 region emulator line emulator screen machine state cell row state
+ 398 reflow column terminal terminal cell parser machine cell emulator line state color
+ 399 region screen terminal scroll [7mmargin[27m scroll escape screen glyph glyph
+[7m(END)[27m[K[K[H[2J[HMroll
+[HM  20 buffer screen scroll cursor cell reflow row color region escape terminal [7mmargin[27m escape glyph sc[HM  19 row column row
+[HMph state glyph row cursor
+[HM  18 scroll sequence cursor glyph state terminal screen [7mmargin[27m state width scroll machine reflow gly[HM  17 emulator [7mmargin[27m screen [7mmargin[27m column region cursor cell state emulator cursor terminal
+[HM width width cursor row machine
+[HM  16 cell scroll color escape state machine attribute emulator column attribute sequence width width[HM  15 line sequence glyph state
+[HM  14 terminal row parser region reflow buffer terminal
+[HM  13 sequence reflow color line glyph attribute width wrap scroll screen region scroll wrap
+[HM  12 column width sequence reflow scroll
+[HM  11 glyph region state cursor row emulator [7mmargin[27m buffer scroll wrap width width row screen
+[HM  10 
+[HM attribute glyph
+[HM   9 color attribute screen emulator color buffer machine parser attribute column buffer color width[HM   8 cell color glyph state row parser column screen screen reflow
+[HM   7 sequence parser
+[HMribute
+[HM   6 row cell column buffer state screen cursor escape line region cell scroll row line emulator att[HM   5 cell column parser column glyph buffer wrap region color wrap screen parser buffer
+[HM   4 cursor sequence color screen parser emulator state [7mmargin[27m row attribute sequence
+[HM   3 cursor parser parser machine [7mmargin[27m
+[HM cursor parser buffer sequence attribute
+[HM   2 emulator parser parser width emulator wrap emulator sequence scroll buffer line scroll sequence[HMachine machine
+[HM   1 [7mmargin[27m emulator screen line line screen wrap screen sequence line emulator parser cursor wrap m[HM naïve
+[HM   0 scroll width machine emulator screen sequence cursor glyph parser emulator  中文字符 测试  café[30;1H[K:[K[K  21 terminal escape buffer machine screen color reflow escape glyph region glyph wrap sequence sequ :[K[Kence escape cell machine
+:[K[K  22 state [7mmargin[27m wrap width wrap [7mmargin[27m escape
+:[K[K  23 glyph terminal terminal reflow row reflow [7mmargin[27m color state glyph column glyph glyph screen wr :[K[Kap
+:[K[K[HM   2 emulator parser parser width emulator wrap emulator sequence scroll buffer line scroll sequence[30;1H[K:[K[K[HMachine machine
+[30;1H[K:[K[K[?1l>[?1049l

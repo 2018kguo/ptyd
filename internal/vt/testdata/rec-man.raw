@@ -1,0 +1,187 @@
+[?1049h[30;1H[?1h=LS(1)                                 General Commands Manual                                LS(1)
+
+[1mNAME[0m
+     [1mls[0m – list directory contents
+
+[1mSYNOPSIS[0m
+     [1mls[0m [[1m-@ABCFGHILOPRSTUWabcdefghiklmnopqrstuvwxy1%,[0m] [[1m--color[0m=[4mwhen[24m] [[1m-D[0m [4mformat[24m] [[4mfile[24m [4m...[24m]
+
+[1mDESCRIPTION[0m
+     For each operand that names a [4mfile[24m of a type other than directory, [1mls[0m displays its name as
+     well as any requested, associated information.  For each operand that names a [4mfile[24m of type
+     directory, [1mls[0m displays the names of files contained within that directory, as well as any
+     requested, associated information.
+
+     If no operands are given, the contents of the current directory are displayed.  If more than
+     one operand is given, non-directory operands are displayed first; directory and non-directory
+     operands are sorted separately and in lexicographical order.
+
+     The following options are available:
+
+     [1m-@[0m      Display extended attribute keys and sizes in long ([1m-l[0m) output.
+
+     [1m-A[0m      Include directory entries whose names begin with a dot (‘[4m.[24m’) except for [4m.[24m and [4m..[24m.
+             Automatically set for the super-user unless [1m-I[0m is specified.
+
+     [1m-B[0m      Force printing of non-printable characters (as defined by ctype(3) and current locale
+             settings) in file names as \[4mxxx[24m, where [4mxxx[24m is the numeric value of the character in
+             octal.  This option is not defined in IEEE Std 1003.1-2008 (“POSIX.1”).
+
+:[K[K     [1m-C[0m      Force multi-column output; this is the default when output is to a terminal.
+
+     [1m-D[0m [4mformat[24m
+             When printing in the long ([1m-l[0m) format, use [4mformat[24m to format the date and time output.
+             The argument [4mformat[24m is a string used by strftime(3).  Depending on the choice of
+             format string, this may result in a different number of columns in the output.  This
+             option overrides the [1m-T[0m option.  This option is not defined in IEEE Std 1003.1-2008
+             (“POSIX.1”).
+
+     [1m-F[0m      Display a slash (‘/’) immediately after each pathname that is a directory, an
+             asterisk (‘*’) after each that is executable, an at sign (‘@’) after each symbolic
+             link, an equals sign (‘=’) after each socket, a percent sign (‘%’) after each
+             whiteout, and a vertical bar (‘|’) after each that is a FIFO.
+
+     [1m-G[0m      Enable colorized output.  This option is equivalent to defining CLICOLOR or COLORTERM
+             in the environment and setting [1m--color[0m=[4mauto[24m.  (See below.)  This functionality can be
+             compiled out by removing the definition of COLORLS.  This option is not defined in
+             IEEE Std 1003.1-2008 (“POSIX.1”).
+
+     [1m-H[0m      Symbolic links on the command line are followed.  This option is assumed if none of
+             the [1m-F[0m, [1m-d[0m, or [1m-l[0m options are specified.
+
+     [1m-I[0m      Prevent [1m-A[0m from being automatically set for the super-user.  This option is not
+             defined in IEEE Std 1003.1-2008 (“POSIX.1”).
+
+     [1m-L[0m      Follow all symbolic links to final target and list the file or directory the link
+             references rather than the link itself.  This option cancels the [1m-P[0m option.
+
+     [1m-O[0m      Include the file flags in a long ([1m-l[0m) output.  This option is incompatible with IEEE
+:[K[K             Std 1003.1-2008 (“POSIX.1”).  See chflags(1) for a list of file flags and their
+             meanings.
+
+     [1m-P[0m      If argument is a symbolic link, list the link itself rather than the object the link
+             references.  This option cancels the [1m-H[0m and [1m-L[0m options.
+
+     [1m-R[0m      Recursively list subdirectories encountered.
+
+     [1m-S[0m      Sort by size (largest file first) before sorting the operands in lexicographical
+             order.
+
+     [1m-T[0m      When printing in the long ([1m-l[0m) format, display complete time information for the
+             file, including month, day, hour, minute, second, and year.  The [1m-D[0m option gives even
+             more control over the output format.  This option is not defined in IEEE Std
+             1003.1-2008 (“POSIX.1”).
+
+     [1m-U[0m      Use time when file was created for sorting or printing.  This option is not defined
+             in IEEE Std 1003.1-2008 (“POSIX.1”).
+
+     [1m-W[0m      Display whiteouts when scanning directories.  This option is not defined in IEEE Std
+             1003.1-2008 (“POSIX.1”).
+
+     [1m-X[0m      When listing recursively, do not descend into directories that would cross file
+             system boundaries.  More specifically, this option will prevent descending into
+             directories that have a different device number.
+
+     [1m-a[0m      Include directory entries whose names begin with a dot (‘[4m.[24m’).
+
+     [1m-b[0m      As [1m-B[0m, but use C escape codes whenever possible.  This option is not defined in IEEE
+:[K[K/[K--[Kll[K[1;1H[K             Std 1003.1-2008 (“POSIX.1”).  See chflags(1) for a list of file flags and their
+[2;1H[K             meanings.
+[3;1H[K
+[4;1H[K     [1m-P[0m      If argument is a symbolic link, list the link itself rather than the object the link
+[5;1H[K             references.  This option cancels the [1m-H[0m and [1m-L[0m options.
+[6;1H[K
+[7;1H[K     [1m-R[0m      Recursively list subdirectories encountered.
+[8;1H[K
+[9;1H[K     [1m-S[0m      Sort by size (largest file first) before sorting the operands in lexicographical
+[10;1H[K             order.
+[11;1H[K
+[12;1H[K     [1m-T[0m      When printing in the long ([1m-l[0m) format, display complete time information for the
+[13;1H[K             file, including month, day, hour, minute, second, and year.  The [1m-D[0m option gives even
+[14;1H[K             more control over the output format.  This option is not defined in IEEE Std
+[15;1H[K             1003.1-2008 (“POSIX.1”).
+[16;1H[K
+[17;1H[K     [1m-U[0m      Use time when file was created for sorting or printing.  This option is not defined
+[18;1H[K             in IEEE Std 1003.1-2008 (“POSIX.1”).
+[19;1H[K
+[20;1H[K     [1m-W[0m      Display whiteouts when scanning directories.  This option is not defined in IEEE Std
+[21;1H[K             1003.1-2008 (“POSIX.1”).
+[22;1H[K
+[23;1H[K     [1m-X[0m      When listing recursively, do not descend into directories that would cross file
+[24;1H[K             system boundaries.  More specifically, this option will prevent descending into
+[25;1H[K             directories that have a different device number.
+[26;1H[K
+[27;1H[K     [1m-a[0m      Include directory entries whose names begin with a dot (‘[4m.[24m’).
+[28;1H[K
+[29;1H[K     [1m-b[0m      As [1m-B[0m, but use C escape codes whenever possible.  This option is not defined in IEEE
+[30;1H[1;1H[K             Std 1003.1-2008 (“POSIX.1”).  See chflags(1) for a list of file flags and their
+[2;1H[K             meanings.
+[3;1H[K
+[4;1H[K     [1m-P[0m      If argument is a symbolic link, list the link itself rather than the object the link
+[5;1H[K             references.  This option cancels the [1m-H[0m and [1m-L[0m options.
+[6;1H[K
+[7;1H[K     [1m-R[0m      Recursively list subdirectories encountered.
+[8;1H[K
+[9;1H[K     [1m-S[0m      Sort by size (largest file first) before sorting the operands in lexicographical
+[10;1H[K             order.
+[11;1H[K
+[12;1H[K     [1m-T[0m      When printing in the long ([1m[7m-l[27m[0m) format, display complete time information for the
+[13;1H[K             file, including month, day, hour, minute, second, and year.  The [1m-D[0m option gives even
+[14;1H[K             more control over the output format.  This option is not defined in IEEE Std
+[15;1H[K             1003.1-2008 (“POSIX.1”).
+[16;1H[K
+[17;1H[K     [1m-U[0m      Use time when file was created for sorting or printing.  This option is not defined
+[18;1H[K             in IEEE Std 1003.1-2008 (“POSIX.1”).
+[19;1H[K
+[20;1H[K     [1m-W[0m      Display whiteouts when scanning directories.  This option is not defined in IEEE Std
+[21;1H[K             1003.1-2008 (“POSIX.1”).
+[22;1H[K
+[23;1H[K     [1m-X[0m      When listing recursively, do not descend into directories that would cross file
+[24;1H[K             system boundaries.  More specifically, this option will prevent descending into
+[25;1H[K             directories that have a different device number.
+[26;1H[K
+[27;1H[K     [1m-a[0m      Include directory entries whose names begin with a dot (‘[4m.[24m’).
+[28;1H[K
+[29;1H[K     [1m-b[0m      As [1m-B[0m, but use C escape codes whenever possible.  This option is not defined in IEEE
+[30;1H             Std 1003.1-2008 (“POSIX.1”).
+
+     [1m-c[0m      Use time when file status was last changed for sorting or printing.
+
+     [1m--color[0m=[4mwhen[24m
+             Output colored escape sequences based on [4mwhen[24m, which may be set to either [1malways[0m,
+             [1mauto[0m, or [1mnever[0m.
+
+             [1malways[0m will make [1mls[0m always output color.  If TERM is unset or set to an invalid
+             terminal, then [1mls[0m will fall back to explicit ANSI escape sequences without the help
+             of termcap(5).  [1malways[0m is the default if [1m--color[0m is specified without an argument.
+:[K[K...skipping...
+
+     For more information about legacy mode, see compat(5).
+
+[1mSEE[0m [1mALSO[0m
+     chflags(1), chmod(1), sort(1), xterm(1), localeconv(3), strftime(3), strmode(3), compat(5),
+     termcap(5), sticky(7), symlink(7)
+
+[1mSTANDARDS[0m
+     With the exception of options [1m-g[0m, [1m-n[0m and [1m-o[0m, the [1mls[0m utility conforms to IEEE Std 1003.1-2001
+     (“POSIX.1”) and IEEE Std 1003.1-2008 (“POSIX.1”).  The options [1m-B[0m, [1m-D[0m, [1m-G[0m, [1m-I[0m, [1m-T[0m, [1m-U[0m, [1m-W[0m,
+     [1m-Z[0m, [1m-b[0m, [1m-h[0m, [1m-w[0m, [1m-y[0m and [1m-[0m, are non-standard extensions.
+
+     The ACL support is compatible with IEEE Std 1003.2c (“POSIX.2c”) Draft 17 (withdrawn).
+
+[1mHISTORY[0m
+     An [1mls[0m command appeared in Version 1 AT&T UNIX.
+
+[1mBUGS[0m
+     To maintain backward compatibility, the relationships between the many options are quite
+     complex.
+
+     The exception mentioned in the [1m-s[0m option description might be a feature that was based on the
+     fact that single-column output usually goes to something other than a terminal.  It is
+     debatable whether this is a design bug.
+
+     IEEE Std 1003.2 (“POSIX.2”) mandates opposite sort orders for files with the same timestamp
+     when sorting with the [1m-t[0m option.
+
+macOS 26.6                                August 31, 2020                               macOS 26.6
+[7m(END)[27m[K[K[?1l>[?1049l
