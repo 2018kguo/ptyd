@@ -123,6 +123,9 @@ type Info struct {
 	// be replaced or finalized by the next byte of output.
 	Pending string `json:"pending,omitempty"`
 
+	// Attached is the number of clients attached (see Manager.Attach).
+	Attached int `json:"attached,omitempty"`
+
 	// Watches and Attention are the configured patterns and the events
 	// they have produced and not yet acknowledged (newest 100 kept).
 	Watches   []WatchSpec      `json:"watches,omitempty"`

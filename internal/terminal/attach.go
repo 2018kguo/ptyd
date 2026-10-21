@@ -66,17 +66,21 @@ type Attachment struct {
 	last     []byte // returned by the previous Read
 	readOnly bool
 	once     sync.Once
+
+	// The client's window size, set by Attach and Resize. When it types,
+	// the terminal takes its size again if another client changed it.
+	cols, rows uint16
 }
 
 // Attach attaches a client. If cols and rows are set, the terminal is
 // resized to them first (the most recent attacher's size wins). The first
 // Read returns a repaint of the screen with its scrollback. A ghost can be
-// attached read-only: the client sees its saved screen and no more.
+// attached read-only: the client gets its saved screen, then EOF.
 func (m *Manager) Attach(id ID, cols, rows uint16, readOnly bool) (*Attachment, error) {
 	t, err := m.get(id)
 	if err != nil {
-		if g, ok := m.ghostScreen(id); ok {
-			return &Attachment{initial: g, readOnly: true, a: &attacher{ended: false, wake: make(chan struct{}, 1)}}, nil
+		if g, ok := m.ghostScreen(id, cols, rows); ok {
+			return &Attachment{initial: g, readOnly: true, a: &attacher{ended: true, wake: make(chan struct{}, 1)}}, nil
 		}
 		return nil, err
 	}
@@ -93,10 +97,11 @@ func (m *Manager) Attach(id ID, cols, rows uint16, readOnly bool) (*Attachment, 
 			t.attachers = map[*attacher]struct{}{}
 		}
 		t.attachers[a] = struct{}{}
+		t.attached.Store(int32(len(t.attachers)))
 	}
 	t.scrMu.Unlock()
 	m.activeSubs.Add(1)
-	return &Attachment{t: t, a: a, initial: initial, readOnly: readOnly}, nil
+	return &Attachment{t: t, a: a, initial: initial, readOnly: readOnly, cols: cols, rows: rows}, nil
 }
 
 // ReadOnly reports whether input and resizes are ignored.
@@ -155,13 +160,23 @@ func (at *Attachment) repaint() []byte {
 	return t.screen.Repaint(false)
 }
 
-// Write sends input to the terminal.
+// Write sends input to the terminal. Like tmux's "latest" window size,
+// the client that types gets its size: if another client resized the
+// terminal since, it is resized back first.
 func (at *Attachment) Write(p []byte) error {
 	if at.readOnly || at.t == nil {
 		return nil
 	}
 	if !at.t.running() {
 		return ErrNotRunning
+	}
+	if at.cols > 0 && at.rows > 0 {
+		at.t.scrMu.Lock()
+		cols, rows := at.t.screen.Size()
+		at.t.scrMu.Unlock()
+		if cols != int(at.cols) || rows != int(at.rows) {
+			_ = at.t.resize(at.cols, at.rows)
+		}
 	}
 	_, err := at.t.ptmx.Write(p)
 	return err
@@ -175,6 +190,7 @@ func (at *Attachment) Resize(cols, rows uint16) error {
 	if !at.t.running() {
 		return ErrNotRunning
 	}
+	at.cols, at.rows = cols, rows
 	return at.t.resize(cols, rows)
 }
 
@@ -186,6 +202,7 @@ func (at *Attachment) Close() {
 		}
 		at.t.scrMu.Lock()
 		delete(at.t.attachers, at.a)
+		at.t.attached.Store(int32(len(at.t.attachers)))
 		at.t.scrMu.Unlock()
 		if at.t.mgr != nil {
 			at.t.mgr.activeSubs.Add(-1)
@@ -209,5 +226,6 @@ func (t *terminal) endAttachers() {
 		a.end()
 	}
 	t.attachers = nil
+	t.attached.Store(0)
 	t.scrMu.Unlock()
 }

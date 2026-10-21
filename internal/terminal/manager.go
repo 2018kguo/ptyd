@@ -103,6 +103,7 @@ type terminal struct {
 	screen      *vt.Terminal
 	attachers   map[*attacher]struct{} // guarded by scrMu
 	outputEnded bool                   // guarded by scrMu
+	attached    atomic.Int32           // len(attachers), read without scrMu
 
 	// persist saves the screen under the persist dir (nil without one);
 	// ckptMu serializes its checkpoints.
@@ -1011,6 +1012,7 @@ func (t *terminal) snapshot() Info {
 		info.Attention = append([]AttentionEvent(nil), t.attention...)
 	}
 	t.mu.Unlock()
+	info.Attached = int(t.attached.Load())
 	info.LatestSeq = t.ring.LatestSeq()
 	info.Pending = t.ring.Pending()
 	if t.cfg.Restore == RestoreAgent && t.persist != nil {

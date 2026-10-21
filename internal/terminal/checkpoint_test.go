@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -221,7 +222,8 @@ func TestPersistedScreenPermissionsAndDelete(t *testing.T) {
 	}
 }
 
-// A ghost can be attached read-only: the client sees the saved screen.
+// A ghost can be attached read-only: the client gets the saved screen,
+// then EOF, as nothing more will happen in it.
 func TestAttachGhost(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "p")
 	m1 := persistManager(t, dir)
@@ -243,9 +245,7 @@ func TestAttachGhost(t *testing.T) {
 	if !strings.Contains(string(b), "saved-text") {
 		t.Fatalf("ghost repaint %q", b)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	if _, err := at.Read(ctx); err != context.DeadlineExceeded {
-		t.Fatalf("ghost attachment should stay open until the client leaves: %v", err)
+	if _, err := at.Read(context.Background()); err != io.EOF {
+		t.Fatalf("after a ghost's screen: %v, want EOF", err)
 	}
 }

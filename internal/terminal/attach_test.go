@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -69,5 +70,48 @@ func TestSlowAttacherGetsRepaint(t *testing.T) {
 			}
 			break
 		}
+	}
+}
+
+// With several clients attached, the one that types gets its window
+// size (tmux's "latest"), and Info counts the clients.
+func TestTypingClientGetsItsSize(t *testing.T) {
+	m := NewManager()
+	info, err := m.Create(CreateConfig{Name: "cat", Command: "cat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close(info.ID)
+	a, err := m.Attach(info.ID, 100, 30, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	b, err := m.Attach(info.ID, 60, 20, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := func() string {
+		scr, _ := m.Screen(info.ID, false)
+		return fmt.Sprintf("%dx%d", scr.Cols, scr.Rows)
+	}
+	if got := size(); got != "60x20" {
+		t.Fatalf("after the second attach: %s", got)
+	}
+	if got, _ := m.Get(info.ID); got.Attached != 2 {
+		t.Fatalf("attached %d", got.Attached)
+	}
+	_ = a.Write([]byte("x"))
+	if got := size(); got != "100x30" {
+		t.Fatalf("after a typed: %s", got)
+	}
+	_ = b.Resize(70, 25)
+	_ = b.Write([]byte("y"))
+	if got := size(); got != "70x25" {
+		t.Fatalf("after b resized and typed: %s", got)
+	}
+	b.Close()
+	if got, _ := m.Get(info.ID); got.Attached != 1 {
+		t.Fatalf("attached %d after a detach", got.Attached)
 	}
 }
