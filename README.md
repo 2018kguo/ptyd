@@ -1,6 +1,6 @@
 # ptyd
 
-![ptyd demo: run Claude Code in the background, prompt it over HTTP, kill -9 the daemon, restart it, and the same conversation is resumed](docs/demo.gif)
+![ptyd demo: Claude Code runs under ptyd and is prompted over HTTP, survives a kill -9 of the daemon with its conversation resumed, then finds and fixes the failing one of twelve test suites running in other ptyd terminals](docs/demo.gif)
 
 `ptyd` is a small daemon that runs long-lived terminal sessions (PTYs) and
 lets other programs drive them over a local HTTP/JSON API. You can spawn a
