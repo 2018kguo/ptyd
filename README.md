@@ -239,6 +239,10 @@ keys. Ctrl-C, Ctrl-Z and every other key go to the program.
 - **Slow clients never slow the program:** each client has a 1 MiB output
   queue; one that falls behind is sent a fresh repaint instead of the
   missed bytes.
+- **Bulk output is batched:** while a program prints continuously, a
+  client is sent its output at most every 4 ms (like kitty's
+  `input_delay`); output after a pause, and small output such as the
+  echo of what you type, is sent at once.
 - **Ghosts** (see below) attach read-only: you get their saved window,
   fitted to yours, and your prompt back.
 
@@ -265,9 +269,11 @@ Each terminal has a directory `DIR/<id>/`
 | `agent-session.json` | Agent policy only: the session the agent is in, written by its hooks. |
 
 The checkpoint plus the tails replayed through a fresh emulator give the
-exact window, also after `kill -9` of the daemon: tails are appended on
-every read from the PTY (not fsynced; they survive a process crash, a
-power loss can lose the last moments). A torn last record, or output cut
+exact window, also after `kill -9` of the daemon: every read from the
+PTY is in its tail before the next one (written, or on macOS copied into
+a shared memory map of the file, which skips a system call per read; not
+fsynced; they survive a process crash, a power loss can lose the last
+moments). A torn last record, or output cut
 in the middle of an escape sequence, is tolerated.
 
 Bounds: a checkpoint is taken when output has been quiet for 1s (at most
@@ -432,24 +438,27 @@ Measured on an Apple M5 Pro, on macOS and in Docker on the same machine
 method, the results and the cost of every route and loop.
 
 - **Emulator:** 300–400 MB/s per core on agent TUI, log and vim output,
-  ~850 MB/s on progress bars; redrawing a frame allocates nothing.
+  ~1 GB/s on progress bars; redrawing a frame allocates nothing.
   Everything one PTY read goes through (screen, line ring, attached
   clients, persisted tail) runs at 250–310 MB/s.
 - **Under load:** 32 terminals each printing 1 MiB/s of agent output,
-  each attached and streamed, with `--persist-dir`: 1.5 cores on Linux
-  (2.6 on macOS); a keystroke typed through `attach` is echoed back in
-  0.23 ms at the median and 0.55 ms at p99 on Linux (0.12 and 0.6 ms on
-  macOS); one GC cycle per second; 1.03 bytes written to disk per byte of
-  output.
-- **Flat out:** 8 terminals printing as fast as they can reach ~195 MB/s
-  on Linux and ~85 MB/s on macOS, where a PTY read returns at most 1 KiB
-  and each read is also a write to the tail.
+  each attached and streamed, with `--persist-dir`: about 1 core on
+  Linux and on macOS; a keystroke typed through `attach` is echoed back
+  in 0.18 ms at the median and 0.4 ms at p99 on Linux (0.10 and 0.7 ms
+  on macOS); a GC cycle every 5 s; 1.03 bytes written to disk per byte
+  of output.
+- **Flat out:** 8 terminals printing as fast as they can reach ~320 MB/s
+  on Linux (2.3 cores) and ~120 MB/s on macOS (3.5 cores), where a PTY
+  read returns at most 1 KiB.
+- **Build:** `go build` and `go install` use the profile in
+  `cmd/ptyd/default.pgo` (profile-guided optimization, refreshed with
+  `bench/pgo.sh`).
 - **Restore:** ~0.6 ms per terminal on Linux and ~10 ms on macOS (where
   fsync flushes the drive), 16 at a time at startup.
 
 Reproduce with `bench/run.sh` (benchmarks), `bench/ab.sh` (A/B against a
-revision) and `bench/load.sh` (end-to-end load test, build tag
-`loadtest`). The idle-terminal benchmark spawns `PTYD_SCALE_N` terminals
+revision), `bench/load.sh` (end-to-end load test, build tag `loadtest`)
+and `bench/load-ab.sh` (the load test A/B against a revision). The idle-terminal benchmark spawns `PTYD_SCALE_N` terminals
 (default 1000, 400 on macOS).
 
 ## Security
