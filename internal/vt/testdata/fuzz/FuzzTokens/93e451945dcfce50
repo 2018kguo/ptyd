@@ -1,4 +1,0 @@
-go test fuzz v1
-[]byte("\xc8X10\xbc\xc90")
-byte('1')
-byte('V')

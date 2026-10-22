@@ -1,7 +1,7 @@
 package terminal
 
 import (
-	"github.com/2018kguo/ptyd/internal/vt"
+	"github.com/2018kguo/phosphor"
 )
 
 // Screen is what a terminal's window shows, as text.
@@ -17,13 +17,13 @@ type Screen struct {
 	Scrollback    []string `json:"scrollback,omitempty"`
 }
 
-func screenOf(s *vt.Terminal, withScrollback bool) Screen {
+func screenOf(s *phosphor.Terminal, withScrollback bool) Screen {
 	cols, rows := s.Size()
-	x, y, visible := s.Cursor()
+	cur := s.Cursor()
 	out := Screen{
 		Cols: cols, Rows: rows,
-		CursorX: x, CursorY: y, CursorVisible: visible,
-		AltScreen: s.AltScreen(),
+		CursorX: cur.X, CursorY: cur.Y, CursorVisible: cur.Visible,
+		AltScreen: s.Modes().AltScreen,
 		Title:     s.Title(),
 		Lines:     s.Lines(),
 	}
@@ -64,7 +64,7 @@ func (m *Manager) ScreenANSI(id ID, withScrollback bool) ([]byte, error) {
 }
 
 // loadGhostScreen rebuilds a ghost's saved screen from disk.
-func (m *Manager) loadGhostScreen(id ID) (*vt.Terminal, bool) {
+func (m *Manager) loadGhostScreen(id ID) (*phosphor.Terminal, bool) {
 	if _, ok := m.GhostMeta(id); !ok {
 		return nil, false
 	}

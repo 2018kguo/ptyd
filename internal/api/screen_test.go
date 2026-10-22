@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/terminal"
-	"github.com/2018kguo/ptyd/internal/vt"
 )
 
 func TestScreenEndpoint(t *testing.T) {
@@ -39,7 +39,7 @@ func TestScreenEndpoint(t *testing.T) {
 	if resp.StatusCode != 200 || !strings.Contains(string(ansi), "\x1b[0;1;32mfive") {
 		t.Fatalf("ansi %d %q", resp.StatusCode, ansi)
 	}
-	fresh := vt.New(30, 4, vt.Options{})
+	fresh := phosphor.New(30, 4)
 	fresh.Write(ansi)
 	if strings.Join(fresh.Lines(), "|") != "two|three|four|five" {
 		t.Fatalf("ansi repaint gives %q", fresh.Lines())

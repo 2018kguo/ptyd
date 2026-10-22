@@ -13,9 +13,9 @@ import (
 	"github.com/creack/pty"
 	"golang.org/x/term"
 
+	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/api"
 	"github.com/2018kguo/ptyd/internal/terminal"
-	"github.com/2018kguo/ptyd/internal/vt"
 )
 
 // userTerminal is the test's stand-in for the user's terminal window: a
@@ -24,7 +24,7 @@ import (
 type userTerminal struct {
 	master, slave *os.File
 	mu            sync.Mutex
-	screen        *vt.Terminal
+	screen        *phosphor.Terminal
 	raw           strings.Builder
 }
 
@@ -37,7 +37,7 @@ func newUserTerminal(t *testing.T, cols, rows int) *userTerminal {
 	if err := pty.Setsize(master, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)}); err != nil {
 		t.Fatal(err)
 	}
-	u := &userTerminal{master: master, slave: slave, screen: vt.New(cols, rows, vt.Options{})}
+	u := &userTerminal{master: master, slave: slave, screen: phosphor.New(cols, rows)}
 	go func() {
 		buf := make([]byte, 8192)
 		for {

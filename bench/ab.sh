@@ -6,8 +6,8 @@
 # new.txt in. OLD_SED, if set, is a sed script applied to the copied
 # benchmark files (to adapt a benchmark to an older API).
 #
-#   bench/ab.sh HEAD ./internal/vt 'WriteStream|Serialize'
-#   OUT=/tmp/ab bench/ab.sh <rev> './internal/vt ./internal/terminal ./internal/api'
+#   bench/ab.sh HEAD ./internal/terminal 'Consume|Attach'
+#   OUT=/tmp/ab bench/ab.sh <rev> './internal/terminal ./internal/api'
 set -eu
 cd "$(dirname "$0")/.."
 rev=$1 pkgs=$2 bench=${3:-.} count=${COUNT:-10}

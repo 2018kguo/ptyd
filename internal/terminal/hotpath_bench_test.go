@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/benchdata"
-	"github.com/2018kguo/ptyd/internal/vt"
 )
 
 // fakeTerminal registers a terminal with no process behind it, for driving
@@ -24,7 +24,7 @@ func fakeTerminal(m *Manager, i, cols, rows int) *terminal {
 		info: Info{ID: id, Name: fmt.Sprintf("fake-%d", i), Status: StatusRunning, CreatedAt: time.Unix(int64(i), 0),
 			Tags: []string{"t" + strconv.Itoa(i%10)}},
 		ring:   NewRing(ringCapacity, m.opts.ScrollbackBytes),
-		screen: vt.New(cols, rows, vt.Options{}),
+		screen: phosphor.New(cols, rows),
 		done:   make(chan struct{}),
 	}
 	m.mu.Lock()
@@ -201,7 +201,7 @@ func writeGhost(b *testing.B, persistDir string, i int, ckpt []byte, tail []byte
 // BenchmarkLoadScreen is rebuilding one terminal's screen after a crash:
 // a full checkpoint plus a tail of the given size.
 func BenchmarkLoadScreen(b *testing.B) {
-	full := vt.New(120, 40, vt.Options{})
+	full := phosphor.New(120, 40)
 	full.Write(benchdata.Claude(4<<20, 120, 40))
 	ckpt := full.Repaint(true)
 	for _, tailBytes := range []int{0, 1 << 20, maxTailBytes} {
@@ -226,7 +226,7 @@ func BenchmarkLoadScreen(b *testing.B) {
 // them all does.
 func BenchmarkStartup1000(b *testing.B) {
 	const n = 1000
-	full := vt.New(120, 40, vt.Options{})
+	full := phosphor.New(120, 40)
 	full.Write(benchdata.Claude(1<<20, 120, 40))
 	ckpt := full.Repaint(true)
 	tail := benchdata.Claude(64<<10, 120, 40)

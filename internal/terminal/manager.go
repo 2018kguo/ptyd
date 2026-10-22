@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/2018kguo/ptyd/internal/vt"
+	"github.com/2018kguo/phosphor"
 	"github.com/creack/pty"
 )
 
@@ -100,7 +100,7 @@ type terminal struct {
 	// scrMu guards screen, the emulator fed with every byte of output, so
 	// the daemon knows what the window looks like.
 	scrMu       sync.Mutex
-	screen      *vt.Terminal
+	screen      *phosphor.Terminal
 	attachers   map[*attacher]struct{} // guarded by scrMu
 	outputEnded bool                   // guarded by scrMu
 	attached    atomic.Int32           // len(attachers), read without scrMu
@@ -311,7 +311,7 @@ type spawnSpec struct {
 
 	// For a restore: the saved screen to continue, the next tail
 	// generation, and the restore count and notice to record.
-	screen   *vt.Terminal
+	screen   *phosphor.Terminal
 	tailGen  uint64
 	restored int
 	notice   string
@@ -350,7 +350,7 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 
 	screen := sp.screen
 	if screen == nil {
-		screen = vt.New(int(cfg.Cols), int(cfg.Rows), vt.Options{})
+		screen = phosphor.New(int(cfg.Cols), int(cfg.Rows))
 	}
 	cols, rows := screen.Size()
 	ptyStartMu.Lock()

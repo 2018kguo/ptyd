@@ -8,8 +8,8 @@ BENCH='Consume|WriteStream' COUNT=10 bench/run.sh > new.txt
 go run golang.org/x/perf/cmd/benchstat@latest bench/baseline.txt new.txt
 
 # A/B a change against a revision, runs interleaved (fairer on a busy host):
-bench/ab.sh HEAD ./internal/vt 'WriteStream'
-OUT=/tmp/ab bench/ab.sh <rev> './internal/vt ./internal/terminal ./internal/api'
+bench/ab.sh HEAD ./internal/terminal 'Consume'
+OUT=/tmp/ab bench/ab.sh <rev> './internal/terminal ./internal/api'
 
 # End-to-end load test (build tag loadtest); one JSON line per scenario:
 bench/load.sh /tmp/load.jsonl
@@ -23,6 +23,11 @@ go tool pprof -top /tmp/prof/cpu.pprof          # also mutex, block, heap, alloc
 ```
 
 `PTYD_SCALE_N` sets how many terminals `BenchmarkIdleTerminals` spawns.
+
+The emulator's own benchmarks (`WriteStream`, `Serialize`, `Replay`,
+`Memory`) moved with it to
+[phosphor](https://github.com/2018kguo/phosphor); the `vt` rows below
+were measured when it was `internal/vt` here.
 
 ## Files
 

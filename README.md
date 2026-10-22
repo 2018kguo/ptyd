@@ -159,7 +159,8 @@ terminals stay listed with their output and `exit_code` until deleted.
 ### Screen
 
 Every byte a program prints also goes through a terminal emulator in the
-daemon, so ptyd knows the window: main and alternate screen, cursor,
+daemon ([phosphor](https://github.com/2018kguo/phosphor)), so ptyd knows
+the window: main and alternate screen, cursor,
 colors and attributes, scroll region, the input modes the program
 enabled (cursor keys, keypad, bracketed paste, mouse, focus, kitty
 keyboard), the title, and up to 2000 lines / 256 KiB of scrollback.

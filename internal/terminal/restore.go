@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/2018kguo/ptyd/internal/vt"
+	"github.com/2018kguo/phosphor"
 )
 
 var (
@@ -144,7 +144,7 @@ func (m *Manager) Restore(id ID, policy RestorePolicy) (Info, error) {
 	}
 
 	// The old screen and scrollback stay visible above the new process.
-	scr.ArchiveScreen()
+	scr.Restart()
 	writeNotice(scr, notice, false)
 	info, err := m.spawn(cfg, spawnSpec{
 		id: id, createdAt: meta.CreatedAt, args: args,
@@ -162,7 +162,7 @@ func (m *Manager) Restore(id ID, policy RestorePolicy) (Info, error) {
 // on its own line at the cursor. On a saved screen (atBottom) it goes on
 // the last row if that is blank, and otherwise scrolls in at the bottom,
 // so nothing else on the screen is overwritten.
-func writeNotice(scr *vt.Terminal, notice string, atBottom bool) {
+func writeNotice(scr *phosphor.Terminal, notice string, atBottom bool) {
 	line := "\x1b[0;2m" + notice + "\x1b[0m"
 	if !atBottom {
 		scr.Write([]byte(line + "\r\n"))
@@ -177,7 +177,7 @@ func writeNotice(scr *vt.Terminal, notice string, atBottom bool) {
 
 // decline keeps the terminal a ghost, with the notice on its saved screen
 // and in its metadata.
-func (m *Manager) decline(id ID, scr *vt.Terminal, gen uint64, notice string) (Info, error) {
+func (m *Manager) decline(id ID, scr *phosphor.Terminal, gen uint64, notice string) (Info, error) {
 	dir := terminalDir(m.opts.PersistDir, id)
 	writeNotice(scr, notice, true)
 	cols, rows := scr.Size()

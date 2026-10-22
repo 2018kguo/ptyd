@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/2018kguo/ptyd/internal/vt"
+	"github.com/2018kguo/phosphor"
 )
 
 func screenText(m *Manager, id ID) string {
@@ -33,7 +33,7 @@ func TestScreenTracksFullScreenProgram(t *testing.T) {
 	}
 	// The repaint reproduces it on a fresh emulator of the same size.
 	ansi, _ := m.ScreenANSI(info.ID, true)
-	fresh := vt.New(40, 10, vt.Options{})
+	fresh := phosphor.New(40, 10)
 	fresh.Write(ansi)
 	if !slices.Equal(fresh.Lines(), scr.Lines) {
 		t.Fatalf("repaint gives %q, want %q", fresh.Lines(), scr.Lines)

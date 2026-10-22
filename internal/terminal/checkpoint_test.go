@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/benchdata"
-	"github.com/2018kguo/ptyd/internal/vt"
 )
 
 func persistManager(t *testing.T, dir string) *Manager {
@@ -133,7 +133,7 @@ func TestTailSurvivesKill9(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := vt.New(80, 24, vt.Options{})
+		want := phosphor.New(80, 24)
 		want.Write(kill9Output[:1001*1024])
 		want.Resize(100, 30)
 		want.Write(kill9Output[1001*1024:])

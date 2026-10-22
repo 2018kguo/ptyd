@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/2018kguo/ptyd/internal/vt"
+	"github.com/2018kguo/phosphor"
 )
 
 // Screen persistence. With a persist dir, each terminal's directory holds:
@@ -363,7 +363,7 @@ func removeTailsBefore(dir string, gen uint64) {
 // cols and rows are used when there is no checkpoint. It also returns the
 // next tail generation to write, so a restored terminal continues the
 // sequence.
-func loadScreen(dir string, cols, rows int) (*vt.Terminal, uint64, error) {
+func loadScreen(dir string, cols, rows int) (*phosphor.Terminal, uint64, error) {
 	var hdr ckptHeader
 	var body []byte
 	raw, err := os.ReadFile(filepath.Join(dir, ckptFile))
@@ -379,7 +379,7 @@ func loadScreen(dir string, cols, rows int) (*vt.Terminal, uint64, error) {
 	default:
 		return nil, 0, err
 	}
-	scr := vt.New(max(cols, 1), max(rows, 1), vt.Options{})
+	scr := phosphor.New(max(cols, 1), max(rows, 1))
 	scr.Write(body)
 	next := hdr.TailGen
 	for _, g := range tailGens(dir) {
@@ -394,7 +394,7 @@ func loadScreen(dir string, cols, rows int) (*vt.Terminal, uint64, error) {
 
 // replayTail feeds a tail file's records to scr, stopping at a torn
 // record.
-func replayTail(scr *vt.Terminal, path string) {
+func replayTail(scr *phosphor.Terminal, path string) {
 	f, err := os.Open(path)
 	if err != nil {
 		return

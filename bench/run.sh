@@ -12,7 +12,8 @@ COUNT=${COUNT:-10}
 BENCH=${BENCH:-.}
 bin=$(mktemp -d)
 trap 'rm -rf "$bin"' EXIT
-pkgs="./internal/vt ./internal/terminal ./internal/api"
+# The emulator's own benchmarks live with it, in github.com/2018kguo/phosphor.
+pkgs="./internal/terminal ./internal/api"
 for p in $pkgs; do
 	go test -c -o "$bin/$(basename "$p").test" "$p"
 done

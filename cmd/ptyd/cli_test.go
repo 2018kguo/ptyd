@@ -14,8 +14,8 @@ import (
 	"github.com/creack/pty"
 	"golang.org/x/term"
 
+	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/client"
-	"github.com/2018kguo/ptyd/internal/vt"
 )
 
 // cli runs a ptyd command against d and returns its stdout, stderr and
@@ -42,13 +42,13 @@ type window struct {
 	ptmx   *os.File
 	cooked *term.State
 	mu     sync.Mutex
-	screen *vt.Terminal
+	screen *phosphor.Terminal
 	exited chan struct{}
 }
 
 func (d *daemon) open(cols, rows int, args ...string) *window {
 	d.t.Helper()
-	w := &window{t: d.t, screen: vt.New(cols, rows, vt.Options{}), exited: make(chan struct{})}
+	w := &window{t: d.t, screen: phosphor.New(cols, rows), exited: make(chan struct{})}
 	w.cmd = exec.Command(ptydBin, args...)
 	w.cmd.Env = append(os.Environ(), "PTYD_ADDR="+d.addr)
 	ptmx, err := pty.StartWithSize(w.cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
@@ -128,10 +128,10 @@ func (w *window) waitExit() int {
 	time.Sleep(100 * time.Millisecond) // the last output
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.screen.AltScreen() {
+	if w.screen.Modes().AltScreen {
 		w.t.Fatal("left in the alternate screen")
 	}
-	if _, _, visible := w.screen.Cursor(); !visible {
+	if !w.screen.Cursor().Visible {
 		w.t.Fatal("cursor left hidden")
 	}
 	return w.cmd.ProcessState.ExitCode()
