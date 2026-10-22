@@ -301,3 +301,21 @@ func TestCLIDaemonKilledWhileAttached(t *testing.T) {
 		t.Fatalf("restore attach exit code %d", code)
 	}
 }
+
+// ptyd restore on a command that finished runs it again in its place.
+func TestCLIRestoreExited(t *testing.T) {
+	d := startDaemon(t, freeAddr(t), "--persist-dir=")
+	if _, stderr, code := d.cli(nil, "new", "-d", "-n", "job", "--", "sh", "-c", "exit 3"); code != 0 {
+		t.Fatal(stderr)
+	}
+	for out := ""; !strings.Contains(out, "exited 3"); out, _, _ = d.cli(nil, "ls") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, stderr, code := d.cli(nil, "restore", "-d", "job"); code != 0 {
+		t.Fatal(stderr)
+	}
+	out, _, _ := d.cli(nil, "ls")
+	if strings.Count(out, " job ") != 1 {
+		t.Fatalf("want one job terminal, got:\n%s", out)
+	}
+}

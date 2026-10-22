@@ -240,3 +240,37 @@ func TestRestoreAutoPolicy(t *testing.T) {
 		t.Errorf("claude --resume under auto: restore %q, want an error", cfg.Restore)
 	}
 }
+
+// Submit pastes into programs that enabled bracketed paste and presses
+// Enter separately, so a TUI cannot mistake the Enter for part of a paste.
+func TestSubmitBracketedPaste(t *testing.T) {
+	for _, tc := range []struct {
+		name, enable, want string
+		n                  int
+	}{
+		{"plain", "", `^0+\s+h\s+i\s+\\r\s*$`, 3},
+		{"bracketed", `\033[?2004h`, `^0+\s+033\s+\[\s+2\s+0\s+0\s+~\s+h\s+i\s+033\s+\[\s+2\s+0\s+1\s+~\s+\\r`, 15},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewManager()
+			script := fmt.Sprintf(`printf '%s'; stty -icanon -echo -icrnl; echo ready; head -c %d | od -c; exec cat`, tc.enable, tc.n)
+			info, err := m.Create(CreateConfig{Name: tc.name, Command: "sh", Args: []string{"-c", script}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close(info.ID)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, _, err := m.Wait(ctx, info.ID, "^ready$", -1, 0); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.Submit(info.ID, "hi"); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := m.Wait(ctx, info.ID, tc.want, -1, 0); err != nil {
+				out, _ := m.Output(info.ID, -1, 0)
+				t.Fatalf("%v; output %+v", err, out)
+			}
+		})
+	}
+}

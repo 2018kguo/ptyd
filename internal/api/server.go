@@ -291,11 +291,11 @@ func (s *Server) handleWrite(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	data := req.Data
+	write := s.mgr.Write
 	if req.Submit {
-		data += "\r"
+		write = s.mgr.Submit
 	}
-	if err := s.mgr.Write(id, data); err != nil {
+	if err := write(id, req.Data); err != nil {
 		writeErr(w, err)
 		return
 	}

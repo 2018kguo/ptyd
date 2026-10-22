@@ -29,7 +29,7 @@ Usage:
   ptyd ls                          list terminals
   ptyd attach [--readonly] <terminal>
   ptyd restore [--policy auto|rerun|agent] <terminal>
-                                   start a stopped terminal again and attach
+                                   start a stopped or exited terminal again and attach
   ptyd kill <terminal>...
   ptyd token                       print the token, for curl -H "X-Ptyd-Token: $(ptyd token)"
 
@@ -314,7 +314,8 @@ func runToken(args []string) int {
 func runRestore(args []string) int {
 	fs, addr := newFlags("restore", "[--policy auto|rerun|agent] <terminal>",
 		"Start a stopped terminal (a ghost) again under the same id, below its last window,\n"+
-			"and attach. The policy defaults to the terminal's own, else auto.")
+			"and attach. The policy defaults to the terminal's own, else auto. An exited\n"+
+			"terminal is replaced by a new one running the same command.")
 	policy := fs.String("policy", "", "rerun the command, agent to resume the exact agent session, or auto")
 	detach := fs.Bool("d", false, "Do not attach")
 	_ = fs.Parse(args)
@@ -332,7 +333,12 @@ func runRestore(args []string) int {
 		p = terminal.RestoreAuto
 	}
 	var info terminal.Info
-	if err := c.Do("POST", "/terminals/"+string(t.ID)+"/restore", map[string]any{"policy": p}, &info); err != nil {
+	err = c.Do("POST", "/terminals/"+string(t.ID)+"/restore", map[string]any{"policy": p}, &info)
+	if err != nil && t.ExitCode != nil {
+		// Not a ghost but a command that finished: run it again.
+		err = c.Do("POST", "/terminals/"+string(t.ID)+"/restart", nil, &info)
+	}
+	if err != nil {
 		return fail(err)
 	}
 	if *detach || !term.IsTerminal(int(os.Stdout.Fd())) {

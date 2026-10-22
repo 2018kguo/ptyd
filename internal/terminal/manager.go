@@ -721,6 +721,27 @@ func (m *Manager) Write(id ID, data string) error {
 	return err
 }
 
+// Submit types data and presses Enter. When the program enabled
+// bracketed paste, data goes in as a paste and Enter as a separate
+// keypress: TUIs such as Claude Code and Codex otherwise take a fast
+// burst ending in \r for a paste and insert a newline instead of sending.
+func (m *Manager) Submit(id ID, data string) error {
+	t, err := m.get(id)
+	if err != nil {
+		return err
+	}
+	t.scrMu.Lock()
+	bracketed := t.screen.Modes().BracketedPaste
+	t.scrMu.Unlock()
+	if bracketed && data != "" {
+		if err := m.Write(id, "\x1b[200~"+data+"\x1b[201~"); err != nil {
+			return err
+		}
+		return m.Write(id, "\r")
+	}
+	return m.Write(id, data+"\r")
+}
+
 func (t *terminal) running() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()

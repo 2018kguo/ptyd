@@ -58,7 +58,9 @@ conversation, anything else is started again (see
 
 `ptyd restore [--policy auto|rerun|agent] <terminal>` starts a stopped
 terminal (a ghost) again under the same id, below its last window, and
-attaches. Attaching to a ghost shows its last window and this hint.
+attaches. Attaching to a ghost shows its last window and this hint. An
+exited terminal (a command that finished) is replaced by a new one
+running the same command, as `POST /restart` does.
 
 Commands find the daemon at `$PTYD_ADDR` (default `127.0.0.1:4242`). The
 daemon always requires a token: `$PTYD_TOKEN` or `--token` if set, otherwise
@@ -78,7 +80,9 @@ curl -sS -H "$H" $API/terminals/$ID/output
 curl -sS -H "$H" -X DELETE $API/terminals/$ID
 ```
 
-("submit" appends a carriage return, like pressing Enter.)
+("submit" presses Enter after the text. If the program enabled bracketed
+paste, as Claude Code and Codex do, the text is sent as a paste and Enter
+as a separate keypress, so the prompt is sent rather than a newline added.)
 
 ## API
 
@@ -97,7 +101,7 @@ has exited or is a ghost, or a restore was declined) or 413 (body over 1 MiB).
 | `GET` | `/terminals/{id}/stream` | `?since=N` | Server-sent events: `line` per committed line, `end` when the terminal exits. |
 | `GET` | `/terminals/{id}/screen` | `?format=text\|ansi&scrollback=1` | The current window (see [Screen](#screen)). Works for ghosts. |
 | `GET` | `/terminals/{id}/attach` | `?cols=&rows=&readonly=1` | Interactive attach over an upgraded connection (see [Attach](#attach)). |
-| `POST` | `/terminals/{id}/write` | `{"data":"ls","submit":true}` | Write to stdin. `submit` appends `\r`. |
+| `POST` | `/terminals/{id}/write` | `{"data":"ls","submit":true}` | Write to stdin. `submit` presses Enter after it (see above). |
 | `POST` | `/terminals/{id}/keys` | `{"keys":["ctrl+c","up","enter"]}` | Send named keys (see below). |
 | `POST` | `/terminals/{id}/wait` | `{"pattern":"re","timeout_seconds":30,"since":-1,"before_context":3}` | Block until a line matches. |
 | `POST` | `/terminals/{id}/ack` | `{"watch":"name"}` | Clear watch events (all if `watch` is omitted). |
