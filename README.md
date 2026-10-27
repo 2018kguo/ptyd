@@ -421,6 +421,12 @@ total. The screen model added ~2 KiB per idle terminal (Linux, 1000
 terminals: 11.1–12.1 → 13.4–13.6 KiB; macOS, 400: 18.7 → 20.5 KiB; idle
 CPU unchanged).
 
+When an idle terminal's checkpoint is due, ptyd also compacts its emulator:
+erased rows and unused hyperlink and combining-character storage are freed.
+Meaningful screen cells and retained history stay intact. This uses the
+existing checkpoint timer, which stops after the checkpoint; active output
+does no extra compaction work.
+
 Limits to know about when running thousands of terminals:
 
 - **File descriptors:** 2 per terminal on Linux (the PTY and a pidfd), 1 on
