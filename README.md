@@ -268,10 +268,14 @@ Each terminal has a directory `DIR/<id>/`
 | File | Contents |
 | --- | --- |
 | `meta.json` | Create config (including `env`), restore policy, pid and process identity, restore count. |
-| `screen.ckpt` | Checkpoint: a JSON header line, then the bytes that repaint the screen and scrollback. Written atomically (temp file, fsync, rename). |
+| `screen.ckpt` | Checkpoint: a JSON header line, then an exact phosphor snapshot. Written atomically (temp file, fsync, rename). Existing version 1 ANSI checkpoints remain readable. |
 | `tail.<gen>` | Everything printed (and every resize) since the checkpoint, as length-prefixed records. |
 | `exit.json` | Why the terminal is not running: `child_exit`, `shutdown`, or `not_restored` with the notice. |
 | `agent-session.json` | Agent policy only: the session the agent is in, written by its hooks. |
+
+New checkpoints use version 2 and require this version of ptyd or later.
+Loading a version 1 checkpoint leaves its file unchanged until the next
+normal checkpoint replaces it.
 
 The checkpoint plus the tails replayed through a fresh emulator give the
 exact window, also after `kill -9` of the daemon: every read from the
@@ -284,10 +288,11 @@ in the middle of an escape sequence, is tolerated.
 Bounds: a checkpoint is taken when output has been quiet for 1s (at most
 every 15s), when a tail passes 4 MiB, when the program exits, and on a
 graceful shutdown (before the program is stopped, so what it prints on
-its way out is not saved). So disk use per terminal stays under about
-8.5 MiB, replay after a crash reads at most 8 MiB, and writes are the
-output itself plus at most one checkpoint (≤ ~300 KiB) per 4 MiB of
-output or per 15s of activity. An idle terminal has no open file and no
+its way out is not saved). Tails occupy about 8 MiB at most, in addition
+to the checkpoint. Snapshot size depends on screen geometry, retained
+history and metadata. Checkpoints retain the existing PTY geometry and
+storage limits. Writes are the output itself plus at
+most one checkpoint per 4 MiB of output or per 15s of activity. An idle terminal has no open file and no
 timer. Directories are deleted with the terminal (`DELETE`), and ghosts
 untouched for 7 days are pruned at startup.
 

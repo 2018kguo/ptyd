@@ -181,7 +181,7 @@ func (m *Manager) decline(id ID, scr *phosphor.Terminal, gen uint64, notice stri
 	dir := terminalDir(m.opts.PersistDir, id)
 	writeNotice(scr, notice, true)
 	cols, rows := scr.Size()
-	if err := writeCheckpoint(dir, cols, rows, gen+1, scr.Repaint(true)); err == nil {
+	if err := writeCheckpoint(dir, cols, rows, gen+1, scr.Snapshot()); err == nil {
 		removeTailsBefore(dir, gen+1)
 	}
 	if err := writeExit(m.opts.PersistDir, id, nil, exitNotRestored, notice); err != nil {
