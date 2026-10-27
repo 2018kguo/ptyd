@@ -117,7 +117,7 @@ func TestAttachInteractiveShell(t *testing.T) {
 	mgr, addr := startDaemon(t)
 	info, err := mgr.Create(terminal.CreateConfig{
 		Name: "sh", Command: "sh", Cols: 60, Rows: 10,
-		Env: map[string]string{"PS1": "$ ", "ENV": ""},
+		Env: map[string]string{"PS1": "$ ", "ENV": "", "TERM": "xterm-256color"},
 	})
 	if err != nil {
 		t.Fatal(err)

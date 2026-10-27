@@ -254,6 +254,15 @@ func (t *terminal) settleFired() {
 	}
 	p.timer = nil
 	p.timerMu.Unlock()
+	// Check again while holding the screen: output may have resumed since
+	// the timer's first check. Compact before checkpoint I/O can block.
+	t.scrMu.Lock()
+	t.mu.Lock()
+	if !p.stopped && time.Since(t.lastOutputAt) >= ckptSettle {
+		t.screen.Compact()
+	}
+	t.mu.Unlock()
+	t.scrMu.Unlock()
 	t.checkpoint()
 }
 
