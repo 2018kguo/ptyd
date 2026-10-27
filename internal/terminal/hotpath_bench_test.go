@@ -203,7 +203,7 @@ func writeGhost(b *testing.B, persistDir string, i int, ckpt []byte, tail []byte
 func BenchmarkLoadScreen(b *testing.B) {
 	full := phosphor.New(120, 40)
 	full.Write(benchdata.Claude(4<<20, 120, 40))
-	ckpt := full.Repaint(true)
+	ckpt := full.Snapshot()
 	for _, tailBytes := range []int{0, 1 << 20, maxTailBytes} {
 		b.Run("tail="+strconv.Itoa(tailBytes>>10)+"KiB", func(b *testing.B) {
 			pd := b.TempDir()
@@ -228,7 +228,7 @@ func BenchmarkStartup1000(b *testing.B) {
 	const n = 1000
 	full := phosphor.New(120, 40)
 	full.Write(benchdata.Claude(1<<20, 120, 40))
-	ckpt := full.Repaint(true)
+	ckpt := full.Snapshot()
 	tail := benchdata.Claude(64<<10, 120, 40)
 	pd := b.TempDir()
 	for i := range n {

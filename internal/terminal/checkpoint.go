@@ -26,8 +26,8 @@ import (
 // Screen persistence. With a persist dir, each terminal's directory holds:
 //
 //   - screen.ckpt: a checkpoint of the screen, one JSON header line
-//     (ckptHeader) followed by the bytes that repaint the screen and its
-//     scrollback. Written atomically (temp file, fsync, rename).
+//     (ckptHeader) followed by a phosphor snapshot of the exact emulator
+//     state. Written atomically (temp file, fsync, rename).
 //   - tail.<gen>: everything the program printed since checkpoint <gen>
 //     was taken, as records of one type byte, a 4-byte big-endian length
 //     and a payload: recData (raw output) or recResize (cols, rows). The
@@ -54,7 +54,7 @@ const (
 	maxTailBytes    = 4 << 20
 	ckptSettle      = time.Second
 	ckptMinInterval = 15 * time.Second
-	ckptVersion     = 1
+	ckptVersion     = 2
 )
 
 // diskStats counts what persistence writes (reported by /metrics).
@@ -291,7 +291,7 @@ func (t *terminal) checkpoint() {
 		return
 	}
 	cols, rows := t.screen.Size()
-	body := t.screen.Repaint(true)
+	body := t.screen.Snapshot()
 	// Start a new tail generation; output from here on belongs to it.
 	old := p.tail
 	p.gen++
@@ -312,7 +312,7 @@ func (t *terminal) checkpoint() {
 }
 
 // writeCheckpoint writes screen.ckpt: a screen of the given size whose
-// repaint is body, followed by tails from generation gen on.
+// snapshot is body, followed by tails from generation gen on.
 func writeCheckpoint(dir string, cols, rows int, gen uint64, body []byte) error {
 	hdr, _ := json.Marshal(ckptHeader{Version: ckptVersion, Cols: cols, Rows: rows, TailGen: gen, At: time.Now()})
 	return writeFileAtomic(filepath.Join(dir, ckptFile), append(append(hdr, '\n'), body...))
@@ -379,8 +379,14 @@ func loadScreen(dir string, cols, rows int) (*phosphor.Terminal, uint64, error) 
 	switch {
 	case err == nil:
 		line, rest, ok := bytes.Cut(raw, []byte("\n"))
-		if !ok || json.Unmarshal(line, &hdr) != nil || hdr.Version != ckptVersion {
+		if !ok || json.Unmarshal(line, &hdr) != nil || (hdr.Version != 1 && hdr.Version != ckptVersion) {
 			return nil, 0, fmt.Errorf("corrupt checkpoint in %s", dir)
+		}
+		// Every released version 1 writer began with synchronized ANSI
+		// painting. A damaged version field must not reinterpret binary
+		// snapshot bytes as an old terminal stream.
+		if hdr.Version == 1 && !bytes.HasPrefix(rest, []byte("\x1b[?2026h")) {
+			return nil, 0, fmt.Errorf("checkpoint format differs from its version in %s", dir)
 		}
 		body = rest
 		cols, rows = hdr.Cols, hdr.Rows
@@ -388,8 +394,28 @@ func loadScreen(dir string, cols, rows int) (*phosphor.Terminal, uint64, error) 
 	default:
 		return nil, 0, err
 	}
-	scr := phosphor.New(max(cols, 1), max(rows, 1))
-	scr.Write(body)
+	var scr *phosphor.Terminal
+	if hdr.Version == ckptVersion {
+		scr = new(phosphor.Terminal)
+		// These are owner-only files written by this daemon. Preserve the
+		// existing uint16 PTY geometry and storage contract rather than
+		// imposing the library's smaller defaults on accepted sessions.
+		limits := phosphor.SnapshotLimits{
+			MaxBytes: int(^uint(0) >> 1),
+			MaxCells: int(min(uint64(^uint(0)>>1), uint64(65535)*65535)),
+		}
+		if err := scr.RestoreSnapshot(body, limits); err != nil {
+			return nil, 0, fmt.Errorf("corrupt checkpoint in %s: %w", dir, err)
+		}
+		if c, r := scr.Size(); c != cols || r != rows {
+			return nil, 0, fmt.Errorf("checkpoint dimensions differ in %s", dir)
+		}
+	} else {
+		// Version 1 was ANSI replay. Keep reading existing checkpoints;
+		// every new checkpoint uses the exact snapshot format.
+		scr = phosphor.New(max(cols, 1), max(rows, 1))
+		scr.Write(body)
+	}
 	next := hdr.TailGen
 	for _, g := range tailGens(dir) {
 		if g < hdr.TailGen {
