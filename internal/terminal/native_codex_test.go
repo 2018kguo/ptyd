@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/native"
 	"github.com/coder/websocket"
 )
@@ -266,7 +267,12 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 	}
 	m := NewManager()
 	defer m.CloseAll()
-	imported, err := m.ImportAgent(ctx, discovery, ImportRequest{Ref: ref, Cols: 120, Rows: 40})
+	// Simulate a service started without a display. The viewing terminal,
+	// not the daemon, selects native frontend colors.
+	t.Setenv("TERM", "dumb")
+	t.Setenv("NO_COLOR", "1")
+	viewTerm, viewColor := "xterm-256color", "truecolor"
+	imported, err := m.ImportAgent(ctx, discovery, ImportRequest{Ref: ref, Cols: 120, Rows: 40, TerminalEnv: TerminalEnvironment{"TERM": &viewTerm, "COLORTERM": &viewColor, "NO_COLOR": nil}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,6 +308,25 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 		}
 		time.Sleep(30 * time.Millisecond)
 	}
+	raw, err := m.ScreenANSI(imported.Terminal.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := phosphor.New(120, 40)
+	rendered.Write(raw)
+	colored := 0
+	for y := 0; y < 40; y++ {
+		for x := 0; x < 120; x++ {
+			cell := rendered.Cell(x, y)
+			if cell.Rune != ' ' && cell.Rune != 0 && cell.Style.Fg != phosphor.DefaultColor {
+				colored++
+			}
+		}
+	}
+	if colored == 0 {
+		t.Fatal("installed Codex frontend lost its foreground colors")
+	}
+	t.Logf("installed Codex view retained %d colored cells through ANSI attachment", colored)
 	oldAfter, err := procIdentity(old.PID)
 	if err != nil || oldAfter != oldIdentity {
 		t.Fatal("import interrupted the original native CLI")

@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/2018kguo/ptyd/internal/client"
 	"github.com/2018kguo/ptyd/internal/native"
 	"github.com/2018kguo/ptyd/internal/terminal"
 	"golang.org/x/term"
@@ -66,7 +67,7 @@ func runImport(args []string) int {
 	if err := ref.Validate(); err != nil {
 		return fail(err)
 	}
-	request := terminal.ImportRequest{Ref: ref, Name: *name, Resume: *resume}
+	request := terminal.ImportRequest{Ref: ref, Name: *name, Resume: *resume, TerminalEnv: client.TerminalEnvironment()}
 	if cols, rows, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
 		request.Cols = uint16(cols)
 		request.Rows = uint16(rows)
@@ -82,6 +83,6 @@ func runImport(args []string) int {
 		fmt.Println(imported.Terminal.ID)
 		return 0
 	}
-	code, _ := attach(context.Background(), c, imported.Terminal, false, nil)
+	code, _ := attach(context.Background(), c, imported.Terminal, client.Options{})
 	return code
 }

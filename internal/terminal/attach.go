@@ -117,6 +117,13 @@ func (m *Manager) Attach(id ID, cols, rows uint16, readOnly bool) (*Attachment, 
 	t.scrMu.Lock()
 	if t.cfg.source.Provider != "" {
 		if t.nativeClosing {
+			if readOnly && t.outputEnded {
+				// Copy the ended screen without claiming the native frontend or
+				// extending its cleanup deadline.
+				initial := t.screen.Repaint(true)
+				t.scrMu.Unlock()
+				return &Attachment{initial: initial, readOnly: true, a: &attacher{ended: true, wake: make(chan struct{}, 1)}}, nil
+			}
 			t.scrMu.Unlock()
 			return nil, fmt.Errorf("native view has closed; refresh discovery and import again")
 		}

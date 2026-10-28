@@ -99,8 +99,16 @@ func TestImportCannotReuseLaunchProvenanceAsCurrentConversation(t *testing.T) {
 	}
 	listing := native.Listing{Sessions: []native.Session{session}}
 	view := BuildDiscoveredOverview(m.List(), listing, OverviewOptions{})
-	if len(view.Sessions) != 1 || view.Sessions[0].External == nil || view.Counts.External != 1 {
+	if len(view.Sessions) != 2 || view.Counts.External != 1 {
 		t.Fatalf("launch provenance hid native A: %+v", view)
+	}
+	foundNative, foundWindow := false, false
+	for _, row := range view.Sessions {
+		foundNative = foundNative || (row.External != nil && row.External.Ref == session.Ref)
+		foundWindow = foundWindow || (row.ID == first.Terminal.ID && row.Source == session.Ref)
+	}
+	if !foundNative || !foundWindow {
+		t.Fatal("native authority and its independent window are not both discoverable")
 	}
 	assertWorkerAlive(t, worker)
 }
@@ -326,5 +334,56 @@ func TestNativeFrontendExitStatusSurvivesOutputEOFAndLastDetach(t *testing.T) {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
+	saved, err := m.Attach(result.Terminal.ID, 80, 24, true)
+	if err != nil {
+		t.Fatalf("ended native screen could not be viewed: %v", err)
+	}
+	defer saved.Close()
+	if !saved.ReadOnly() || saved.t != nil {
+		t.Fatal("saved screen claimed the native frontend")
+	}
+	if raw, err := saved.Read(ctx); err != nil || !strings.Contains(string(raw), "ready") {
+		t.Fatalf("missing ended frontend screen: %q %v", raw, err)
+	}
+	if _, err := saved.Read(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("ended frontend screen did not end: %v", err)
+	}
 	assertWorkerAlive(t, worker)
+}
+
+func TestImportedFrontendUsesViewingTerminalColors(t *testing.T) {
+	m, session, lookup, worker := importFixture(t)
+	t.Setenv("TERM", "dumb")
+	t.Setenv("NO_COLOR", "1")
+	script := "#!/bin/sh\nif [ \"$TERM\" != xterm-256color ] || [ \"${NO_COLOR+x}\" = x ]; then exit 3; fi\nprintf '\\033[38;2;120;60;200mVIEW_COLOR_OK\\033[0m\\n'\nexec cat\n"
+	if err := os.WriteFile(filepath.Join(session.CWD, "claude"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	term, color := "xterm-256color", "truecolor"
+	result, err := m.ImportAgent(context.Background(), lookup, ImportRequest{Ref: session.Ref, TerminalEnv: TerminalEnvironment{"TERM": &term, "COLORTERM": &color, "NO_COLOR": nil}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitScreen(t, m, result.Terminal.ID, "VIEW_COLOR_OK")
+	a, err := m.Attach(result.Terminal.ID, 80, 24, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	raw, err := a.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "38;2;120;60;200") {
+		t.Fatalf("view lost truecolor attributes: %q", raw)
+	}
+	assertWorkerAlive(t, worker)
+}
+func TestImportDoesNotAcceptArbitraryEnvironmentOverrides(t *testing.T) {
+	m, session, lookup, _ := importFixture(t)
+	value := "injected"
+	_, err := m.ImportAgent(context.Background(), lookup, ImportRequest{Ref: session.Ref, TerminalEnv: TerminalEnvironment{"LD_PRELOAD": &value}})
+	if !errors.Is(err, ErrImportDeclined) || len(m.List()) != 0 {
+		t.Fatalf("accepted non-display override: %v", err)
+	}
 }

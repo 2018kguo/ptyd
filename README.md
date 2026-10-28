@@ -65,9 +65,11 @@ Type **jk** quickly (j, then k) to detach. Open the session picker with:
 ptyd ui
 ```
 
-Use `j/k` to move, `i` or Enter to attach, and quick `jk` to return.
-`/` searches, `gg/G` jumps to the first/last session, and `:q` leaves the
-picker without stopping work. Press `?` for the full controls.
+Use `j/k` to move, Enter or `i` to open, and quick `jk` to return.
+`/` searches; `h` shows saved and completed sessions. The picker starts with
+live sessions, grouped by open terminals, agents and those needing a handoff.
+Your terminal's window title shows the attached session and the `jk` hint.
+Press `?` for controls or `q` to leave; work keeps running.
 
 Or start a command in the background:
 
@@ -87,7 +89,9 @@ ptyd status --json          # structured overview for an agent
 ptyd status --watch         # live selector; Enter attaches
 ```
 
-`ptyd ui` opens the live view with native discovery enabled. The selection
+`ptyd ui` opens the live view with native discovery enabled and history hidden.
+Completed work remains available with `h`; opening it shows its last screen
+until you return with `jk`. This does not restart the command. The selection
 follows its session id as rows reorder. Use `:b name` to attach to a shown
 session, `:bn`/`:bp` for the next/previous one, and `:ls` to clear the search.
 The controls follow Vim/Helix's modal pattern, including the documented
@@ -115,7 +119,9 @@ ptyd ui                             # managed terminals and native agents togeth
 Select an outside session and press Enter. Ptyd opens a terminal view using
 that agent's native attach API, with its exact conversation id. Quick `jk`
 returns to the picker and releases the view; the native worker keeps running.
-Your original tab stays open until you close it yourself.
+Your original tab stays open until you close it yourself. New views use your
+terminal's color settings, even when the daemon runs as a headless service.
+An intentional `NO_COLOR` setting is respected.
 
 Codex sessions must be loaded in its shared local daemon. For a foreground
 Claude session, run `/bg` in its original tab and let Claude finish its own

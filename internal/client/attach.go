@@ -46,10 +46,12 @@ func scrollOff(rows int) string {
 
 // Options configure Attach.
 type Options struct {
-	Addr     string // host:port of the daemon
-	Token    string
-	ID       string
-	ReadOnly bool
+	Addr         string // host:port of the daemon
+	Token        string
+	ID           string
+	ReadOnly     bool
+	Label        string
+	HoldReadOnly bool
 	// InitialInput precedes bytes read from the local terminal.
 	InitialInput []byte
 }
@@ -96,9 +98,20 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		// The prompt the user attached from is at the cursor.
 		_, _ = io.WriteString(out, "\x1b[J"+strings.Repeat("\n", max(rows-1, 0)))
 	}
+	var output io.Writer = out
+	var titles *titleWriter
+	if isTerm && opts.Label != "" {
+		_, _ = io.WriteString(out, titlePush)
+		setWindowTitle(out, opts.Label)
+		titles = &titleWriter{out: out}
+		output = titles
+	}
 	copied := make(chan struct{})
 	go func() {
-		_, _ = io.Copy(out, br)
+		_, _ = io.Copy(output, br)
+		if titles != nil {
+			titles.flush()
+		}
 		close(copied)
 	}()
 	defer func() {
@@ -118,6 +131,9 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		}
 		// CAN cancels a sequence the output may have been cut off in.
 		_, _ = io.WriteString(out, "\x18"+resetLocal+end)
+		if titles != nil {
+			_, _ = io.WriteString(out, titlePop)
+		}
 	}()
 	input, err := NewInput(ctx, in, opts.InitialInput)
 	if err != nil {
@@ -142,12 +158,17 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		}
 		return send(api.FrameInput, p)
 	}
+	outputDone := (<-chan struct{})(copied)
 	for {
 		select {
 		case <-ctx.Done():
 			result.Detached = true
 			return result, nil
-		case <-copied:
+		case <-outputDone:
+			if opts.HoldReadOnly && readOnly {
+				outputDone = nil
+				continue
+			}
 			return result, nil
 		case <-winch:
 			if c, r, err := term.GetSize(int(out.Fd())); err == nil && !readOnly {

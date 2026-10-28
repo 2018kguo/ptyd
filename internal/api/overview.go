@@ -20,6 +20,14 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	tags := splitNonEmpty(q.Get("tag"), ",")
 	options := terminal.OverviewOptions{Limit: limit, Query: q.Get("q"), Tags: tags}
+	if raw := q.Get("active"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "active must be true or false")
+			return
+		}
+		options.ActiveOnly = enabled
+	}
 	view := s.mgr.Overview(options)
 	if raw := q.Get("discover"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)

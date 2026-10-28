@@ -37,7 +37,7 @@ func TestStatusSelectionAndStaleRefresh(t *testing.T) {
 		t.Fatal("refresh attached selection to row index")
 	}
 	v.refresh(statusResult{err: errors.New("temporary failure")})
-	if v.selected != "b" || len(v.sessions()) != 2 || !strings.Contains(statusFrame(v, 100, 20), "STALE") {
+	if v.selected != "b" || len(v.sessions()) != 2 || !strings.Contains(statusFrame(v, 100, 20), "last received list") {
 		t.Fatal("failed refresh discarded the snapshot")
 	}
 	v.query = "filter"
@@ -156,7 +156,7 @@ func TestCLIStatusWatchAttachReturn(t *testing.T) {
 			break
 		}
 		w.keys("jk")
-		w.waitText("ptyd |")
+		w.waitText("ptyd  /  Sessions")
 		w.waitText("watch-target")
 	}
 	if code := w.waitExit(); code != 0 {
@@ -211,7 +211,7 @@ func TestStatusUnsupportedDaemonShowsRecovery(t *testing.T) {
 	c := client.API{Addr: strings.TrimPrefix(server.URL, "http://")}
 	_, err := c.Overview(context.Background(), terminal.OverviewOptions{})
 	frame := statusFrame(statusView{err: err}, 80, 24)
-	if !strings.Contains(frame, "restart updated daemon binary") || !strings.Contains(frame, "PTYD_ADDR") {
+	if !strings.Contains(frame, "Restart ptyd after upgrading") || !strings.Contains(frame, "PTYD_ADDR") {
 		t.Fatalf("recovery was clipped: %q", frame)
 	}
 }
@@ -226,7 +226,7 @@ func TestStatusAttachPreservesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // The overview was cancelled before attachment started.
 	c := client.API{Addr: strings.TrimPrefix(server.URL, "http://")}
-	attach(ctx, c, terminal.Info{ID: "term-test"}, false, nil)
+	attach(ctx, c, terminal.Info{ID: "term-test"}, client.Options{})
 	select {
 	case <-requested:
 		t.Fatal("attachment discarded overview cancellation")
@@ -242,7 +242,7 @@ func TestStatusNativeImportCanQuitDuringBlockedRequest(t *testing.T) {
 	session := native.Session{Ref: native.Ref{Provider: native.Claude, ID: watchNativeID}, Name: "native-fixture", Status: "busy", Action: native.Attach}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/overview" {
-			json.NewEncoder(w).Encode(terminal.Overview{Sessions: []terminal.SessionSummary{{ID: "native:claude:" + watchNativeID, Name: session.Name, External: &session, State: terminal.OverviewExternal}}})
+			json.NewEncoder(w).Encode(terminal.Overview{ActiveOnly: r.URL.Query().Get("active") == "true", Sessions: []terminal.SessionSummary{{ID: "native:claude:" + watchNativeID, Name: session.Name, External: &session, State: terminal.OverviewExternal}}})
 			return
 		}
 		if r.URL.Path == "/agents/import" {
@@ -464,7 +464,10 @@ func TestStatusDiscoveryAllowsBoundedSlowProvider(t *testing.T) {
 	w := d.open(110, 20, "status", "--watch", "--discover")
 	w.waitText("managed-visible")
 	w.waitText("healthy-codex")
+	w.waitText("Some agents could not be discovered")
+	w.keys("?")
 	w.waitText("Claude query timed out")
+	w.keys("q")
 	w.keys("q")
 	if code := w.waitExit(); code != 0 {
 		t.Fatalf("picker exit %d", code)
@@ -552,7 +555,7 @@ func TestCLIUIVimControlsAndPaste(t *testing.T) {
 	id = strings.TrimSpace(id)
 	w := d.open(80, 24, "ui", "--discover=false")
 	w.waitText("vim-target")
-	w.waitText("jk returns here")
+	w.waitText("quick jk returns")
 	// A pasted q/i/:q must not quit, attach, or run picker commands.
 	w.mu.Lock()
 	pasteEnabled := w.screen.Modes().BracketedPaste
@@ -561,13 +564,13 @@ func TestCLIUIVimControlsAndPaste(t *testing.T) {
 		t.Fatal("picker did not request bracketed paste")
 	}
 	w.keys("\x1b[200~qi:q\r\x1b[201~?")
-	w.waitText("ptyd controls")
+	w.waitText("ptyd  /  Controls")
 	w.keys("q:b vim-target\r")
 	w.keys("vim-native-input\r")
 	w.waitText("vim-native-input")
 	// Return and issue a command in the same read; no trailing key is lost.
 	w.keys("jk\x1b[M i!:ls\r")
-	w.waitText("NORMAL | Filter:")
+	w.waitText("/ Search by name or folder")
 	w.mu.Lock()
 	pasteEnabled = w.screen.Modes().BracketedPaste
 	w.mu.Unlock()
@@ -576,8 +579,8 @@ func TestCLIUIVimControlsAndPaste(t *testing.T) {
 	}
 
 	w.keys("/vim\r")
-	w.waitText("Filter: vim")
-	for deadline := time.Now().Add(5 * time.Second); strings.Contains(strings.Join(w.lines(), "\n"), "Loading filter"); time.Sleep(10 * time.Millisecond) {
+	w.waitText("Search: vim")
+	for deadline := time.Now().Add(5 * time.Second); strings.Contains(strings.Join(w.lines(), "\n"), "Updating sessions"); time.Sleep(10 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatal("search stayed stale")
 		}
@@ -616,8 +619,110 @@ func TestPickerFooterFitsShortWindows(t *testing.T) {
 	v.refresh(statusResult{view: terminal.Overview{Sessions: []terminal.SessionSummary{{ID: "one", Name: "one", Preview: &terminal.OverviewPreview{Text: "output"}}}}})
 	for _, rows := range []int{8, 16, 24} {
 		frame := statusFrame(v, 80, rows)
-		if !strings.Contains(frame, "jk returns here") || !strings.Contains(frame, "q quit") {
+		if !(strings.Contains(frame, "j then k") || strings.Contains(frame, "jk returns here")) || !strings.Contains(frame, "q quit") || !strings.Contains(frame, "one") {
 			t.Fatalf("controls clipped at height%d", rows)
+		}
+	}
+}
+
+func TestPickerHistoryToggleKeepsCompletedWork(t *testing.T) {
+	d := startDaemon(t, freeAddr(t), "--persist-dir=")
+	old, stderr, code := d.cli(nil, "new", "-d", "-n", "completed-build", "--", "sh", "-c", "echo SAVED_BUILD")
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	old = strings.TrimSpace(old)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		var info terminal.Info
+		d.do("GET", "/terminals/"+old, nil, &info)
+		if info.Status == terminal.StatusExited {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fixture did not exit")
+		}
+	}
+	if _, stderr, code := d.cli(nil, "new", "-d", "-n", "current-shell", "--", "cat"); code != 0 {
+		t.Fatal(stderr)
+	}
+	w := d.open(100, 24, "ui", "--discover=false")
+	w.waitText("current-shell")
+	w.waitText("1 saved in history")
+	if strings.Contains(strings.Join(w.lines(), "\n"), "completed-build") {
+		t.Fatal("history visible by default")
+	}
+	w.keys("h")
+	w.waitText("completed-build")
+	w.waitText("history shown")
+	w.keys("h")
+	w.waitText("1 saved in history")
+	w.keys("q")
+	if w.waitExit() != 0 {
+		t.Fatal("picker failed")
+	}
+	var info terminal.Info
+	if d.do("GET", "/terminals/"+old, nil, &info) != 200 || info.Status != terminal.StatusExited {
+		t.Fatal("h deleted or restarted completed work")
+	}
+}
+
+func TestPickerHumanNamesAndPartialDiscovery(t *testing.T) {
+	session := native.Session{Ref: native.Ref{Provider: native.Codex, ID: watchNativeID}, Name: "Review the terminal color handoff", CWD: "/projects/terminal", Action: native.Attach}
+	row := terminal.SessionSummary{ID: terminal.ID("native:" + session.Ref.Key()), Name: session.Name, CWD: session.CWD, External: &session, State: terminal.OverviewExternal}
+	v := statusView{color: true}
+	v.refresh(statusResult{view: terminal.Overview{Counts: terminal.OverviewCounts{Total: 1}, Sessions: []terminal.SessionSummary{row}}})
+	for _, height := range []int{8, 16, 24} {
+		screen := phosphor.New(100, height)
+		screen.Write([]byte(statusFrame(v, 100, height)))
+		text := strings.Join(screen.Lines(), "\n")
+		if !strings.Contains(text, session.Name) || strings.Contains(text, watchNativeID) || !strings.Contains(text, "q quit") {
+			t.Fatalf("height%d: %s", height, text)
+		}
+	}
+	row.Name = session.Ref.Key()
+	if got := sessionName(row); got != "terminal" {
+		t.Fatalf("unnamed native session exposed ref: %s", got)
+	}
+	v = statusView{}
+	v.refresh(statusResult{view: terminal.Overview{Sessions: []terminal.SessionSummary{row}}})
+	v.command = "b terminal"
+	if v.runCommand() != statusAttach || v.selected != row.ID {
+		t.Fatalf("displayed name could not be opened: %s", v.notice)
+	}
+	other := row
+	other.ID = "another-id"
+	v.refresh(statusResult{view: terminal.Overview{Sessions: []terminal.SessionSummary{row, other}}})
+	v.command = "b terminal"
+	if v.runCommand() != statusStay || !strings.Contains(v.notice, "matches 2") {
+		t.Fatal("ambiguous displayed names must be refused")
+	}
+	v = statusView{}
+	v.refresh(statusResult{view: terminal.Overview{DiscoveryIssues: []native.Issue{{Provider: native.Codex, Message: "query timed out"}}}})
+	for _, height := range []int{8, 24} {
+		frame := statusFrame(v, 100, height)
+		if strings.Contains(frame, "No live sessions") || !(strings.Contains(frame, "incomplete") || strings.Contains(frame, "unavailable")) {
+			t.Fatalf("partial read claimed absence: %s", frame)
+		}
+	}
+}
+
+func TestCompactPickerRetainsRefreshWarnings(t *testing.T) {
+	v := statusView{}
+	v.refresh(statusResult{view: terminal.Overview{Sessions: []terminal.SessionSummary{{ID: "old", Name: "old-session"}}}})
+	v.refresh(statusResult{err: errors.New("daemon unavailable")})
+	for _, tc := range []struct {
+		state statusView
+		want  string
+	}{
+		{v, "Refresh failed"},
+		{func() statusView { w := v; w.err = nil; w.query = "new"; return w }(), "Updating sessions"},
+		{func() statusView { w := v; w.err = nil; w.snapshot.view.DiscoveryTruncated = true; return w }(), "could not be discovered"},
+	} {
+		screen := phosphor.New(100, 8)
+		screen.Write([]byte(statusFrame(tc.state, 100, 8)))
+		text := strings.Join(screen.Lines(), "\n")
+		if !strings.Contains(text, tc.want) || !strings.Contains(text, "old-session") || !strings.Contains(text, "q quit") {
+			t.Fatalf("compact state hidden: %s", text)
 		}
 	}
 }

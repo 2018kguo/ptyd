@@ -5,7 +5,8 @@ ptyd_demo_root=$(mktemp -d "${TMPDIR:-/tmp}/ptyd-demo.XXXXXX")
 export PATH="$ptyd_demo_root:$PATH"
 export XDG_STATE_HOME="$ptyd_demo_root/state"
 export PTYD_TOKEN=local-demo
-unset PTYD_ADDR
+unset PTYD_ADDR NO_COLOR CLICOLOR CLICOLOR_FORCE FORCE_COLOR
+export TERM=xterm-256color COLORTERM=truecolor
 
 go build -o "$ptyd_demo_root/ptyd" ./cmd/ptyd || { rm -rf -- "$ptyd_demo_root"; exit 1; }
 ptyd --bind 127.0.0.1:0 --persist-dir "$ptyd_demo_root/sessions" >"$ptyd_demo_root/daemon.log" 2>&1 &
@@ -32,7 +33,8 @@ if [[ -z "${PTYD_ADDR:-}" ]]; then
   exit 1
 fi
 cd /tmp
-ptyd new -d -n build -- sh -c 'printf "Build complete. 12 tests passed.\n"; exec cat' >/dev/null
-ptyd new -d -n logs -- sh -c 'printf "Service ready. Listening for requests.\n"; exec cat' >/dev/null
+ptyd new -d -n build -- sh -c 'printf "\033]2;build\007\033[32mBuild complete. 12 tests passed.\033[0m\n"; exec cat' >/dev/null
+ptyd new -d -n logs -- sh -c 'printf "\033]2;logs\007\033[36mService ready. Listening for requests.\033[0m\n"; exec cat' >/dev/null
 ptyd new -d -n shell -- sh -c 'printf "A persistent shell is ready.\n"; exec cat' >/dev/null
+ptyd new -d -n yesterday -- sh -c 'printf "All checks passed.\n"' >/dev/null
 export PS1='$ '

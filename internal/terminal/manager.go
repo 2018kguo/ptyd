@@ -345,7 +345,14 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 
 	cmd := exec.Command(bin, sp.args...)
 	cmd.Dir = cfg.CWD
-	cmd.Env = mergeEnv(os.Environ(), cfg.Env)
+	parentEnv := os.Environ()
+	terminalNames := TerminalEnvironmentNames()
+	// A headless daemon's display settings do not describe the terminal client.
+	parentEnv = slices.DeleteFunc(parentEnv, func(kv string) bool {
+		key, _, _ := strings.Cut(kv, "=")
+		return slices.Contains(terminalNames, key)
+	})
+	cmd.Env = mergeEnv(parentEnv, cfg.Env)
 	// Service managers start us without TERM; programs on a PTY need one.
 	if !slices.ContainsFunc(cmd.Env, func(kv string) bool { return strings.HasPrefix(kv, "TERM=") }) {
 		cmd.Env = append(cmd.Env, "TERM=xterm-256color")
