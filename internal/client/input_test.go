@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -351,5 +352,45 @@ func TestAttachReturnsInputOwnershipOnEveryDetach(t *testing.T) {
 		if string(got) != "v" {
 			t.Fatalf("dashboard received %q", got)
 		}
+	}
+}
+
+func TestPipedAttachInputDoesNotInterpretShortcuts(t *testing.T) {
+	mgr, addr := startDaemon(t)
+	info, err := mgr.Create(terminal.CreateConfig{Name: "pipe", Command: "cat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	defer write.Close()
+	u := newUserTerminal(t, 80, 24)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan result, 1)
+	go func() {
+		outcome, err := Attach(ctx, Options{Addr: addr, Token: "tok", ID: string(info.ID)}, read, u.slave, nil)
+		done <- result{outcome.Detached, err}
+	}()
+	if _, err = write.WriteString("literal jk and tail\n"); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "raw piped input", func() bool { return strings.Contains(u.text(), "literal jk and tail") })
+	select {
+	case r := <-done:
+		t.Fatalf("piped text detached: %+v", r)
+	default:
+	}
+	cancel()
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("pipe attachment did not stop")
 	}
 }

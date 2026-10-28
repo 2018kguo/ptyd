@@ -168,7 +168,8 @@ Type `j` then `k` within 200 ms to detach. In `ptyd ui` (or
 and `import` return to your shell. A lone `j` waits up to 200 ms for `k`;
 to send literal `jk`, pause between the letters or use bracketed paste.
 Bracketed-paste frames pass through unchanged. Unframed pasted input is
-indistinguishable from typing and follows the same shortcut rule.
+indistinguishable from typing and follows the same shortcut rule. Piped
+input passes through without local shortcuts.
 
 Escape, double Escape, control keys and function keys belong to the attached
 program. Modified keys and key-repeat events do not activate `jk`; unmodified

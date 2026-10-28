@@ -84,7 +84,8 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 	}
 	defer conn.Close()
 
-	if term.IsTerminal(int(in.Fd())) {
+	interactiveInput := term.IsTerminal(int(in.Fd()))
+	if interactiveInput {
 		state, err := term.MakeRaw(int(in.Fd()))
 		if err != nil {
 			return result, fmt.Errorf("raw mode: %w", err)
@@ -165,6 +166,12 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 				_ = sendInput(controls.flushSequence())
 				result.Detached = true
 				return result, nil
+			}
+			if !interactiveInput {
+				if err := sendInput(p); err != nil {
+					return result, nil
+				}
+				continue
 			}
 			forward, detached, tail := controls.feed(p, time.Now())
 			if err := sendInput(forward); err != nil {
