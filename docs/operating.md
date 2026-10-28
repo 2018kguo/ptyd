@@ -62,7 +62,12 @@ tolerated. Every PTY read reaches its tail before the next read, but tails
 are not fsynced each time: process crashes survive; a power loss can lose
 recent output. Tail files total about 8 MiB plus the checkpoint. Checkpoints
 run after quiet output, large tails, normal exits and graceful shutdown.
-Idle sessions have no persistence timer or open tail file.
+After quiet output, the existing persistence callback compacts the emulator
+and releases oversized output-ring buffers while keeping retained contents.
+With persistence disabled, ring reclamation runs on process exit. Idle sessions
+have no persistence timer or open tail file. Reclaimed capacity may need to
+grow again when output resumes; [measurements](../bench/agent-round/README.md#storage-after-quiet-output)
+include that cost.
 
 Ptyd reads the earlier binary and ANSI checkpoint formats. Upgrade readers
 before writing new checkpoints; an older binary may reject the emulator

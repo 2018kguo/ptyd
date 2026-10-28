@@ -20,14 +20,28 @@ build() { # dir binary
 	(cd "$1" && go test -tags loadtest -c -pgo="$pgo" -o "$2" ./internal/loadtest)
 }
 git worktree add -q --detach "$tmp/old" "$rev"
+# Keep measurement code identical; production and build profiles stay at REV.
+rm -rf "$tmp/old/internal/loadtest"
+mkdir -p "$tmp/old/internal"
+cp -R internal/loadtest "$tmp/old/internal/loadtest"
 build "$tmp/old" "$tmp/a.test"
 build . "$tmp/b.test"
+run() { # label binary settings...
+	label=$1 binary=$2
+	shift 2
+	if env PTYD_LOAD_OUT="$out" PTYD_LOAD_LABEL="$label" "$@" "$binary" -test.run '^TestLoad$' -test.timeout 10m >"$tmp/run.log" 2>&1; then
+		return
+	else
+		status=$?
+		cat "$tmp/run.log" >&2
+		echo "run failed: $label" >&2
+		return "$status"
+	fi
+}
 for i in $(seq "$rounds"); do
 	for v in a b; do
-		env PTYD_LOAD_OUT="$out" PTYD_LOAD_LABEL=$v:agents PTYD_LOAD_N=32 PTYD_LOAD_RATE=1048576 \
-			"$tmp/$v.test" -test.run Load -test.timeout 10m >/dev/null 2>&1 || echo "run failed: $v agents" >&2
-		env PTYD_LOAD_OUT="$out" PTYD_LOAD_LABEL=$v:flat-out PTYD_LOAD_N=8 PTYD_LOAD_RATE=0 \
-			"$tmp/$v.test" -test.run Load -test.timeout 10m >/dev/null 2>&1 || echo "run failed: $v flat-out" >&2
+		run "$v:agents" "$tmp/$v.test" PTYD_LOAD_N=32 PTYD_LOAD_RATE=1048576
+		run "$v:flat-out" "$tmp/$v.test" PTYD_LOAD_N=8 PTYD_LOAD_RATE=0
 	done
 done
 printf '%-12s %6s %7s %8s %8s %7s %4s\n' label cores MB/s echo50ms echo99ms RSSMiB GC

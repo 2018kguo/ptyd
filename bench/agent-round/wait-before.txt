@@ -1,0 +1,40 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+cpu: Apple M5 Pro
+BenchmarkWaitRetained/Context=0-18         	    1190	    190680 ns/op	  729469 B/op	    5044 allocs/op
+BenchmarkWaitRetained/Context=3-18         	    1707	    140649 ns/op	  729612 B/op	    1297 allocs/op
+BenchmarkWaitRetained/Context=256-18       	    2155	    111374 ns/op	  731378 B/op	      70 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+cpu: Apple M5 Pro
+BenchmarkWaitRetained/Context=0-18         	    1372	    169634 ns/op	  729469 B/op	    5044 allocs/op
+BenchmarkWaitRetained/Context=3-18         	    1603	    144051 ns/op	  729613 B/op	    1297 allocs/op
+BenchmarkWaitRetained/Context=256-18       	    2070	    114568 ns/op	  731379 B/op	      70 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+cpu: Apple M5 Pro
+BenchmarkWaitRetained/Context=0-18         	    1369	    169664 ns/op	  729473 B/op	    5044 allocs/op
+BenchmarkWaitRetained/Context=3-18         	    1706	    140529 ns/op	  729612 B/op	    1297 allocs/op
+BenchmarkWaitRetained/Context=256-18       	    2169	    112472 ns/op	  731381 B/op	      70 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+cpu: Apple M5 Pro
+BenchmarkWaitRetained/Context=0-18         	    1324	    174115 ns/op	  729471 B/op	    5044 allocs/op
+BenchmarkWaitRetained/Context=3-18         	    1674	    143386 ns/op	  729611 B/op	    1297 allocs/op
+BenchmarkWaitRetained/Context=256-18       	    2053	    114030 ns/op	  731379 B/op	      70 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+cpu: Apple M5 Pro
+BenchmarkWaitRetained/Context=0-18         	    1338	    173847 ns/op	  729469 B/op	    5044 allocs/op
+BenchmarkWaitRetained/Context=3-18         	    1681	    142679 ns/op	  729613 B/op	    1297 allocs/op
+BenchmarkWaitRetained/Context=256-18       	    2116	    115226 ns/op	  731380 B/op	      70 allocs/op
+PASS

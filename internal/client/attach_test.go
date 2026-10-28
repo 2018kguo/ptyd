@@ -107,8 +107,8 @@ func startDaemon(t *testing.T) (*terminal.Manager, string) {
 func attach(u *userTerminal, addr, id string, winch chan os.Signal) chan result {
 	done := make(chan result, 1)
 	go func() {
-		detached, err := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: id}, u.slave, u.slave, winch)
-		done <- result{detached, err}
+		outcome, err := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: id}, u.slave, u.slave, winch)
+		done <- result{outcome.Detached, err}
 	}()
 	return done
 }
@@ -245,13 +245,19 @@ func TestMultipleAttachers(t *testing.T) {
 func TestAttachErrors(t *testing.T) {
 	_, addr := startDaemon(t)
 	u := newUserTerminal(t, 80, 24)
-	_, err := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: "nope"}, u.slave, u.slave, nil)
+	outcome, err := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: "nope", InitialInput: []byte("q\r")}, u.slave, u.slave, nil)
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("unknown id: %v", err)
 	}
-	_, err = Attach(context.Background(), Options{Addr: addr, Token: "wrong", ID: "nope"}, u.slave, u.slave, nil)
+	if len(outcome.PendingInput) != 0 {
+		t.Fatal("failed attach returned program input as overview keys")
+	}
+	outcome, err = Attach(context.Background(), Options{Addr: addr, Token: "wrong", ID: "nope", InitialInput: []byte("q\r")}, u.slave, u.slave, nil)
 	if err == nil || !strings.Contains(err.Error(), "token") {
 		t.Fatalf("bad token: %v", err)
+	}
+	if len(outcome.PendingInput) != 0 {
+		t.Fatal("refused attach returned program input as overview keys")
 	}
 }
 

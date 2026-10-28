@@ -1,0 +1,4 @@
+=== RUN   TestRingColdWitness
+{"mode":"prompt","compact":false,"rings":4096,"heap_bytes_per_ring":169,"heap_inuse_per_ring":164,"slot_bytes_per_ring":0,"pending_bytes_per_ring":8,"retained_bytes_per_ring":0,"lines_per_ring":0,"resume_p50_ns":41,"resume_p95_ns":42,"resume_p99_ns":42,"compact_p50_ns":0,"compact_p99_ns":0}
+--- PASS: TestRingColdWitness (0.00s)
+PASS

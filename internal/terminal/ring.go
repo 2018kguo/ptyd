@@ -166,6 +166,32 @@ func (r *Ring) FlushPending() {
 	}
 }
 
+// Compact releases storage left over from larger output bursts without
+// changing retained output or waking readers. It leaves room for a small
+// burst so returning to a prompt does not discard all reusable storage.
+func (r *Ring) Compact() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.compactLocked()
+}
+
+func (r *Ring) compactLocked() {
+	// Move only materially oversized buffers; small changes in output size
+	// should not alternate between shrinking and growing the same storage.
+	keep := min(max(r.n+r.n/4, 16), r.maxLines)
+	if len(r.lines) > 2*keep && len(r.lines)-keep >= 64 {
+		lines := make([]Line, keep)
+		r.copyLocked(lines, 0)
+		r.lines, r.head = lines, 0
+	}
+	keep = max(2*len(r.pending), 512)
+	if cap(r.pending) > 2*keep && cap(r.pending)-keep >= 1024 {
+		pending := make([]byte, len(r.pending), keep)
+		copy(pending, r.pending)
+		r.pending = pending
+	}
+}
+
 // Snapshot returns committed lines whose Seq > sinceSeq. If tail > 0, only
 // the trailing `tail` such lines are returned. The returned snapshot also
 // includes the current pending bytes. It costs O(lines returned).
@@ -224,6 +250,7 @@ func (r *Ring) Close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.closed = true
+	r.compactLocked()
 	r.notifyLocked()
 }
 

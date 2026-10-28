@@ -270,15 +270,36 @@ func TestPersistedScreenPermissionsAndDelete(t *testing.T) {
 	waitFor(t, "checkpoint", func() bool { _, err := os.Stat(filepath.Join(tdir, ckptFile)); return err == nil })
 	_ = m.Write(info.ID, "more\r")
 	waitFor(t, "tail", func() bool { return len(tailGens(tdir)) > 0 })
-	if fi, _ := os.Stat(tdir); fi.Mode().Perm() != 0o700 {
-		t.Fatalf("dir mode %v", fi.Mode().Perm())
+	term, err := m.get(info.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	entries, _ := os.ReadDir(tdir)
-	for _, e := range entries {
-		if fi, _ := e.Info(); fi.Mode().Perm() != 0o600 {
-			t.Fatalf("%s mode %v", e.Name(), fi.Mode().Perm())
+	func() {
+		// Checkpoints replace files and remove old tails. Inspect one
+		// stable generation so every listed file can still be checked.
+		term.ckptMu.Lock()
+		defer term.ckptMu.Unlock()
+		fi, err := os.Stat(tdir)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
+		if fi.Mode().Perm() != 0o700 {
+			t.Fatalf("dir mode %v", fi.Mode().Perm())
+		}
+		entries, err := os.ReadDir(tdir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			fi, err := e.Info()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fi.Mode().Perm() != 0o600 {
+				t.Fatalf("%s mode %v", e.Name(), fi.Mode().Perm())
+			}
+		}
+	}()
 	if err := m.Close(info.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,7 @@ control. Both use the same daemon and session ids.
 | `ptyd` | Start the daemon; `ptyd -h` lists flags. |
 | `ptyd new [-n name] [-d] [--restore policy] [command [args...]]` | Start and attach; `-d` prints the id without attaching. |
 | `ptyd ls` | List sessions. |
+| `ptyd status [--json \| --watch] [--limit N] [--filter text] [--tag tags]` | Attention-first overview; live selection or compact agent JSON. |
 | `ptyd attach [--readonly] terminal` | Attach to a running session or view a stopped one's screen. |
 | `ptyd restore [--policy policy] terminal` | Start a stopped terminal again under the same id, then attach. |
 | `ptyd kill terminal...` | Kill and forget sessions. |
@@ -30,6 +31,7 @@ are JSON. Errors are `{"error":"..."}`: 400 invalid input, 401 bad token,
 |---|---|---|
 | `GET` | `/healthz`, `/metrics` | Liveness; JSON counters and uptime. No auth. |
 | `GET` | `/terminals` | Optional `?tag=a,b`; oldest first, matching any tag. |
+| `GET` | `/overview` | Compact session summaries; `?limit=50&q=text&tag=a,b`. Counts include all matches. |
 | `POST` | `/terminals` | Create; returns 201 and metadata. |
 | `GET` | `T` | Metadata, status, pid, output position, attention and restore information. |
 | `GET` | `T/output` | `?since=N&tail=N`; retained lines newer than `since`. |
@@ -46,6 +48,38 @@ are JSON. Errors are `{"error":"..."}`: 400 invalid input, 401 bad token,
 | `POST` | `T/restore` | Optional `{"policy":"rerun"}`; 201, **same id**, or 409 with the reason. |
 | `DELETE` | `T` | Terminate and forget; also deletes a stopped session. |
 | `GET` | `/search` | `?q=regex&within_seconds=N&limit=N&tag=a,b`; retained output of non-ghost sessions. |
+
+## Session overview
+
+`GET /overview` reads the daemon's existing session registry. Rows put
+retained watch matches first, then stopped sessions with restore notices,
+running sessions and other exited sessions. It reports process state,
+not inferred agent activity.
+
+- `counts` describes all sessions matching `q` and any supplied tag.
+  `attention` counts sessions with retained, unacknowledged watch events
+  and can overlap running, exited and stopped counts.
+- `sessions` contains at most `limit` rows (default 50, maximum 500).
+  Top-level `truncated` means more matching rows exist. Names, directories
+  and base command names are included; arguments and watch definitions
+  stay on the detail route. This is a row limit, not a total byte budget.
+  Use a narrower filter or `GET /terminals` when you need the complete list.
+- Each row keeps its exact `id`, observed `state` (`running`, `stopped`
+  or `exited`), exit code, idle time,
+  attached-client count and `latest_seq` for incremental output reads.
+  `idle_seconds` is null when the process has not produced observed output;
+  the human view shows a dash.
+- A `preview` comes from the newest retained watch match, a restore notice
+  or pending output, in that order. It is at most 160 codepoints and marks
+  truncation explicitly. A row's `attention` counts its retained events,
+  capped by the normal watch retention policy.
+
+`ptyd status --json` returns this same result. On failure it exits nonzero
+and writes an error to stderr. The live `--watch` view keeps the last
+successful snapshot with a visible stale/error notice if refresh fails.
+Enter attaches to the selected exact id; detaching returns to the view.
+Stopped sessions show their saved window. Restarting them still requires
+an explicit `ptyd restore`.
 
 ## Create a session
 

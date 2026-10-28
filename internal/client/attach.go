@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -39,7 +38,7 @@ const detachWindow = time.Second
 // save (DECSC) goes first in case the alternate screen was not on, and
 // resetting the scroll region homes the cursor, so it is wrapped in a
 // save and restore.
-const resetLocal = "\x1b[?2026l\x1b[0m\x1b7\x1b[?1049l\x1b[?25h\x1b[?1l\x1b>" +
+const resetLocal = "\x1b[?2026l\x1b[?2027l\x1b[0m\x1b7\x1b[?1049l\x1b[?25h\x1b[?1l\x1b>" +
 	"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l" +
 	"\x1b[?1004l\x1b[?2004l\x1b[<99u\x1b7\x1b[r\x1b8\x1b[?7h\x1b[4l\x1b(B\x0f\x1b[0 q"
 
@@ -58,10 +57,20 @@ type Options struct {
 	Token    string
 	ID       string
 	ReadOnly bool
+	// InitialInput precedes bytes read from the local terminal.
+	InitialInput []byte
+}
+
+// AttachResult describes the handoff back to the caller. PendingInput contains
+// bytes after an explicit detach gesture and any later bytes the reader had not
+// delivered. Failures and ordinary program exit never return queued input.
+type AttachResult struct {
+	Detached     bool
+	PendingInput []byte
 }
 
 // Attach connects in and out (the user's terminal) to a terminal in the
-// daemon until the user detaches (detached is true) or the attachment
+// daemon until the user detaches (Detached is true) or the attachment
 // ends: the terminal's output ended, or the connection to the daemon
 // broke. winch signals a local window size change.
 //
@@ -70,7 +79,7 @@ type Options struct {
 // window does too and the user gets a blank window; when the attachment
 // ends, the last window stays in view with the cursor on a clean line
 // below it. Either way the modes the program switched on are reset.
-func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os.Signal) (detached bool, err error) {
+func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os.Signal) (result AttachResult, err error) {
 	cols, rows, err := term.GetSize(int(out.Fd()))
 	isTerm := err == nil
 	if !isTerm {
@@ -78,14 +87,14 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 	}
 	conn, br, readOnly, err := dial(ctx, opts, cols, rows)
 	if err != nil {
-		return false, err
+		return result, err
 	}
 	defer conn.Close()
 
 	if term.IsTerminal(int(in.Fd())) {
 		state, err := term.MakeRaw(int(in.Fd()))
 		if err != nil {
-			return false, fmt.Errorf("raw mode: %w", err)
+			return result, fmt.Errorf("raw mode: %w", err)
 		}
 		defer func() { _ = term.Restore(int(in.Fd()), state) }()
 	}
@@ -106,7 +115,7 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 			return
 		}
 		end := "\r\n\x1b[J"
-		if detached {
+		if result.Detached {
 			_, rows, err := term.GetSize(int(out.Fd()))
 			if err != nil {
 				rows = 24
@@ -116,26 +125,11 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		// CAN cancels a sequence the output may have been cut off in.
 		_, _ = io.WriteString(out, "\x18"+resetLocal+end)
 	}()
-	input := make(chan []byte)
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		for {
-			buf := make([]byte, 4096)
-			n, err := in.Read(buf)
-			if n > 0 {
-				select {
-				case input <- buf[:n]:
-				case <-done:
-					return
-				}
-			}
-			if err != nil {
-				close(input)
-				return
-			}
-		}
-	}()
+	input, err := NewInput(ctx, in, opts.InitialInput)
+	if err != nil {
+		return result, err
+	}
+	defer input.Close()
 
 	send := func(typ byte, payload []byte) error {
 		_, err := conn.Write(api.AppendFrame(nil, typ, payload))
@@ -144,12 +138,14 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 	var held []byte // a first detach key press, not yet forwarded
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return true, nil
+			result.Detached = true
+			return result, nil
 		case <-copied:
-			return false, nil
+			return result, nil
 		case <-winch:
 			if c, r, err := term.GetSize(int(out.Fd())); err == nil && !readOnly {
 				_ = send(api.FrameResize, binary.BigEndian.AppendUint16(binary.BigEndian.AppendUint16(nil, uint16(c)), uint16(r)))
@@ -159,30 +155,50 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 				_ = send(api.FrameInput, held)
 			}
 			held = nil
-		case p, ok := <-input:
+		case p, ok := <-input.Bytes:
 			if !ok {
-				return true, nil
+				result.Detached = true
+				return result, nil
 			}
-			switch {
-			case isDetachKey(p) && held != nil, isDoubleDetachKey(p):
-				return true, nil
-			case isDetachKey(p):
-				held = p
-				timer.Reset(detachWindow)
-				continue
-			case held != nil && isDetachRelease(p):
-				held = append(held, p...)
-				continue
-			}
-			if held != nil {
-				p = append(held, p...)
-				held = nil
-				timer.Stop()
-			}
-			if !readOnly {
-				if err := send(api.FrameInput, p); err != nil {
-					return false, nil // the connection broke
+			for len(p) > 0 {
+				index, n, release := nextDetachEvent(p)
+				if index > 0 {
+					prefix := p[:index]
+					if held != nil {
+						prefix = append(held, prefix...)
+						held = nil
+						timer.Stop()
+					}
+					if !readOnly {
+						if err := send(api.FrameInput, prefix); err != nil {
+							return result, nil // the connection broke
+						}
+					}
 				}
+				p = p[index:]
+				if len(p) == 0 {
+					break
+				}
+				key := p[:n]
+				p = p[n:]
+				if release {
+					if held != nil {
+						held = append(held, key...)
+					} else if !readOnly {
+						if err := send(api.FrameInput, key); err != nil {
+							return result, nil
+						}
+					}
+					continue
+				}
+				if held != nil {
+					held = nil // both presses and their release events are consumed
+					result.Detached = true
+					result.PendingInput = append(bytes.Clone(p), input.Remainder()...)
+					return result, nil
+				}
+				held = bytes.Clone(key)
+				timer.Reset(detachWindow)
 			}
 		}
 	}
@@ -193,20 +209,21 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 // modifyOtherKeys encodings.
 var detachKeys = [][]byte{[]byte("\x1c"), []byte("\x1b[92;5u"), []byte("\x1b[92;5:1u"), []byte("\x1b[27;5;92~")}
 
-func isDetachKey(p []byte) bool {
-	return slices.ContainsFunc(detachKeys, func(k []byte) bool { return bytes.Equal(p, k) })
-}
-
-func isDoubleDetachKey(p []byte) bool {
-	for _, k := range detachKeys {
-		if len(p) == 2*len(k) && bytes.Equal(p[:len(k)], k) && bytes.Equal(p[len(k):], k) {
-			return true
+// nextDetachEvent recognizes complete detach tokens within a read. Terminal
+// reads may coalesce a command, both presses, and the caller's next key.
+func nextDetachEvent(p []byte) (index, size int, release bool) {
+	index = len(p)
+	for _, key := range detachKeys {
+		if i := bytes.Index(p, key); i >= 0 && i < index {
+			index, size = i, len(key)
 		}
 	}
-	return false
+	keyup := []byte("\x1b[92;5:3u")
+	if i := bytes.Index(p, keyup); i >= 0 && i < index {
+		index, size, release = i, len(keyup), true
+	}
+	return
 }
-
-func isDetachRelease(p []byte) bool { return bytes.Equal(p, []byte("\x1b[92;5:3u")) }
 
 // dial performs the upgrade handshake.
 func dial(ctx context.Context, opts Options, cols, rows int) (net.Conn, *bufio.Reader, bool, error) {

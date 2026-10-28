@@ -1,0 +1,47 @@
+[
+  {
+    "mode": "prompt",
+    "compact": false,
+    "heap_bytes_per_ring_median": 166,
+    "slot_bytes_per_ring": 0,
+    "pending_bytes_per_ring": 8,
+    "retained_bytes_per_ring": 0,
+    "lines_per_ring": 0
+  },
+  {
+    "mode": "burst",
+    "compact": false,
+    "heap_bytes_per_ring_median": 1294446,
+    "slot_bytes_per_ring": 240000,
+    "pending_bytes_per_ring": 16384,
+    "retained_bytes_per_ring": 1035153,
+    "lines_per_ring": 63
+  },
+  {
+    "mode": "burst",
+    "compact": true,
+    "heap_bytes_per_ring_median": 1036768,
+    "slot_bytes_per_ring": 3744,
+    "pending_bytes_per_ring": 512,
+    "retained_bytes_per_ring": 1035153,
+    "lines_per_ring": 63
+  },
+  {
+    "mode": "repeat",
+    "compact": false,
+    "heap_bytes_per_ring_median": 1294282,
+    "slot_bytes_per_ring": 240000,
+    "pending_bytes_per_ring": 16384,
+    "retained_bytes_per_ring": 1035153,
+    "lines_per_ring": 63
+  },
+  {
+    "mode": "repeat",
+    "compact": true,
+    "heap_bytes_per_ring_median": 1036800,
+    "slot_bytes_per_ring": 3744,
+    "pending_bytes_per_ring": 512,
+    "retained_bytes_per_ring": 1035153,
+    "lines_per_ring": 63
+  }
+]

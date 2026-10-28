@@ -9,8 +9,14 @@ trap 'rm -rf "$bin"' EXIT
 # Built with the daemon's PGO profile, as go build builds the daemon.
 go test -tags loadtest -c -pgo="$PWD/cmd/ptyd/default.pgo" -o "$bin/load.test" ./internal/loadtest
 run() {
-	env PTYD_LOAD_OUT="$out" "$@" "$bin/load.test" -test.run Load -test.timeout 10m >/dev/null 2>&1 ||
+	if env PTYD_LOAD_OUT="$out" "$@" "$bin/load.test" -test.run '^TestLoad$' -test.timeout 10m >"$bin/run.log" 2>&1; then
+		return
+	else
+		status=$?
+		cat "$bin/run.log" >&2
 		echo "scenario failed: $*" >&2
+		return "$status"
+	fi
 }
 # 32 agents printing 1 MiB/s each, each attached and streamed.
 run PTYD_LOAD_LABEL=agents PTYD_LOAD_N=32 PTYD_LOAD_RATE=1048576

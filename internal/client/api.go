@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -102,10 +103,24 @@ type API struct {
 	Token string
 }
 
+// HTTPError retains the response status for operations that can explain how
+// to recover from an unsupported endpoint.
+type HTTPError struct {
+	Status  int
+	Message string
+}
+
+func (e *HTTPError) Error() string { return e.Message }
+
 // Do sends a request and decodes a JSON reply into out (if not nil). Its
 // errors are meant for a person: a daemon that is not running, a token
 // that was refused, or the daemon's own error message.
 func (c API) Do(method, path string, body, out any) error {
+	return c.DoContext(context.Background(), method, path, body, out)
+}
+
+// DoContext lets live clients cancel an in-flight refresh when they close.
+func (c API) DoContext(ctx context.Context, method, path string, body, out any) error {
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -114,7 +129,7 @@ func (c API) Do(method, path string, body, out any) error {
 		}
 		r = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, "http://"+c.Addr+path, r)
+	req, err := http.NewRequestWithContext(ctx, method, "http://"+c.Addr+path, r)
 	if err != nil {
 		return err
 	}
@@ -167,7 +182,7 @@ func (c API) statusErr(status int, body []byte) error {
 		}
 		return fmt.Errorf("ptyd at %s refused the token from %s: set PTYD_TOKEN to the one it was started with", c.Addr, where)
 	}
-	return errors.New(e.Error)
+	return &HTTPError{Status: status, Message: e.Error}
 }
 
 // List returns all terminals, oldest first.
