@@ -1,0 +1,23 @@
+{
+  "baseline_commit": "a67f567359e4341da1311fb65c6c37bfeda785e5",
+  "go": "go version go1.26.3 darwin/arm64",
+  "workload": "In-process Manager.Wait scanning 5000 retained lines; regex ^MATCH$ matches the last line; since=-1; requested before-context 0, 3 and 256. Fake terminals remove PTY/process setup noise. Existing ring and matching behavior are unchanged.",
+  "method": "Five 200ms samples per build and context, before/after alternated each round on an otherwise quiet host. Raw stdout includes platform and CPU. Median ns/op, B/op and allocs/op.",
+  "command": [
+    "before.test OR after.test",
+    "-test.run=^$",
+    "-test.bench=^BenchmarkWaitRetained$",
+    "-test.benchtime=200ms",
+    "-test.count=1"
+  ],
+  "limits": "This measures a full retained-history scan, not all HTTP calls or idle-session retained memory. No production per-terminal fields or timers were added.",
+  "production_manager_sha256": "ed0e6f23a4e63382c6ae35a6eaa08977d2e656bed952188ff7119110cb9810e3",
+  "wait_commit": "99fea1e155353ebe3f552fa2480516fd74edc649",
+  "validation": {
+    "allocation_guard_red_baseline": "Both context=0 and context=3 fail against the baseline Manager via an absolute canonical-path Go overlay, including under -race: 45 vs 5044 and 45 vs 1297 allocs.",
+    "wait_behavior_race": "go test -race -run ^TestWaitContext ./internal/terminal passed",
+    "affected_full_race": "go test -race ./internal/terminal ./internal/api passed on rerun; terminal 20.683s",
+    "fixture_race": "An initial full run hit an existing permissions-test nil dereference while e.Info raced a checkpoint. Forcing the real checkpoint between ReadDir and Info with baseline production code reproduced ENOENT on tail.0.",
+    "permission_fix": "Lock the existing ckptMu during the directory walk and check every stat/read error. Present-file permission checks remain strict. Targeted -race -count=12 passed."
+  }
+}

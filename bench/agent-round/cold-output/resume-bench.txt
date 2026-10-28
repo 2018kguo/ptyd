@@ -1,0 +1,17 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/2018kguo/ptyd/internal/terminal
+cpu: Apple M5 Pro
+BenchmarkRingColdResume/bytes=9/compact=false-18         	14013710	         8.646 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRingColdResume/bytes=9/compact=false-18         	14151568	         8.589 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRingColdResume/bytes=9/compact=false-18         	14148372	         8.696 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRingColdResume/bytes=9/compact=true-18          	14081200	         8.246 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRingColdResume/bytes=9/compact=true-18          	14573643	         8.264 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRingColdResume/bytes=9/compact=true-18          	14189916	         8.375 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRingColdResume/bytes=8192/compact=false-18      	  460777	       266.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRingColdResume/bytes=8192/compact=false-18      	  405313	       268.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRingColdResume/bytes=8192/compact=false-18      	  398720	       270.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRingColdResume/bytes=8192/compact=true-18       	  195945	       556.3 ns/op	    9472 B/op	       1 allocs/op
+BenchmarkRingColdResume/bytes=8192/compact=true-18       	  226851	       574.1 ns/op	    9472 B/op	       1 allocs/op
+BenchmarkRingColdResume/bytes=8192/compact=true-18       	  197803	       587.7 ns/op	    9472 B/op	       1 allocs/op
+PASS

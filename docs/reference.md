@@ -63,6 +63,7 @@ not inferred agent activity.
   Top-level `truncated` means more matching rows exist. Names, directories
   and base command names are included; arguments and watch definitions
   stay on the detail route. This is a row limit, not a total byte budget.
+  Use a narrower filter or `GET /terminals` when you need the complete list.
 - Each row keeps its exact `id`, observed `state` (`running`, `stopped`
   or `exited`), exit code, idle time,
   attached-client count and `latest_seq` for incremental output reads.

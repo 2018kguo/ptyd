@@ -1,0 +1,15 @@
+{
+  "platform": "macOS-26.6.1-arm64-arm-64bit",
+  "processor": "arm",
+  "head": "098da772136a9a0de207a7dcf9f8ea7065e24339",
+  "go": "go version go1.26.3 darwin/arm64",
+  "binary": "terminal.test",
+  "samples_per_case": 3,
+  "rings_per_sample": {
+    "prompt": 4096,
+    "burst": 32,
+    "repeat": 32
+  },
+  "note": "Source at the recorded base head plus cold Ring diff; same production implementation for all samples. The witness count and resume-size coverage were corrected before final prompt/resume runs.",
+  "implementation_commit": "300173c4de686a51b781281139efe899d48fb577"
+}

@@ -1,0 +1,13 @@
+{
+  "integration_commit": "098da772136a9a0de207a7dcf9f8ea7065e24339",
+  "overview_fixture": "1,000 canonical Info records; one configured watch per session, one retained match per tenth session. Full list encodes all records; overview includes counts for all and 50 compact rows. No child processes or HTTP server.",
+  "overview_bytes": {
+    "full_list": 374781,
+    "overview_50": 12695
+  },
+  "overview_method": "BenchmarkOverviewJSON, one iteration. Only exact serialized sizes are interpreted; one-iteration timing/allocations are not a performance claim.",
+  "go": "go version go1.26.3 darwin/arm64",
+  "wait_source_commit": "99fea1e155353ebe3f552fa2480516fd74edc649",
+  "cold_output_source_commit": "a655d619e8f2c79e0eab435bb99ea441c825cdb7",
+  "cold_output_method": "cold-output/metadata.json"
+}

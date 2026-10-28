@@ -27,6 +27,12 @@ Its idle heap excludes processes, output rings and attach queues in ptyd.
 
 ## Results and tradeoffs
 
+[Output waits, session summaries and quiet storage](agent-round/README.md) measures
+retained-output matching, overview response size and reclaimed ring capacity. The default full-window wait scan allocates
+66% fewer bytes; a 50-row overview includes fleet counts without returning
+every session's arguments and watch details. A burst-then-idle ring fixture
+retains the same output with about 20% less heap.
+
 [The idle-state profile capture](phosphor-v0.4.0/README.md) records four
 load runs on two OSes, with attached clients, SSE and
 persistence. They are smoke/profile samples, not a before/after speedup.
