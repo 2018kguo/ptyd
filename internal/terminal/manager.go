@@ -1033,6 +1033,17 @@ func (m *Manager) Search(pattern string, within time.Duration, limit int, tagFil
 }
 
 func (t *terminal) snapshot() Info {
+	info := t.memorySnapshot()
+	if t.cfg.Restore == RestoreAgent && t.persist != nil {
+		if st, err := readAgentState(agentStateFile(t.mgr.opts.PersistDir, info.ID)); err == nil {
+			info.AgentSession = st.SessionID
+		}
+	}
+	return info
+}
+
+// memorySnapshot leaves agent-session file reads to detail callers.
+func (t *terminal) memorySnapshot() Info {
 	t.mu.Lock()
 	info := t.info
 	if len(t.info.Tags) > 0 {
@@ -1050,11 +1061,6 @@ func (t *terminal) snapshot() Info {
 	info.Attached = int(t.attached.Load())
 	info.LatestSeq = t.ring.LatestSeq()
 	info.Pending = t.ring.Pending()
-	if t.cfg.Restore == RestoreAgent && t.persist != nil {
-		if st, err := readAgentState(agentStateFile(t.mgr.opts.PersistDir, info.ID)); err == nil {
-			info.AgentSession = st.SessionID
-		}
-	}
 	return info
 }
 

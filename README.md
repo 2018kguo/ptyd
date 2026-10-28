@@ -34,6 +34,9 @@ the command or resume a supported agent's conversation.
   cursor movement and both screen buffers.
 - **Manual takeover.** Attach with the CLI, work in the same terminal, then
   detach while the program keeps running.
+- **One overview for many sessions.** See watch matches, process status,
+  idle time and directories together. Use a live selector yourself or a
+  compact JSON snapshot in an agent tool.
 
 If you only need an interactive terminal multiplexer, tmux already does
 that well. Choose ptyd when programs also need to inspect and control the
@@ -67,6 +70,30 @@ ptyd kill build
 ```
 
 Names, ids, unique id prefixes and terminal numbers all work.
+
+## See what needs attention
+
+```sh
+ptyd status                 # attention-first snapshot
+ptyd status --json          # structured overview for an agent
+ptyd status --watch         # live selector; Enter attaches
+```
+
+In the live view, use arrows or j/k to select, Enter to attach, and
+Ctrl-\\ twice to return. Press / to filter by name, directory, command or
+agent. The selection follows its session id as rows reorder.
+
+Attention means a configured watch matched output. Running and idle time
+are process observations; they do not classify an agent's thoughts.
+The overview covers sessions managed by this daemon. It does not discover
+unrelated agent sessions elsewhere on your machine.
+
+Agents can call `GET /overview` with a row limit, text filter and tags.
+Counts cover every matching session; `truncated` says when rows were omitted.
+Each row includes an output cursor and a short preview with its own
+truncation flag. [The reference](docs/reference.md#session-overview) explains
+the fields. The live interaction was informed by
+[AgentView](https://github.com/moritzWa/agentview).
 
 ## Drive a terminal from a script
 

@@ -116,26 +116,11 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		// CAN cancels a sequence the output may have been cut off in.
 		_, _ = io.WriteString(out, "\x18"+resetLocal+end)
 	}()
-	input := make(chan []byte)
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		for {
-			buf := make([]byte, 4096)
-			n, err := in.Read(buf)
-			if n > 0 {
-				select {
-				case input <- buf[:n]:
-				case <-done:
-					return
-				}
-			}
-			if err != nil {
-				close(input)
-				return
-			}
-		}
-	}()
+	input, err := NewInput(ctx, in)
+	if err != nil {
+		return false, err
+	}
+	defer input.Close()
 
 	send := func(typ byte, payload []byte) error {
 		_, err := conn.Write(api.AppendFrame(nil, typ, payload))
@@ -159,7 +144,7 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 				_ = send(api.FrameInput, held)
 			}
 			held = nil
-		case p, ok := <-input:
+		case p, ok := <-input.Bytes:
 			if !ok {
 				return true, nil
 			}

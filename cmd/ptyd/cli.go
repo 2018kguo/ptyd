@@ -27,6 +27,7 @@ Usage:
   ptyd new [-n name] [-d] [--restore auto|none|rerun|agent] [command [args...]]
                                    start a terminal ($SHELL by default) and attach
   ptyd ls                          list terminals
+  ptyd status [--json | --watch]    attention-first session overview
   ptyd attach [--readonly] <terminal>
   ptyd restore [--policy auto|rerun|agent] <terminal>
                                    start a stopped or exited terminal again and attach
@@ -50,6 +51,7 @@ func defaultAddr() string {
 var commands = map[string]func(args []string) int{
 	"new":     runNew,
 	"ls":      runLs,
+	"status":  runStatus,
 	"attach":  runAttach,
 	"kill":    runKill,
 	"restore": runRestore,

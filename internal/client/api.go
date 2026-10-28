@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -106,6 +107,11 @@ type API struct {
 // errors are meant for a person: a daemon that is not running, a token
 // that was refused, or the daemon's own error message.
 func (c API) Do(method, path string, body, out any) error {
+	return c.DoContext(context.Background(), method, path, body, out)
+}
+
+// DoContext lets live clients cancel an in-flight refresh when they close.
+func (c API) DoContext(ctx context.Context, method, path string, body, out any) error {
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -114,7 +120,7 @@ func (c API) Do(method, path string, body, out any) error {
 		}
 		r = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, "http://"+c.Addr+path, r)
+	req, err := http.NewRequestWithContext(ctx, method, "http://"+c.Addr+path, r)
 	if err != nil {
 		return err
 	}
