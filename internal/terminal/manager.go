@@ -60,10 +60,11 @@ type Options struct {
 
 // Manager owns a set of PTY-backed terminal sessions.
 type Manager struct {
-	opts   Options
-	mu     sync.RWMutex
-	terms  map[ID]*terminal
-	ghosts map[ID]Info // metadata-only entries from prior daemon runs
+	importMu sync.Mutex // serializes native import decisions, not ordinary terminal work
+	opts     Options
+	mu       sync.RWMutex
+	terms    map[ID]*terminal
+	ghosts   map[ID]Info // metadata-only entries from prior daemon runs
 	// restoring holds ghosts with a restore in progress.
 	restoring map[ID]bool
 	next      atomic.Int64
@@ -99,11 +100,13 @@ type terminal struct {
 
 	// scrMu guards screen, the emulator fed with every byte of output, so
 	// the daemon knows what the window looks like.
-	scrMu       sync.Mutex
-	screen      *phosphor.Terminal
-	attachers   map[*attacher]struct{} // guarded by scrMu
-	outputEnded bool                   // guarded by scrMu
-	attached    atomic.Int32           // len(attachers), read without scrMu
+	scrMu          sync.Mutex
+	screen         *phosphor.Terminal
+	attachers      map[*attacher]struct{} // guarded by scrMu
+	outputEnded    bool                   // guarded by scrMu
+	nativeClosing  bool                   // scrMu: last native viewer left; no new attachment may claim this frontend
+	nativeDeadline *time.Timer            // scrMu: bounds an imported frontend never claimed by an attachment
+	attached       atomic.Int32           // len(attachers), read without scrMu
 
 	// persist saves the screen under the persist dir (nil without one);
 	// ckptMu serializes its checkpoints.
@@ -380,6 +383,7 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 	t := &terminal{
 		mgr: m,
 		info: Info{
+			Source:     cfg.source,
 			ID:         sp.id,
 			Name:       cfg.Name,
 			CWD:        cfg.CWD,
@@ -410,7 +414,7 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 	// exits immediately must find meta.json in place for its exit.json,
 	// and a daemon that dies right now must find the new pid.
 	meta := persistedMeta{
-		ID: sp.id, Name: cfg.Name, CWD: cfg.CWD, Command: cfg.Command, Args: cfg.Args, Env: cfg.Env,
+		Source: cfg.source, ID: sp.id, Name: cfg.Name, CWD: cfg.CWD, Command: cfg.Command, Args: cfg.Args, Env: cfg.Env,
 		Tags: cfg.Tags, Watches: cfg.Watches, Cols: cfg.Cols, Rows: cfg.Rows, Restore: cfg.Restore, Agent: cfg.Agent,
 		PID: pid, ProcIdentity: ident, CreatedAt: sp.createdAt, Restored: sp.restored, RestoredAt: restoredAt,
 	}
@@ -855,6 +859,15 @@ func (m *Manager) CloseAll() {
 // closeGrace), closes the PTY and waits for the child to be reaped. It
 // reports whether the process was still running.
 func (t *terminal) terminate() bool {
+	t.scrMu.Lock()
+	if t.nativeDeadline != nil {
+		t.nativeDeadline.Stop()
+		t.nativeDeadline = nil
+	}
+	if t.cfg.source.Provider != "" {
+		t.nativeClosing = true
+	}
+	t.scrMu.Unlock()
 	t.mu.Lock()
 	wasRunning := t.info.Status == StatusRunning
 	if wasRunning {
@@ -889,6 +902,9 @@ func (t *terminal) exitCode() *int {
 // Restart closes a terminal and spawns a new one with the same config.
 // The new terminal has a different ID.
 func (m *Manager) Restart(id ID) (Info, error) {
+	if info, err := m.Get(id); err == nil && info.Source.Provider != "" {
+		return Info{}, fmt.Errorf("import native session %s again to revalidate its worker", info.Source.Key())
+	}
 	t, err := m.get(id)
 	if err != nil {
 		return Info{}, err

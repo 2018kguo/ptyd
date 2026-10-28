@@ -90,8 +90,8 @@ agent. The selection follows its session id as rows reorder.
 
 Attention means a configured watch matched output. Running and idle time
 are process observations; they do not classify an agent's thoughts.
-The overview covers sessions managed by this daemon. It does not discover
-unrelated agent sessions elsewhere on your machine.
+The default overview covers sessions managed by this daemon. Add `--discover`
+to include native Codex and Claude sessions started in other tabs.
 
 Agents can call `GET /overview` with a row limit, text filter and tags.
 Counts cover every matching session; `truncated` says when rows were omitted.
@@ -99,6 +99,28 @@ Each row includes an output cursor and a short preview with its own
 truncation flag. [The reference](docs/reference.md#session-overview) explains
 the fields. The live interaction was informed by
 [AgentView](https://github.com/moritzWa/agentview).
+
+## Bring existing agents into one pane
+
+```sh
+ptyd agents                         # native sessions and what can be imported
+ptyd status --watch --discover      # managed terminals and native agents together
+```
+
+Select an outside session and press Enter. Ptyd opens a terminal view using
+that agent's native attach API, with its exact conversation id. Ctrl-\ twice
+returns to the picker and releases the view; the native worker keeps running.
+Your original tab stays open until you close it yourself.
+
+Codex sessions must be loaded in its shared local daemon. For a foreground
+Claude session, run `/bg` in its original tab and let Claude finish its own
+handoff, then refresh the picker. A stopped Claude conversation requires
+an explicit `ptyd import --resume` using the reference printed by `ptyd agents`.
+
+Ptyd rechecks native identity around view creation. It refuses incomplete or
+ambiguous listings and never resumes “the latest” conversation. Native CLIs
+redraw their own history; the original tab's terminal scrollback is not
+transferred. See [import behavior and limits](docs/reference.md#import-native-agent-sessions).
 
 ## Drive a terminal from a script
 

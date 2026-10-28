@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/2018kguo/ptyd/internal/native"
 )
 
 // persistedMeta is what we write to disk per terminal: its config, and
@@ -18,6 +20,7 @@ import (
 // Path: <persist-dir>/<id>/meta.json (one dir per terminal). Deleting a
 // terminal through the API removes its directory.
 type persistedMeta struct {
+	Source  native.Ref        `json:"source,omitzero"`
 	ID      ID                `json:"id"`
 	Name    string            `json:"name"`
 	CWD     string            `json:"cwd"`
@@ -42,7 +45,8 @@ type persistedMeta struct {
 
 func (meta persistedMeta) config() CreateConfig {
 	return CreateConfig{
-		Name: meta.Name, CWD: meta.CWD, Command: meta.Command, Args: meta.Args, Env: meta.Env,
+		source: meta.Source,
+		Name:   meta.Name, CWD: meta.CWD, Command: meta.Command, Args: meta.Args, Env: meta.Env,
 		Tags: meta.Tags, Watches: meta.Watches, Cols: meta.Cols, Rows: meta.Rows,
 		Restore: meta.Restore, Agent: meta.Agent,
 	}
@@ -125,6 +129,7 @@ func readExit(dir string) (persistedExit, bool) {
 // ghostInfo is the Info a ghost presents.
 func ghostInfo(meta persistedMeta, exit persistedExit) Info {
 	return Info{
+		Source:     meta.Source,
 		ID:         meta.ID,
 		Name:       meta.Name,
 		CWD:        meta.CWD,

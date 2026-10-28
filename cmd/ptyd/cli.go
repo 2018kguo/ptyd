@@ -27,7 +27,11 @@ Usage:
   ptyd new [-n name] [-d] [--restore auto|none|rerun|agent] [command [args...]]
                                    start a terminal ($SHELL by default) and attach
   ptyd ls                          list terminals
-  ptyd status [--json | --watch]    attention-first session overview
+  ptyd status [--json | --watch] [--discover]
+                                   attention-first session overview
+  ptyd agents [--json]              discover native Codex and Claude sessions
+  ptyd import [-d] [-n name] [--resume] <codex:UUID|claude:UUID>
+                                   import an existing agent conversation
   ptyd attach [--readonly] <terminal>
   ptyd restore [--policy auto|rerun|agent] <terminal>
                                    start a stopped or exited terminal again and attach
@@ -52,6 +56,8 @@ var commands = map[string]func(args []string) int{
 	"new":     runNew,
 	"ls":      runLs,
 	"status":  runStatus,
+	"agents":  runAgents,
+	"import":  runImport,
 	"attach":  runAttach,
 	"kill":    runKill,
 	"restore": runRestore,

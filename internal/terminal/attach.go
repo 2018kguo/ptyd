@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -114,6 +115,16 @@ func (m *Manager) Attach(id ID, cols, rows uint16, readOnly bool) (*Attachment, 
 	}
 	a := &attacher{wake: make(chan struct{}, 1)}
 	t.scrMu.Lock()
+	if t.cfg.source.Provider != "" {
+		if t.nativeClosing {
+			t.scrMu.Unlock()
+			return nil, fmt.Errorf("native view has closed; refresh discovery and import again")
+		}
+		if t.nativeDeadline != nil {
+			t.nativeDeadline.Stop()
+			t.nativeDeadline = nil
+		}
+	}
 	initial := t.screen.Repaint(true)
 	if t.outputEnded {
 		a.ended = true
@@ -276,9 +287,25 @@ func (at *Attachment) Close() {
 		at.t.scrMu.Lock()
 		delete(at.t.attachers, at.a)
 		at.t.attached.Store(int32(len(at.t.attachers)))
+		closeNative := at.t.cfg.source.Provider != "" && len(at.t.attachers) == 0
+		if closeNative {
+			at.t.nativeClosing = true
+			if at.t.outputEnded && at.t.mgr != nil {
+				// EOF reaches the CLI before it reads the process exit status.
+				// Keep that result briefly instead of racing its GET with 404.
+				if at.t.nativeDeadline != nil {
+					at.t.nativeDeadline.Stop()
+				}
+				at.t.nativeDeadline = time.AfterFunc(time.Minute, func() { _ = at.t.mgr.Close(at.t.info.ID) })
+				closeNative = false
+			}
+		}
 		at.t.scrMu.Unlock()
 		if at.t.mgr != nil {
 			at.t.mgr.activeSubs.Add(-1)
+			if closeNative {
+				_ = at.t.mgr.Close(at.t.info.ID)
+			}
 		}
 	})
 }
@@ -301,4 +328,29 @@ func (t *terminal) endAttachers() {
 	t.attachers = nil
 	t.attached.Store(0)
 	t.scrMu.Unlock()
+}
+
+// An abandoned import request must not leave a native frontend running forever.
+// The deadline ends once an attachment claims the view; last detach closes it.
+func (m *Manager) expireNativeView(id ID) {
+	t, err := m.get(id)
+	if err != nil {
+		return
+	}
+	t.scrMu.Lock()
+	defer t.scrMu.Unlock()
+	if t.cfg.source.Provider == "" || len(t.attachers) > 0 || t.nativeClosing {
+		return
+	}
+	t.nativeDeadline = time.AfterFunc(time.Minute, func() {
+		t.scrMu.Lock()
+		closeView := len(t.attachers) == 0 && !t.nativeClosing
+		if closeView {
+			t.nativeClosing = true
+		}
+		t.scrMu.Unlock()
+		if closeView {
+			_ = m.Close(id)
+		}
+	})
 }

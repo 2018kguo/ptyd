@@ -16,15 +16,17 @@ import (
 
 	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/client"
+	"github.com/2018kguo/ptyd/internal/native"
 	"github.com/2018kguo/ptyd/internal/terminal"
 	"golang.org/x/term"
 )
 
 func runStatus(args []string) int {
-	fs, addr := newFlags("status", "[--json | --watch] [--limit N] [--filter text] [--tag tags]",
+	fs, addr := newFlags("status", "[--json | --watch] [--discover] [--limit N] [--filter text] [--tag tags]",
 		"See attention, running and stopped sessions. --json returns a compact snapshot.\n"+
 			"--watch opens a live selector: arrows or j/k, Enter to attach, / to filter, q to quit.")
 	asJSON := fs.Bool("json", false, "Print structured JSON for agents")
+	discover := fs.Bool("discover", false, "Include native Codex and Claude sessions started outside ptyd")
 	watch := fs.Bool("watch", false, "Open the live terminal overview")
 	limit := fs.Int("limit", terminal.DefaultOverviewLimit, "Maximum rows (counts include every match)")
 	query := fs.String("filter", "", "Match id, name, directory, command or agent")
@@ -34,7 +36,7 @@ func runStatus(args []string) int {
 		fs.Usage()
 		return 2
 	}
-	options := terminal.OverviewOptions{Limit: *limit, Query: *query}
+	options := terminal.OverviewOptions{Limit: *limit, Query: *query, Discover: *discover}
 	for _, tag := range strings.Split(*tags, ",") {
 		if tag = strings.TrimSpace(tag); tag != "" {
 			options.Tags = append(options.Tags, tag)
@@ -64,6 +66,9 @@ func runStatus(args []string) int {
 }
 
 func overviewState(row terminal.SessionSummary) string {
+	if row.External != nil {
+		return "outside: " + displayText(row.External.Status, 24)
+	}
 	if row.State == terminal.OverviewRunning {
 		return "running"
 	}
@@ -82,6 +87,15 @@ func overviewState(row terminal.SessionSummary) string {
 func overviewCounts(view terminal.Overview) string {
 	c := view.Counts
 	text := fmt.Sprintf("%d sessions | %d attention | %d running | %d stopped | %d exited", c.Total, c.Attention, c.Running, c.Stopped, c.Exited)
+	if c.External > 0 {
+		text += fmt.Sprintf(" | %d outside ptyd", c.External)
+	}
+	if view.DiscoveryTruncated {
+		text += " | native discovery truncated"
+	}
+	if len(view.DiscoveryIssues) > 0 {
+		text += " | native discovery incomplete"
+	}
 	if view.Truncated {
 		text += fmt.Sprintf(" | showing %d", len(view.Sessions))
 	}
@@ -113,6 +127,9 @@ func printStatus(w io.Writer, view terminal.Overview) {
 			displayText(row.CWD, 60), displayText(preview, 80))
 	}
 	_ = tw.Flush()
+	for _, issue := range view.DiscoveryIssues {
+		fmt.Fprintf(w, "%s: %s\n", issue.Provider, displayText(issue.Message, 200))
+	}
 }
 
 // displayText cannot carry terminal controls from a session into the overview.
@@ -213,8 +230,14 @@ func (v *statusView) move(delta int) {
 func refreshStatus(ctx context.Context, c client.API, options terminal.OverviewOptions, queries <-chan string, updates chan statusResult) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	requestBudget := 2 * time.Second
+	if options.Discover {
+		// Cold discovery allows bounded native probes to finish and report
+		// partial failure. Input/navigation stay on the independent UI loop.
+		requestBudget = 12 * time.Second
+	}
 	for {
-		req, cancel := context.WithTimeout(ctx, 2*time.Second)
+		req, cancel := context.WithTimeout(ctx, requestBudget)
 		view, err := c.Overview(req, options)
 		cancel()
 		if ctx.Err() != nil {
@@ -265,6 +288,9 @@ func statusFrame(v statusView, cols, rows int) string {
 		lines = append(lines, "Loading filter; rows below are from the last successful snapshot.")
 	} else if v.notice != "" {
 		lines = append(lines, v.notice)
+	} else if v.snapshot != nil && len(v.snapshot.view.DiscoveryIssues) > 0 {
+		issue := v.snapshot.view.DiscoveryIssues[0]
+		lines = append(lines, string(issue.Provider)+": "+issue.Message)
 	} else {
 		lines = append(lines, "Attention is recorded watch matches; running does not imply an agent is working.")
 	}
@@ -356,9 +382,68 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 	resize := make(chan os.Signal, 1)
 	signal.Notify(resize, syscall.SIGWINCH)
 	defer signal.Stop(resize)
+	showTerminal := func(row terminal.SessionSummary, initial []byte) error {
+		_ = term.Restore(int(in.Fd()), raw)
+		raw = nil
+		_, _ = io.WriteString(out, "\x1b[0m\x1b[?25h\x1b[?1049l")
+		code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: row.Name}, false, initial)
+		v.notice = ""
+		if code != 0 {
+			v.notice = fmt.Sprintf("Attachment to %s ended with code %d. Its last window is in local scrollback.", row.ID, code)
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
+		raw, err = term.MakeRaw(int(in.Fd()))
+		if err != nil {
+			return err
+		}
+		nextInput, err := client.NewInput(ctx, in, unread)
+		if err != nil {
+			return err
+		}
+		input = nextInput
+		_, _ = io.WriteString(out, statusEnter)
+		v.selected = row.ID
+		queueStatusQuery(queries, v.query)
+		return nil
+	}
+	type importResult struct {
+		result terminal.ImportResult
+		err    error
+	}
+	imports := make(chan importResult)
+	var importCancel context.CancelFunc
+	defer func() {
+		if importCancel != nil {
+			importCancel()
+		}
+	}()
+
 	draw()
 	for {
 		select {
+		case imported := <-imports:
+			importCancel()
+			importCancel = nil
+			if imported.err != nil {
+				v.notice = imported.err.Error()
+				draw()
+				continue
+			}
+			input.Close()
+			pending = nil
+			if err = client.FlushInput(in); err != nil {
+				return err
+			}
+			row := terminal.SessionSummary{ID: imported.result.Terminal.ID, Name: imported.result.Terminal.Name, Source: imported.result.Terminal.Source}
+			if err = showTerminal(row, nil); err != nil {
+				return err
+			}
+			if row.Source.Provider != "" {
+				v.selected = terminal.ID("native:" + imported.result.Session.Ref.Key())
+			}
+			draw()
 		case <-ctx.Done():
 			return nil
 		case result := <-updates:
@@ -375,6 +460,14 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		case bytes, ok := <-input.Bytes:
 			if !ok {
 				return nil
+			}
+			if importCancel != nil {
+				for _, b := range bytes {
+					if b == 'q' || b == 3 {
+						return nil
+					}
+				}
+				continue
 			}
 			pending = append(pending, bytes...)
 			for len(pending) > 0 {
@@ -433,32 +526,41 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 						continue
 					}
 					row := v.sessions()[v.selectedIndex()]
+					if row.External != nil {
+						if row.External.Action != native.Attach {
+							v.notice = row.External.Reason
+							if v.notice == "" {
+								v.notice = "Use ptyd import --resume " + row.External.Ref.Key() + " to restart this stopped conversation."
+							}
+							continue
+						}
+						operation, cancelOperation := context.WithCancel(ctx)
+						importCancel = cancelOperation
+						request := terminal.ImportRequest{Ref: row.External.Ref}
+						v.notice = "Opening native session… q or Ctrl-C cancels."
+						draw()
+						go func() {
+							result, err := c.ImportAgent(operation, request)
+							select {
+							case imports <- importResult{result, err}:
+							case <-operation.Done():
+							}
+						}()
+						for _, b := range pending {
+							if b == 'q' || b == 3 {
+								return nil
+							}
+						}
+						pending = nil
+						continue
+					}
+
 					initial := append([]byte(nil), pending...)
 					initial = append(initial, input.Remainder()...)
 					pending = nil
-					_ = term.Restore(int(in.Fd()), raw)
-					raw = nil
-					_, _ = io.WriteString(out, "\x1b[0m\x1b[?25h\x1b[?1049l")
-					code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: row.Name}, false, initial)
-					v.notice = ""
-					if code != 0 {
-						v.notice = fmt.Sprintf("Attachment to %s ended with code %d. Its last window is in local scrollback.", row.ID, code)
-					}
-					if ctx.Err() != nil {
-						return nil
-					}
-					raw, err = term.MakeRaw(int(in.Fd()))
-					if err != nil {
+					if err = showTerminal(row, initial); err != nil {
 						return err
 					}
-					nextInput, err := client.NewInput(ctx, in, unread)
-					if err != nil {
-						return err
-					}
-					input = nextInput
-					_, _ = io.WriteString(out, statusEnter)
-					v.selected = row.ID
-					queueStatusQuery(queries, v.query)
 				}
 			}
 			draw()
