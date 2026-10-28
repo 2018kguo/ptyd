@@ -273,9 +273,11 @@ Each terminal has a directory `DIR/<id>/`
 | `exit.json` | Why the terminal is not running: `child_exit`, `shutdown`, or `not_restored` with the notice. |
 | `agent-session.json` | Agent policy only: the session the agent is in, written by its hooks. |
 
-New checkpoints use version 2 and require this version of ptyd or later.
-Loading a version 1 checkpoint leaves its file unchanged until the next
-normal checkpoint replaces it.
+Ptyd v0.3.0 writes phosphor v0.4.0 snapshots under checkpoint header
+version 2. It reads the binary checkpoints written by ptyd v0.2.0 and
+older version 1 ANSI checkpoints. New snapshots require ptyd v0.3.0 or
+later; ptyd v0.2.0 cannot read them. Loading an older checkpoint leaves
+its file unchanged until the next normal checkpoint replaces it.
 
 The checkpoint plus the tails replayed through a fresh emulator give the
 exact window, also after `kill -9` of the daemon: every read from the
