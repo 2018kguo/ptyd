@@ -1,14 +1,44 @@
 # ptyd
 
-**Long-lived terminals, controlled through a local HTTP API.**
+**Terminals that agents can drive and people can take over.**
 
-Start a shell, editor or coding agent once. Drive it from a script, wait for
-output, inspect its screen, or attach and type normally. Disconnecting a
-client leaves the session running. After a daemon restart, ptyd brings back
-the saved screen and can restart the command or resume a supported agent's
-conversation.
+An agent can leave a build running, return on its next turn and read what
+changed. It can answer a prompt in the same shell or inspect an editor's
+screen. You can attach to that session and type normally.
+
+Ptyd owns the PTY and process, so they keep running when a tool call ends or
+a client disconnects. The CLI and local HTTP API control the same sessions.
+After a daemon restart, ptyd brings back the saved screen and can restart
+the command or resume a supported agent's conversation.
 
 ![An agent running under ptyd, driven over HTTP and resumed after the daemon restarts](docs/demo.gif)
+
+## What an agent gets
+
+- **A session to return to.** Start a program once and address it by name
+  or id on later turns. A shell keeps its working directory and environment
+  while its process runs.
+- **Only the output it needs.** Numbered lines and a `since` cursor let a
+  caller read new output without feeding the whole transcript back into
+  context. Request a short tail or search retained output across sessions.
+- **Waiting with a result.** `wait` blocks for a regex match, including a
+  settled prompt without a newline, and reports a match, timeout, exit or
+  cancellation. Watches record named matches for later inspection.
+- **Input with terminal meaning.** Submit text followed by Enter, with
+  bracketed paste when the program enables it, or send named keys such as
+  `ctrl+c`, `up` and `enter`. The agent can answer a question or interrupt
+  a command in the same session.
+- **A screen for full-screen programs.** Read the window an editor or TUI
+  shows through `/screen`; use line output for builds and logs. The
+  [phosphor](https://github.com/2018kguo/phosphor) emulator tracks cells,
+  cursor movement and both screen buffers.
+- **Manual takeover.** Attach with the CLI, work in the same terminal, then
+  detach while the program keeps running.
+
+If you only need an interactive terminal multiplexer, tmux already does
+that well. Choose ptyd when programs also need to inspect and control the
+sessions through an API. If you only need an embedded emulator, use
+[phosphor](https://github.com/2018kguo/phosphor) directly.
 
 ## Use it
 
@@ -18,8 +48,8 @@ ptyd &
 ptyd new
 ```
 
-Linux and macOS; builds require Go 1.26.2 or later. The daemon listens on
-`127.0.0.1:4242`. Commands find its saved token automatically.
+Linux and macOS; the build toolchain is declared in [go.mod](go.mod).
+The daemon listens on `127.0.0.1:4242`. Commands find its saved token automatically.
 
 Press **Ctrl-\\ twice** to detach. Come back with:
 
@@ -61,24 +91,34 @@ Watches record matches without a polling loop. The
 [API reference](docs/reference.md) has the routes and request formats;
 [`ptyd-ctl.sh`](scripts/ptyd-ctl.sh) wraps them for shell scripts.
 
-## Why use it
+## Why HTTP
 
-- **Automation and manual use share a session.** A script can start a
-  program, send keys and wait for a prompt; you can attach whenever you
-  want to take over.
-- **The screen is available as data.** The [phosphor](https://github.com/2018kguo/phosphor)
-  emulator tracks cursor movement, colors and both screen buffers, so
-  programs such as vim can be inspected as a window rather than a log.
-- **A lost connection doesn't end the work.** Sessions stay in the daemon;
-  saved windows and output tails survive a daemon restart.
-- **Busy sessions have bounded queues.** Retained output has a byte budget.
-  Slow attachers receive a fresh screen instead of blocking the program.
-  Busy writes are batched; small echoes are sent immediately.
+HTTP lets a shell script, test harness or agent tool call the daemon with
+the HTTP client it already has. JSON results are inspectable with curl, and
+clients need no ptyd SDK. The CLI is a convenience over the same operations.
 
-If you only need an interactive terminal multiplexer, tmux already does
-that well. Choose ptyd when programs also need to inspect and control the
-sessions through an API. If you only need an embedded emulator, use
-[phosphor](https://github.com/2018kguo/phosphor) directly.
+Agent ergonomics come from the operations above. A tool wrapper can expose
+them as small actions; it does not need to make the model compose curl.
+In a repo clone, the shell helper already wraps common actions:
+
+```sh
+scripts/ptyd-ctl.sh send "$ID" 'echo helper-ready'
+scripts/ptyd-ctl.sh wait "$ID" '^helper-ready$' 5
+scripts/ptyd-ctl.sh output "$ID" -1 20
+```
+
+Use `wait`, watches and SSE for output instead of repeated polling.
+For repeated prompts, use the HTTP `since` filter to exclude old lines;
+the [agent-turn guide](docs/reference.md#keep-context-between-agent-turns)
+explains the cursor.
+Interactive attach upgrades one connection to a persistent byte stream,
+with frames for input and resize.
+
+HTTP parsing, JSON and local TCP have a cost; spawning curl for every call
+adds process overhead too. A Unix socket could carry the same HTTP API and
+use filesystem permissions, but ptyd currently listens on TCP. A dedicated
+binary protocol would need its own clients. The benchmarks do not compare
+these transports, so they do not establish HTTP as the fastest choice.
 
 ## What restoring means
 

@@ -1,0 +1,13 @@
+{
+  "description": "Toolchains and OS releases recorded in the original measurement reports. Source commits and methods remain in those reports.",
+  "reports": {
+    "bench/phosphor-v0.3.0/README.md": {
+      "macos_go": "1.26.3",
+      "linux_arm64_go": "1.26.10"
+    },
+    "bench/phosphor-v0.4.0/README.md": {
+      "macos_go": "1.26.3",
+      "linux_arm64_go": "1.26.10"
+    }
+  }
+}
