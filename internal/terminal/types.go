@@ -173,6 +173,7 @@ const (
 
 // CreateConfig is the body of POST /terminals.
 type CreateConfig struct {
+	TerminalColors *TerminalColors `json:"terminal_colors,omitempty"`
 	// source is set only after fresh native discovery, never by POST /terminals.
 	source  native.Ref
 	Name    string            `json:"name"`

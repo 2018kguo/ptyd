@@ -101,7 +101,7 @@ func TestNativeImportHTTPUsesExactAuthorityAndReturnsView(t *testing.T) {
 	if again.Code != http.StatusConflict || len(m.List()) != 1 {
 		t.Fatalf("duplicate view: %d %s", again.Code, again.Body)
 	}
-	a, err := m.Attach(result.Terminal.ID, 80, 24, false)
+	a, err := m.Attach(result.Terminal.ID, terminal.AttachOptions{Cols: 80, Rows: 24, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}

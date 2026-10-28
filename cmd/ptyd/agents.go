@@ -70,7 +70,10 @@ func runImport(args []string) int {
 	request := terminal.ImportRequest{Ref: ref, Name: *name, Resume: *resume, TerminalEnv: client.TerminalEnvironment()}
 	if cols, rows, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
 		request.Cols = uint16(cols)
-		request.Rows = uint16(rows)
+		request.Rows = uint16(max(rows-1, 1))
+	}
+	if !*detached {
+		request.TerminalColors, _ = client.ProbeColors(context.Background(), os.Stdin, os.Stdout)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()

@@ -77,3 +77,19 @@ The README demo is reproducible with `vhs docs/demo.tape`. Its setup creates
 disposable local terminals, uses an ephemeral port, and removes its
 own processes and files on exit. It does not need an agent login or call a
 model provider.
+
+## Check human attachments
+
+Set `PTYD_CODEX_TEST_BIN` and `PTYD_CLAUDE_TEST_BIN` to include the installed-CLI
+pane witnesses when running `go test ./internal/client`. They use isolated
+profiles and loopback fixture endpoints. They do not submit real model turns.
+
+The Codex witness checks blank background-colored cells above the ptyd status
+row. The Claude witness enters an unsent Unicode draft, resizes, compares the
+app's screen and cursor with the framed view, and detaches without stopping
+it. The separate native-import witnesses hold a local fake model stream open
+across detach. These checks cover different parts of the attachment path.
+
+Pane tests also cover clears, alternate screens, mixed Unicode modes, palette
+changes, retained history, narrow footers and mouse coordinates. Framed streams
+start and recover with exact snapshots rather than ANSI reconstruction.

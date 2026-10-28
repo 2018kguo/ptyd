@@ -401,10 +401,7 @@ func loadScreen(dir string, cols, rows int) (*phosphor.Terminal, uint64, error) 
 		// These are owner-only files written by this daemon. Preserve the
 		// existing uint16 PTY geometry and storage contract rather than
 		// imposing the library's smaller defaults on accepted sessions.
-		limits := phosphor.SnapshotLimits{
-			MaxBytes: int(^uint(0) >> 1),
-			MaxCells: int(min(uint64(^uint(0)>>1), uint64(65535)*65535)),
-		}
+		limits := trustedSnapshotLimits()
 		if err := scr.RestoreSnapshot(body, limits); err != nil {
 			return nil, 0, fmt.Errorf("corrupt checkpoint in %s: %w", dir, err)
 		}
@@ -498,4 +495,10 @@ func writeFileAtomic(path string, data []byte) error {
 		_ = d.Close()
 	}
 	return nil
+}
+
+// trustedSnapshotLimits preserves the uint16 geometry contract for snapshots
+// produced by this daemon, including sparse screens larger than library defaults.
+func trustedSnapshotLimits() phosphor.SnapshotLimits {
+	return phosphor.SnapshotLimits{MaxBytes: int(^uint(0) >> 1), MaxCells: int(min(uint64(^uint(0)>>1), uint64(65535)*65535))}
 }

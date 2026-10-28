@@ -23,8 +23,10 @@ process groups and shuts down.
 The daemon can run headless. Programs on PTYs receive `TERM=xterm-256color`
 by default; daemon display flags such as `NO_COLOR` are excluded. CLI-created
 terminals and imported views use the viewing terminal's display settings.
-HTTP callers can set them explicitly. Existing processes keep the environment
-they started with; reopen an imported view to apply a corrected profile.
+HTTP callers can set them explicitly. The viewer also supplies its default colors when the host answers the startup
+probe. The emulator can answer an app's queries before a viewer is present.
+Existing processes keep the display decisions they made at startup; reopen an
+imported view to apply a corrected profile. This leaves the native worker alive.
 
 ## Restore policies
 

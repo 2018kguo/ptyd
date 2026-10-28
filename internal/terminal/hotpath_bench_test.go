@@ -100,7 +100,7 @@ func BenchmarkAttachFanout(b *testing.B) {
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			for range k {
-				at, err := m.Attach(t.info.ID, 0, 0, true)
+				at, err := m.Attach(t.info.ID, AttachOptions{Cols: 0, Rows: 0, ReadOnly: true})
 				if err != nil {
 					b.Fatal(err)
 				}

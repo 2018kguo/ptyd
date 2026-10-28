@@ -325,7 +325,8 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		}
 		_, _ = io.WriteString(out, "\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
 	}()
-	input, err := client.NewInput(ctx, in, nil)
+	colors, initial := client.ProbeColors(ctx, in, out)
+	input, err := client.NewInput(ctx, in, initial)
 	if err != nil {
 		return err
 	}
@@ -523,7 +524,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 						}
 						operation, cancelOperation := context.WithCancel(ctx)
 						importCancel = cancelOperation
-						request := terminal.ImportRequest{Ref: row.External.Ref, TerminalEnv: client.TerminalEnvironment()}
+						request := terminal.ImportRequest{Ref: row.External.Ref, TerminalEnv: client.TerminalEnvironment(), TerminalColors: colors}
 						v.notice = "Opening native session… q cancels."
 						draw()
 						go func() {
@@ -559,6 +560,14 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 // Unknown keys are ignored as a whole rather than leaking into the filter.
 func statusEscape(p []byte) (consumed, direction int) {
 	if len(p) < 2 {
+		return 0, 0
+	}
+	if strings.ContainsRune("]P_^X", rune(p[1])) {
+		for i := 2; i < len(p); i++ {
+			if p[i] == 7 && p[1] == ']' || i > 2 && p[i] == '\\' && p[i-1] == 0x1b {
+				return i + 1, 0
+			}
+		}
 		return 0, 0
 	}
 	if p[1] != '[' && p[1] != 'O' {

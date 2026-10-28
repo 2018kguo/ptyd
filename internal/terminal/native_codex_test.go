@@ -272,11 +272,11 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 	t.Setenv("TERM", "dumb")
 	t.Setenv("NO_COLOR", "1")
 	viewTerm, viewColor := "xterm-256color", "truecolor"
-	imported, err := m.ImportAgent(ctx, discovery, ImportRequest{Ref: ref, Cols: 120, Rows: 40, TerminalEnv: TerminalEnvironment{"TERM": &viewTerm, "COLORTERM": &viewColor, "NO_COLOR": nil}})
+	imported, err := m.ImportAgent(ctx, discovery, ImportRequest{Ref: ref, Cols: 120, Rows: 40, TerminalEnv: TerminalEnvironment{"TERM": &viewTerm, "COLORTERM": &viewColor, "NO_COLOR": nil}, TerminalColors: &TerminalColors{Foreground: "#d8dee9", Background: "#282c34"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	attachment, err := m.Attach(imported.Terminal.ID, 120, 40, false)
+	attachment, err := m.Attach(imported.Terminal.ID, AttachOptions{Cols: 120, Rows: 40, ReadOnly: false, Rendered: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,19 +314,28 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 	}
 	rendered := phosphor.New(120, 40)
 	rendered.Write(raw)
-	colored := 0
+	colored, background, blankBackground := 0, 0, 0
 	for y := 0; y < 40; y++ {
 		for x := 0; x < 120; x++ {
 			cell := rendered.Cell(x, y)
+			if cell.Style.Bg != phosphor.DefaultColor {
+				background++
+				if cell.Rune == 0 || cell.Rune == ' ' {
+					blankBackground++
+				}
+			}
 			if cell.Rune != ' ' && cell.Rune != 0 && cell.Style.Fg != phosphor.DefaultColor {
 				colored++
 			}
 		}
 	}
+	if background < 80 || blankBackground < 40 {
+		t.Fatalf("installed Codex lost input background: %d background cells, %d blank background cells", background, blankBackground)
+	}
 	if colored == 0 {
 		t.Fatal("installed Codex frontend lost its foreground colors")
 	}
-	t.Logf("installed Codex view retained %d colored cells through ANSI attachment", colored)
+	t.Logf("installed Codex retained %d foreground cells, %d background cells and %d blank background cells", colored, background, blankBackground)
 	oldAfter, err := procIdentity(old.PID)
 	if err != nil || oldAfter != oldIdentity {
 		t.Fatal("import interrupted the original native CLI")

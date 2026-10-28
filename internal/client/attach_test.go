@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -370,5 +372,30 @@ func TestTerminalEnvironmentKeepsViewerColorPreference(t *testing.T) {
 	os.Unsetenv("NO_COLOR")
 	if env := TerminalEnvironment(); env["NO_COLOR"] != nil {
 		t.Fatal("absence lost")
+	}
+}
+
+func TestTruncatedFramedStreamRestoresTitleAndModes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: ptyd-attach\r\nX-Ptyd-Rendered: 1\r\n\r\n")
+		conn.Write([]byte{'s', 0, 0, 0, 64, 'x'})
+	}))
+	defer server.Close()
+	u := newUserTerminal(t, 80, 24)
+	_, err := Attach(context.Background(), Options{Addr: strings.TrimPrefix(server.URL, "http://"), ID: "fixture", Label: "broken"}, u.slave, u.slave, nil)
+	if err == nil {
+		t.Fatal("truncated snapshot succeeded")
+	}
+	eventually(t, "cleanup", func() bool {
+		return strings.Contains(u.rawOutput(), titlePop) && strings.Contains(u.rawOutput(), resetLocal)
+	})
+	raw := u.rawOutput()
+	if strings.Count(raw, titlePush) != strings.Count(raw, titlePop) {
+		t.Fatal("title stack leaked")
 	}
 }

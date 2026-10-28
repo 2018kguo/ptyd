@@ -101,6 +101,7 @@ type terminal struct {
 	// scrMu guards screen, the emulator fed with every byte of output, so
 	// the daemon knows what the window looks like.
 	scrMu          sync.Mutex
+	replies        *replyQueue // scrMu: bounded, lazy query-reply worker
 	screen         *phosphor.Terminal
 	attachers      map[*attacher]struct{} // guarded by scrMu
 	outputEnded    bool                   // guarded by scrMu
@@ -223,6 +224,9 @@ func (m *Manager) Create(cfg CreateConfig) (Info, error) {
 
 // normalize validates cfg and fills in defaults.
 func (m *Manager) normalize(cfg *CreateConfig) error {
+	if _, err := cfg.TerminalColors.palette(); err != nil {
+		return err
+	}
 	if cfg.Name == "" {
 		return fmt.Errorf("terminal name is required")
 	}
@@ -358,9 +362,18 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 		cmd.Env = append(cmd.Env, "TERM=xterm-256color")
 	}
 
-	screen := sp.screen
-	if screen == nil {
-		screen = phosphor.New(int(cfg.Cols), int(cfg.Rows))
+	reply := new(queryReplies)
+	palette, _ := cfg.TerminalColors.palette() // normalize validated this pair
+	options := []phosphor.Option{phosphor.WithReply(reply)}
+	if cfg.TerminalColors != nil {
+		options = append(options, phosphor.WithPalette(palette))
+	}
+	screen := phosphor.New(int(cfg.Cols), int(cfg.Rows), options...)
+	if sp.screen != nil {
+		// Snapshot restore retains the new reply sink without changing saved state.
+		if err := screen.RestoreSnapshot(sp.screen.Snapshot(), trustedSnapshotLimits()); err != nil {
+			return Info{}, err
+		}
 	}
 	cols, rows := screen.Size()
 	ptyStartMu.Lock()
@@ -417,11 +430,13 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 		watches: compiled,
 	}
 
+	reply.terminal = t
+
 	// Persist and register before the goroutines start: a child that
 	// exits immediately must find meta.json in place for its exit.json,
 	// and a daemon that dies right now must find the new pid.
 	meta := persistedMeta{
-		Source: cfg.source, ID: sp.id, Name: cfg.Name, CWD: cfg.CWD, Command: cfg.Command, Args: cfg.Args, Env: cfg.Env,
+		TerminalColors: cfg.TerminalColors, Source: cfg.source, ID: sp.id, Name: cfg.Name, CWD: cfg.CWD, Command: cfg.Command, Args: cfg.Args, Env: cfg.Env,
 		Tags: cfg.Tags, Watches: cfg.Watches, Cols: cfg.Cols, Rows: cfg.Rows, Restore: cfg.Restore, Agent: cfg.Agent,
 		PID: pid, ProcIdentity: ident, CreatedAt: sp.createdAt, Restored: sp.restored, RestoredAt: restoredAt,
 	}
@@ -789,6 +804,17 @@ func (t *terminal) resize(cols, rows uint16) error {
 		return err
 	}
 	t.screen.Resize(int(cols), int(rows))
+	// Rendered viewers need the new canonical geometry before subsequent bytes.
+	for a := range t.attachers {
+		if a.rawResponder || !a.renderedView {
+			continue
+		}
+		a.mu.Lock()
+		a.buf = nil
+		a.overflow = true
+		a.mu.Unlock()
+		a.signal()
+	}
 	t.persist.appendLocked(recResize, []byte{byte(cols >> 8), byte(cols), byte(rows >> 8), byte(rows)})
 	return nil
 }

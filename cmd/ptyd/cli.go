@@ -141,7 +141,11 @@ func runNew(args []string) int {
 	}
 	interactive := !*detach && term.IsTerminal(int(os.Stdout.Fd()))
 	if cols, rows, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
-		cfg.Cols, cfg.Rows = uint16(cols), uint16(rows)
+		cfg.Cols, cfg.Rows = uint16(cols), uint16(max(rows-1, 1))
+	}
+	var initial []byte
+	if interactive {
+		cfg.TerminalColors, initial = client.ProbeColors(context.Background(), os.Stdin, os.Stdout)
 	}
 	c := apiAt(*addr)
 	var info terminal.Info
@@ -152,7 +156,7 @@ func runNew(args []string) int {
 		fmt.Println(info.ID)
 		return 0
 	}
-	code, _ := attach(context.Background(), c, info, client.Options{})
+	code, _ := attach(context.Background(), c, info, client.Options{InitialInput: initial})
 	return code
 }
 
@@ -161,6 +165,7 @@ func runAttach(args []string) int {
 		"Attach this terminal to a ptyd terminal. Detach with "+client.DetachKeyHelp+".\n"+
 			"<terminal> is an id, its number, a name or a unique id prefix.")
 	readOnly := fs.Bool("readonly", false, "Watch without sending input or resizing")
+	raw := fs.Bool("raw", false, "Pass terminal output through without a status row")
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
 		fs.Usage()
@@ -171,7 +176,7 @@ func runAttach(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	code, _ := attach(context.Background(), c, info, client.Options{ReadOnly: *readOnly})
+	code, _ := attach(context.Background(), c, info, client.Options{ReadOnly: *readOnly, Raw: *raw})
 	return code
 }
 
