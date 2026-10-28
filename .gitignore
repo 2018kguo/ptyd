@@ -3,3 +3,7 @@
 *.tmp
 .DS_Store
 *.test
+
+# Local benchmark samples and profiles belong outside the source tree.
+/.bench/
+/bench/results/

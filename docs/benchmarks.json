@@ -1,0 +1,11 @@
+{
+  "evidence": {
+    "url": "https://github.com/2018kguo/ptyd/releases/download/v0.4.1/ptyd-benchmark-evidence.tar.gz",
+    "sha256": "25e53664045cdc4b43b0495a0c68ab625068c682ba5d4f4cf48d0ae6c2fa7652",
+    "source_commit": "4ae100cc64f103c177b2ae96d65d67ce0c8ea5f4",
+    "files": 80,
+    "uncompressed_bytes": 843160,
+    "manifest": "manifest.json",
+    "current_results": "bench/native-mining"
+  }
+}

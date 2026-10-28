@@ -66,7 +66,7 @@ After quiet output, the existing persistence callback compacts the emulator
 and releases oversized output-ring buffers while keeping retained contents.
 With persistence disabled, ring reclamation runs on process exit. Idle sessions
 have no persistence timer or open tail file. Reclaimed capacity may need to
-grow again when output resumes; [measurements](../bench/agent-round/README.md#storage-after-quiet-output)
+grow again when output resumes; [measurements](../bench/README.md#storage-after-quiet-output)
 include that cost.
 
 Ptyd reads the earlier binary and ANSI checkpoint formats. Upgrade readers

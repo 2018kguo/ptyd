@@ -1,1 +1,0 @@
-ok  	github.com/2018kguo/ptyd/internal/terminal	1.768s
