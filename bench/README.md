@@ -16,7 +16,9 @@ bench/load.sh /tmp/load.jsonl
 ```
 
 Replace `main` with the baseline commit you want to compare. The A/B scripts
-alternate builds on the same host. Compare distributions,
+alternate builds on the same host. The load A/B script uses the current
+harness for both builds and each revision's own build profile. Runs fail if a
+configured client ends early, makes no progress or a producer exits. Compare distributions,
 not one fastest sample. Load tests report output throughput, echo latency,
 CPU, RSS, GC and persistence overhead. `PTYD_SCALE_N` controls the idle
 session count; host PTY and process limits still apply.
@@ -39,20 +41,12 @@ persistence. They are smoke/profile samples, not a before/after speedup.
 [The exact-checkpoint integration](phosphor-v0.3.0/README.md) retains the earlier
 checkpoint and restore measurements.
 
-The daemon's main I/O optimizations were measured before the emulator was
-split into its own package. These are historical A/B results, not fresh
-numbers for the latest release:
+The earlier daemon I/O experiments remain under [pass2/](pass2/) and
+[pass2/linux/](pass2/linux/). The macOS file mixes exploratory runs with later
+pairs, including failed or noisy cases. Selected subsets are not a reliable
+current speedup claim. Keep the raw records when comparing new runs.
 
-| Workload | Before / after | Evidence |
-|---|---|---|
-| 32 terminals at 1 MiB/s, attached, streamed and persisted | macOS CPU 2.10–2.16 / 1.06–1.09 cores; Linux 1.17–1.30 / 0.90–1.09 | `pass2/load-ab.jsonl`, `pass2/linux/load-ab.jsonl` |
-| 8 terminals without a rate limit | macOS 113–114 / 118–125 MB/s; Linux 258–274 / 307–344 MB/s | Same alternating runs |
-
-Both sides used their own build profiles. The baseline was `cf16a03`;
-Linux used six rounds, macOS three, on an Apple M5 Pro and a Linux arm64 VM.
-All raw samples, including noisy runs, remain under [pass2/](pass2/).
-
-The choices behind those results are useful beyond the numbers:
+The daemon makes several throughput and latency tradeoffs:
 
 - Busy attach/SSE output is coalesced for up to 4 ms, reducing writes and
   wakeups. Small echoes and output after quiet are immediate.

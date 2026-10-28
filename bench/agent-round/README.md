@@ -65,6 +65,20 @@ costs and use different storage policies during active and quiet work.
 Here, reclaiming unused capacity is enough; terminal processes and output
 retention budgets still determine much of the daemon's memory use.
 
+## Measurement checks
+
+The load harness credits PTY bytes after the emulator has parsed them.
+A regression test feeds more than 2.5 MiB, verifies every byte count and all
+65,000 processed line numbers, then checks a slow attacher's overflow repaint.
+Output retention and client delivery can discard old data after parsing;
+they do not skip terminal input.
+
+Load runs now reject early client exits, HTTP/scanner errors, empty measured
+clients and exited producers. Failed scenarios return failure and preserve
+diagnostics. A/B runs use the same harness against both production revisions;
+each revision keeps its own build profile. Earlier mixed exploratory runs are
+retained without quoting selected subsets as current gains.
+
 ## Reproduce
 
 ```sh
