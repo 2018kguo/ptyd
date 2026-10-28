@@ -13,6 +13,9 @@ import (
 
 func (c API) Overview(ctx context.Context, options terminal.OverviewOptions) (terminal.Overview, error) {
 	q := url.Values{}
+	if options.Discover {
+		q.Set("discover", "true")
+	}
 	if options.Limit > 0 {
 		q.Set("limit", strconv.Itoa(options.Limit))
 	}

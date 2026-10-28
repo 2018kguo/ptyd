@@ -19,6 +19,17 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 	tags := splitNonEmpty(q.Get("tag"), ",")
-	view := s.mgr.Overview(terminal.OverviewOptions{Limit: limit, Query: q.Get("q"), Tags: tags})
+	options := terminal.OverviewOptions{Limit: limit, Query: q.Get("q"), Tags: tags}
+	view := s.mgr.Overview(options)
+	if raw := q.Get("discover"); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "discover must be true or false")
+			return
+		}
+		if enabled {
+			view = terminal.BuildDiscoveredOverview(s.mgr.List(), s.native.List(r.Context()), options)
+		}
+	}
 	writeJSON(w, http.StatusOK, view)
 }

@@ -10,7 +10,9 @@ control. Both use the same daemon and session ids.
 | `ptyd` | Start the daemon; `ptyd -h` lists flags. |
 | `ptyd new [-n name] [-d] [--restore policy] [command [args...]]` | Start and attach; `-d` prints the id without attaching. |
 | `ptyd ls` | List sessions. |
-| `ptyd status [--json \| --watch] [--limit N] [--filter text] [--tag tags]` | Attention-first overview; live selection or compact agent JSON. |
+| `ptyd status [--json \| --watch] [--discover] [--limit N] [--filter text] [--tag tags]` | Attention-first overview; live selection or compact agent JSON. |
+| `ptyd agents [--json]` | Discover native Codex and Claude sessions and their import actions. |
+| `ptyd import [-d] [-n name] [--resume] provider:UUID` | Open a view for an exact native conversation; `-d` prints its terminal id. |
 | `ptyd attach [--readonly] terminal` | Attach to a running session or view a stopped one's screen. |
 | `ptyd restore [--policy policy] terminal` | Start a stopped terminal again under the same id, then attach. |
 | `ptyd kill terminal...` | Kill and forget sessions. |
@@ -31,6 +33,8 @@ are JSON. Errors are `{"error":"..."}`: 400 invalid input, 401 bad token,
 |---|---|---|
 | `GET` | `/healthz`, `/metrics` | Liveness; JSON counters and uptime. No auth. |
 | `GET` | `/terminals` | Optional `?tag=a,b`; oldest first, matching any tag. |
+| `GET` | `/agents` | Native sessions, action requirements, discovery issues and truncation. |
+| `POST` | `/agents/import` | Freshly validate a native reference and create a terminal frontend. |
 | `GET` | `/overview` | Compact session summaries; `?limit=50&q=text&tag=a,b`. Counts include all matches. |
 | `POST` | `/terminals` | Create; returns 201 and metadata. |
 | `GET` | `T` | Metadata, status, pid, output position, attention and restore information. |
@@ -174,3 +178,82 @@ For custom clients, request `Connection: Upgrade` and `Upgrade: ptyd-attach`
 on `T/attach`, with authentication. After 101, the server sends raw output.
 Client frames are a type byte, a big-endian uint32 payload length, then
 payload: `i` for input; `r` for two big-endian uint16 values (cols, rows).
+
+## Import native agent sessions
+
+`ptyd agents --json` and `GET /agents` query the installed native CLIs in the
+daemon's environment. Codex discovery reads its running local daemon over its
+Unix socket. Claude discovery uses `claude agents --json --all`. Neither probe
+starts a turn or selects a conversation by title, timestamp or “last.”
+
+Each session has a `ref` (`provider` and full UUID), `name`, `cwd`, native
+`status`, optional `waiting_for`, `worker_pid` and an `action`:
+
+| Action | What to do |
+|---|---|
+| `attach` | Import the running conversation. |
+| `background` | Run `/bg` in the original Claude tab, wait for its handoff, then refresh. |
+| `resume` | Explicitly allow continuing a stopped Claude background conversation. |
+| `unavailable` | Follow `reason`; ptyd cannot establish a safe import yet. |
+
+`GET /overview?discover=true` combines these observations with managed
+terminals. External rows have `state: "external"` and an `external` object;
+their `id` is a picker key, not a `/terminals` id. `counts.external` counts
+these rows. Running, stopped and exited counts still describe managed
+terminals. Counts cover all matching rows before the view limit. Native
+`status` comes from the runtime rather than terminal-output heuristics.
+Ordinary `GET /overview` does not run native probes.
+
+Discovery is cached for five seconds. `issues` (or `discovery_issues` in the
+overview) and `truncated`/`discovery_truncated` describe incomplete reads;
+partial discovery is not proof that a session is absent. Each native response
+is capped at 4 MiB, and at most 500 native records per provider are returned.
+Import bypasses the cache and refuses incomplete requested-provider listings.
+Native background/foreground ambiguity is checked before applying the row cap.
+
+To import through HTTP, send the exact reference from discovery:
+
+```json
+{
+  "ref": {"provider": "codex", "id": "11111111-1111-4111-8111-111111111111"},
+  "name": "review",
+  "cols": 120,
+  "rows": 40
+}
+```
+
+Replace the example UUID with the discovered id. A stopped Claude conversation
+also needs `"resume": true`; the CLI equivalent is `ptyd import --resume`
+followed by its `claude:UUID` reference. The response contains `terminal`,
+`session` and `reused`. An existing normal ptyd terminal whose current agent
+hook reports that exact conversation may be reused. Otherwise the server
+creates a temporary frontend and checks the native reference, directory and
+hosting process generation again. Codex connects to the specific daemon
+socket observed during validation, not a newly selected server.
+
+Use the returned terminal id for the normal attach/screen/input routes. Claim
+the view with an attachment within one minute; an unclaimed view expires.
+Last detach closes a running temporary frontend. After a frontend exits, its
+exit status remains readable for one minute before cleanup. Closing, killing or expiring that
+frontend does not stop the native worker. Native conversations appear in the
+combined picker; temporary frontends do not add duplicate session rows.
+
+An imported window can navigate to another conversation. Its `source` is
+launch provenance, not proof of its current input target. Another import of
+the original reference conflicts while that window is open; attach it by its
+explicit terminal id or close it first. The picker never silently reuses a
+window based on launch provenance. Native view input typed before import
+finishes is discarded, including queued cancellation keys.
+
+Imported views are not automatically restored after a ptyd restart. Refresh
+native discovery and import again; generic restart/restore refuses to bypass
+fresh native validation. This leaves native worker lifecycle with its owner.
+
+Only the configured local profiles are discovered. Codex must expose its
+loaded sessions through the shared daemon; standalone `--no-daemon`, other
+profiles and remote hosts are outside this import path. Claude foreground
+handoff follows [Claude's native rules](https://code.claude.com/docs/en/agent-view#what-carries-over-when-you-background),
+including work that must finish or restart. Ptyd does not press those controls
+for you, close an original tab, inject a prompt or adopt an arbitrary macOS PTY.
+The native CLI may show its own authentication, trust or update prompts, and
+its redraw/history behavior determines what the new view displays.

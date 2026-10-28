@@ -48,6 +48,20 @@ message: after `/new`, an earlier existing conversation may be resumed.
 A resumed agent can redraw and clear the saved window; it is not a permanent
 transcript viewer.
 
+## Imported native views
+
+An imported Codex or Claude view is a client of the agent's existing local
+daemon. That daemon owns the worker and conversation. Detaching, deleting the
+view or shutting down ptyd closes the frontend, while native work continues.
+Unclaimed views expire after one minute. They use no automatic restore
+policy; discover and import again after restarting ptyd.
+
+Use `ptyd status --watch --discover` for the combined picker. A source
+reference records which conversation was selected at launch, and does not
+track later navigation inside the native CLI. Generic restart/restore cannot
+reuse that reference without fresh validation. [The import reference](reference.md#import-native-agent-sessions)
+explains handoff, profile scope and incomplete discovery.
+
 ## Persistence and upgrades
 
 Each terminal directory contains `meta.json`, `screen.ckpt`, bounded

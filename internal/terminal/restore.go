@@ -101,6 +101,9 @@ func (m *Manager) Restore(id ID, policy RestorePolicy) (Info, error) {
 	if err != nil {
 		return Info{}, fmt.Errorf("read metadata: %w", err)
 	}
+	if meta.Source.Provider != "" {
+		return Info{}, fmt.Errorf("import native session %s again to revalidate its worker", meta.Source.Key())
+	}
 	cfg := meta.config()
 	if policy != "" {
 		cfg.Restore = policy

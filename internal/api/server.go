@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/2018kguo/ptyd/internal/native"
 	"github.com/2018kguo/ptyd/internal/terminal"
 )
 
@@ -25,12 +26,20 @@ const maxBodyBytes = 1 << 20
 
 // Config holds server-level options.
 type Config struct {
-	Addr  string // host:port to listen on
-	Token string // if non-empty, required as X-Ptyd-Token on every request
+	Native NativeService // optional; defaults to the local native CLIs
+	Addr   string        // host:port to listen on
+	Token  string        // if non-empty, required as X-Ptyd-Token on every request
+}
+
+// NativeService provides discovery and fresh import authority.
+type NativeService interface {
+	native.Discovery
+	terminal.NativeLookup
 }
 
 // Server is the HTTP API for ptyd.
 type Server struct {
+	native NativeService
 	mgr    *terminal.Manager
 	token  string
 	httpd  *http.Server
@@ -40,7 +49,10 @@ type Server struct {
 // New constructs (but does not start) a Server.
 func New(mgr *terminal.Manager, cfg Config) *Server {
 	base, cancel := context.WithCancel(context.Background())
-	s := &Server{mgr: mgr, token: cfg.Token, cancel: cancel}
+	s := &Server{mgr: mgr, token: cfg.Token, cancel: cancel, native: cfg.Native}
+	if s.native == nil {
+		s.native = new(native.Discoverer)
+	}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 	s.httpd = &http.Server{
@@ -85,6 +97,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
 	mux.HandleFunc("GET /overview", s.handleOverview)
+	mux.HandleFunc("GET /agents", s.handleAgents)
+	mux.HandleFunc("POST /agents/import", s.handleImport)
 	mux.HandleFunc("GET /search", s.handleSearch)
 	mux.HandleFunc("GET /terminals", s.handleList)
 	mux.HandleFunc("POST /terminals", s.handleCreate)

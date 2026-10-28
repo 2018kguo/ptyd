@@ -6,6 +6,8 @@ import (
 	"time"
 	"unicode/utf8"
 	"unsafe"
+
+	"github.com/2018kguo/ptyd/internal/native"
 )
 
 // stripANSI removes the ANSI escape sequences terminals emit:
@@ -103,6 +105,10 @@ const (
 // Info is metadata about a terminal session. It deliberately does NOT include
 // scrollback; fetch that via GET /terminals/{id}/output (Manager.Output).
 type Info struct {
+	external *native.Session // populated only when projecting native discovery
+	// Source is launch provenance; a CLI can navigate to another conversation.
+	// It never authorizes reuse as an exact native input target.
+	Source       native.Ref `json:"source,omitzero"`
 	ID           ID         `json:"id"`
 	Name         string     `json:"name"`
 	CWD          string     `json:"cwd"`
@@ -167,6 +173,8 @@ const (
 
 // CreateConfig is the body of POST /terminals.
 type CreateConfig struct {
+	// source is set only after fresh native discovery, never by POST /terminals.
+	source  native.Ref
 	Name    string            `json:"name"`
 	CWD     string            `json:"cwd"`
 	Command string            `json:"command"` // binary to exec (looked up in PATH); default $SHELL or /bin/sh
