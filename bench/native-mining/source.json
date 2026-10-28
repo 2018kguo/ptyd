@@ -1,0 +1,17 @@
+{
+  "ptyd_source_commit": "7efe1dce1cb19e77d53baa83a0a0e86ec0fde1fe",
+  "phosphor_baseline_commit": "ecfe310cd6da699df77796d35a091423075b30b3",
+  "phosphor_candidate_commit": "611b81c71c4c1ec030fa32dc1555f30535a2df9f",
+  "go": "go version go1.26.3 darwin/arm64",
+  "GOMAXPROCS": 1,
+  "rounds": 5,
+  "sample": "200ms",
+  "metric": "decimal MB per wall second and allocated bytes per ~MiB operation",
+  "scope": "In-process consume, no PTY or HTTP. fakeTerminal defaults. Persistence case includes tails/checkpoints.",
+  "binary_sha256": {
+    "ptyd-baseline.test": "4c1fadfdf82be2aa1af20ca15aecf4b21964b35f931572a20cf01a8e7953fe0e",
+    "ptyd-final.test": "0773d1d5afac94b61401430f2f4ae4d14598cd7d046e75d3fb6bbae6809b90b5"
+  },
+  "benchmark_sha256": "b7272600cde48f10a8e83aad6a85944169339f09c152dd4a26a45c34fe3c6c23",
+  "collection": "same ptyd production/fixtures; baseline published old Phosphor, final core via external Go workspace. Published module source verified before release."
+}

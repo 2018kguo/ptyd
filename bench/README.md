@@ -29,10 +29,10 @@ Its idle heap excludes processes, output rings and attach queues in ptyd.
 
 ## Results and tradeoffs
 
-[Unicode and output processing](unicode-history/README.md) measures the core update
-inside ptyd: mixed Unicode improves about 2.8× and CJK about 4.1× in the
-in-process consume path. Its [build profiles](unicode-history/profiles/metadata.json)
-include fresh macOS/Linux captures. These scopes differ from PTY or HTTP latency.
+[Unicode output](native-mining/README.md) measures the final core inside ptyd:
+mixed graphemes improve about 6×, CJK about 5× and progress output 27% in the
+in-process consume path. Its [build profiles](native-mining/profiles/metadata.json)
+include fresh macOS/Linux captures. PTY and HTTP latency have separate costs.
 
 [Output waits, session summaries and quiet storage](agent-round/README.md) measures
 retained-output matching, overview response size and reclaimed ring capacity. The default full-window wait scan allocates
