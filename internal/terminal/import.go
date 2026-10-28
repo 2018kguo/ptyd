@@ -13,11 +13,12 @@ import (
 var ErrImportDeclined = errors.New("native import declined")
 
 type ImportRequest struct {
-	Ref    native.Ref `json:"ref"`
-	Name   string     `json:"name,omitempty"`
-	Resume bool       `json:"resume,omitempty"`
-	Cols   uint16     `json:"cols,omitempty"`
-	Rows   uint16     `json:"rows,omitempty"`
+	Ref         native.Ref          `json:"ref"`
+	TerminalEnv TerminalEnvironment `json:"terminal_env,omitempty"`
+	Name        string              `json:"name,omitempty"`
+	Resume      bool                `json:"resume,omitempty"`
+	Cols        uint16              `json:"cols,omitempty"`
+	Rows        uint16              `json:"rows,omitempty"`
 }
 type ImportResult struct {
 	Terminal Info           `json:"terminal"`
@@ -90,7 +91,11 @@ func (m *Manager) ImportAgent(ctx context.Context, lookup NativeLookup, req Impo
 	if err = ctx.Err(); err != nil {
 		return ImportResult{}, err
 	}
-	info, err := m.Create(CreateConfig{Name: name, CWD: plan.CWD, Command: plan.Command, Args: plan.Args, Cols: req.Cols, Rows: req.Rows, Restore: RestoreNone, source: req.Ref})
+	cfg := CreateConfig{Name: name, CWD: plan.CWD, Command: plan.Command, Args: plan.Args, Cols: req.Cols, Rows: req.Rows, Restore: RestoreNone, source: req.Ref}
+	if err := req.TerminalEnv.Apply(&cfg); err != nil {
+		return ImportResult{}, fmt.Errorf("%w: %v", ErrImportDeclined, err)
+	}
+	info, err := m.Create(cfg)
 	if err != nil {
 		return ImportResult{}, err
 	}

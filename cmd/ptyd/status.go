@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -36,15 +37,20 @@ func runOverview(args []string, interactive bool) int {
 	asJSON := fs.Bool("json", false, "Print structured JSON for agents")
 	discover := fs.Bool("discover", interactive, "Include native Codex and Claude sessions started outside ptyd")
 	watch := fs.Bool("watch", interactive, "Open the live terminal overview")
-	limit := fs.Int("limit", terminal.DefaultOverviewLimit, "Maximum rows (counts include every match)")
+	defaultLimit := terminal.DefaultOverviewLimit
+	if interactive {
+		defaultLimit = terminal.MaxOverviewLimit
+	}
+	limit := fs.Int("limit", defaultLimit, "Maximum rows (counts include every match)")
 	query := fs.String("filter", "", "Match id, name, directory, command or agent")
 	tags := fs.String("tag", "", "Match any of these comma-separated tags")
+	history := fs.Bool("history", false, "Include saved and completed sessions in the live picker")
 	_ = fs.Parse(args)
 	if fs.NArg() != 0 || (*asJSON && *watch) || *limit < 1 || *limit > terminal.MaxOverviewLimit {
 		fs.Usage()
 		return 2
 	}
-	options := terminal.OverviewOptions{Limit: *limit, Query: *query, Discover: *discover}
+	options := terminal.OverviewOptions{Limit: *limit, Query: *query, Discover: *discover, ActiveOnly: *watch && !*history}
 	for _, tag := range strings.Split(*tags, ",") {
 		if tag = strings.TrimSpace(tag); tag != "" {
 			options.Tags = append(options.Tags, tag)
@@ -168,9 +174,10 @@ func padStatus(text string, columns int) string {
 }
 
 type statusResult struct {
-	query string
-	view  terminal.Overview
-	err   error
+	history bool
+	query   string
+	view    terminal.Overview
+	err     error
 }
 
 const statusEnter = "\x1b[?1049h\x1b[?25l\x1b[?2027l\x1b[?2004h"
@@ -182,13 +189,16 @@ type statusView struct {
 	mode      statusMode
 	command   string
 	gotoFirst bool
+	history   bool
+	color     bool
 	err       error
 	notice    string
 }
 
 type statusSnapshot struct {
-	query string
-	view  terminal.Overview
+	history bool
+	query   string
+	view    terminal.Overview
 }
 
 func (v statusView) sessions() []terminal.SessionSummary {
@@ -199,14 +209,22 @@ func (v statusView) sessions() []terminal.SessionSummary {
 }
 
 func (v *statusView) refresh(result statusResult) {
-	if result.query != v.query {
+	if result.query != v.query || result.history != v.history {
 		return
 	}
 	v.err = result.err
 	if result.err != nil {
 		return
 	} // retain the last successful snapshot
-	v.snapshot = &statusSnapshot{query: result.query, view: result.view}
+	groups := map[string]int{"Open terminals": 0, "Agents": 1, "Needs attention": 2, "History": 3}
+	sort.SliceStable(result.view.Sessions, func(i, j int) bool {
+		a, b := result.view.Sessions[i], result.view.Sessions[j]
+		if x, y := groups[sessionGroup(a)], groups[sessionGroup(b)]; x != y {
+			return x < y
+		}
+		return strings.ToLower(sessionName(a)) < strings.ToLower(sessionName(b))
+	})
+	v.snapshot = &statusSnapshot{query: result.query, history: result.history, view: result.view}
 	for _, row := range v.sessions() {
 		if row.ID == v.selected {
 			return
@@ -237,7 +255,7 @@ func (v *statusView) move(delta int) {
 
 // refreshStatus has one request in flight and keeps at most one unread result.
 // Navigation and typing never wait for the daemon.
-func refreshStatus(ctx context.Context, c client.API, options terminal.OverviewOptions, queries <-chan string, updates chan statusResult) {
+func refreshStatus(ctx context.Context, c client.API, options terminal.OverviewOptions, queries <-chan statusQuery, updates chan statusResult) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	requestBudget := 2 * time.Second
@@ -253,7 +271,7 @@ func refreshStatus(ctx context.Context, c client.API, options terminal.OverviewO
 		if ctx.Err() != nil {
 			return
 		}
-		result := statusResult{query: options.Query, view: view, err: err}
+		result := statusResult{query: options.Query, history: !options.ActiveOnly, view: view, err: err}
 		select {
 		case <-updates:
 		default:
@@ -267,109 +285,28 @@ func refreshStatus(ctx context.Context, c client.API, options terminal.OverviewO
 		case <-ctx.Done():
 			return
 		case query := <-queries:
-			options.Query = query
+			options.Query, options.ActiveOnly = query.text, !query.history
 		case <-ticker.C:
 			select {
 			case query := <-queries:
-				options.Query = query
+				options.Query, options.ActiveOnly = query.text, !query.history
 			default:
 			}
 		}
 	}
 }
 
-func queueStatusQuery(queries chan string, query string) {
+type statusQuery struct {
+	text    string
+	history bool
+}
+
+func queueStatusQuery(queries chan statusQuery, query string, history bool) {
 	select {
 	case <-queries:
 	default:
 	}
-	queries <- query
-}
-
-func statusFrame(v statusView, cols, rows int) string {
-	header := "ptyd | Loading sessions…"
-	if v.snapshot != nil {
-		header = "ptyd | " + overviewCounts(v.snapshot.view)
-	}
-	lines := []string{header}
-	if v.err != nil {
-		lines = append(lines, "STALE / unavailable: "+v.err.Error())
-	} else if v.snapshot == nil || v.snapshot.query != v.query {
-		lines = append(lines, "Loading filter; rows below are from the last successful snapshot.")
-	} else if v.notice != "" {
-		lines = append(lines, v.notice)
-	} else if v.snapshot != nil && len(v.snapshot.view.DiscoveryIssues) > 0 {
-		issue := v.snapshot.view.DiscoveryIssues[0]
-		lines = append(lines, string(issue.Provider)+": "+issue.Message)
-	} else {
-		lines = append(lines, "Choose a session. Use i to enter and quick jk to return.")
-	}
-	filter := "Filter: " + v.query
-	switch v.mode {
-	case statusSearch:
-		filter = "/" + v.query + " | Enter applies, Esc returns"
-	case statusCommand:
-		filter = ":" + v.command
-	default:
-		filter = "NORMAL | " + filter
-	}
-	lines = append(lines, filter, "  "+padStatus("ID", 20)+" "+padStatus("NAME", 20)+" "+padStatus("STATE", 12)+" IDLE  ATTN  CLIENTS")
-	available := max(rows-11, 1)
-	selected := v.selectedIndex()
-	start := max(selected-available+1, 0)
-	for i := start; i < len(v.sessions()) && i < start+available; i++ {
-		row := v.sessions()[i]
-		marker := "  "
-		if row.ID == v.selected {
-			marker = "> "
-		}
-		line := marker + padStatus(string(row.ID), 20) + " " + padStatus(row.Name, 20) + " " + padStatus(overviewState(row), 12)
-		line += padStatus(overviewIdle(row), 6)
-		line += fmt.Sprintf("%4d %7d", row.Attention, row.Attached)
-		lines = append(lines, line)
-	}
-	if v.snapshot != nil && v.snapshot.query == v.query && len(v.sessions()) == 0 {
-		lines = append(lines, "No matching sessions. Start one with ptyd new.")
-	}
-	if len(v.sessions()) > 0 {
-		row := v.sessions()[selected]
-		detail := "Command: " + row.Command
-		if row.Agent != "" {
-			detail += " | Agent: " + row.Agent
-		}
-		lines = append(lines, "", "Directory: "+row.CWD, detail)
-		if row.Preview != nil {
-			preview := row.Preview.Source + ": " + row.Preview.Text
-			if row.Preview.Truncated {
-				preview += "…"
-			}
-			lines = append(lines, preview)
-		}
-	}
-	lines = append(lines, "", "j/k move | i/Enter attach | / search | : command | ? help | q quit", "Attached: jk returns here | gg/G first/last")
-	if v.mode == statusHelp {
-		lines = []string{"ptyd controls", "", "j / k       Select the next / previous session", "gg / G      Select the first / last session", "i / Enter   Attach to the selected session", "/           Search by name, directory, command or agent", "Esc         Leave search or command entry", "r           Refresh", "", ":b name     Attach to a shown session by exact name or id", ":bn / :bp   Attach to the next / previous shown session", ":ls         Clear search and list sessions", ":q          Leave the picker; sessions keep running", ":help / ?   Show this help", "", "While attached: type j then k within 200 ms to return.", "To type literal jk, pause between letters or use bracketed paste.", "", "q, ? or Esc returns to the picker"}
-	}
-	footerRows := 2
-	if v.mode == statusHelp {
-		footerRows = 1
-	}
-	if rows >= footerRows && len(lines) > rows {
-		footer := append([]string(nil), lines[len(lines)-footerRows:]...)
-		lines = append(lines[:rows-footerRows], footer...)
-	}
-	var out strings.Builder
-	out.WriteString("\x1b[H\x1b[2J")
-	for i, line := range lines {
-		if i >= max(rows, 1) {
-			break
-		}
-		if i > 0 {
-			out.WriteString("\r\n")
-		}
-		out.WriteString(displayText(line, max(cols-1, 1)))
-	}
-	return out.String()
+	queries <- statusQuery{text: query, history: history}
 }
 
 func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.File) error {
@@ -393,11 +330,13 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		return err
 	}
 	defer func() { input.Close() }()
+	_, _ = io.WriteString(out, "\x1b[22;0t\x1b]2;ptyd · Sessions\x1b\\")
+	defer func() { _, _ = io.WriteString(out, "\x1b[23;0t") }()
 	_, _ = io.WriteString(out, statusEnter)
-	queries := make(chan string, 1)
+	queries := make(chan statusQuery, 1)
 	updates := make(chan statusResult, 1)
 	go refreshStatus(ctx, c, options, queries, updates)
-	v := statusView{query: options.Query}
+	v := statusView{query: options.Query, history: !options.ActiveOnly, color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
 	var pending []byte
 	pasting := false
 	escapeExpired := false
@@ -418,10 +357,10 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		_ = term.Restore(int(in.Fd()), raw)
 		raw = nil
 		_, _ = io.WriteString(out, "\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
-		code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: row.Name}, false, initial)
-		v.notice = ""
+		code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: sessionApp(row) + " · " + sessionName(row)}, client.Options{InitialInput: initial, ReadOnly: row.External == nil && row.State != terminal.OverviewRunning, HoldReadOnly: true})
+		v.notice = "Returned from " + sessionName(row) + "."
 		if code != 0 {
-			v.notice = fmt.Sprintf("Attachment to %s ended with code %d. Its last window is in local scrollback.", row.ID, code)
+			v.notice = "The window closed. Refresh or open it again."
 		}
 		if ctx.Err() != nil {
 			return nil
@@ -435,9 +374,9 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 			return err
 		}
 		input = nextInput
-		_, _ = io.WriteString(out, statusEnter)
+		_, _ = io.WriteString(out, "\x1b]2;ptyd · Sessions\x1b\\"+statusEnter)
 		v.selected = row.ID
-		queueStatusQuery(queries, v.query)
+		queueStatusQuery(queries, v.query, v.history)
 		return nil
 	}
 	type importResult struct {
@@ -468,7 +407,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 			if err = client.FlushInput(in); err != nil {
 				return err
 			}
-			row := terminal.SessionSummary{ID: imported.result.Terminal.ID, Name: imported.result.Terminal.Name, Source: imported.result.Terminal.Source}
+			row := terminal.SessionSummary{ID: imported.result.Terminal.ID, Name: imported.result.Terminal.Name, Source: imported.result.Terminal.Source, Agent: string(imported.result.Session.Ref.Provider), State: terminal.OverviewRunning}
 			if err = showTerminal(row, nil); err != nil {
 				return err
 			}
@@ -532,7 +471,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 							before := v.query
 							v.key(r)
 							if before != v.query {
-								queueStatusQuery(queries, v.query)
+								queueStatusQuery(queries, v.query, v.history)
 							}
 						}
 					}
@@ -559,18 +498,18 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 					continue
 				}
 				pending = pending[n:]
-				previousQuery := v.query
+				previousQuery, previousHistory := v.query, v.history
 				action := v.key(r)
-				if previousQuery != v.query {
-					queueStatusQuery(queries, v.query)
+				if previousQuery != v.query || previousHistory != v.history {
+					queueStatusQuery(queries, v.query, v.history)
 				}
 				switch action {
 				case statusQuit:
 					return nil
 				case statusRefresh:
-					queueStatusQuery(queries, v.query)
+					queueStatusQuery(queries, v.query, v.history)
 				case statusAttach:
-					if len(v.sessions()) == 0 || v.snapshot == nil || v.snapshot.query != v.query {
+					if len(v.sessions()) == 0 || v.snapshot == nil || (v.snapshot.query != v.query || v.snapshot.history != v.history) {
 						continue
 					}
 					row := v.sessions()[v.selectedIndex()]
@@ -584,7 +523,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 						}
 						operation, cancelOperation := context.WithCancel(ctx)
 						importCancel = cancelOperation
-						request := terminal.ImportRequest{Ref: row.External.Ref}
+						request := terminal.ImportRequest{Ref: row.External.Ref, TerminalEnv: client.TerminalEnvironment()}
 						v.notice = "Opening native session… q cancels."
 						draw()
 						go func() {

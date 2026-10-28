@@ -17,9 +17,10 @@ Type "clear" Enter
 Show
 Type "ptyd ui --discover=false" Enter
 Sleep 1200ms
-Type "?"
-Sleep 3s
-Type "q"
+Type "h"
+Sleep 1500ms
+Type "h"
+Sleep 1200ms
 Type ":b build" Enter
 Sleep 1500ms
 Type "hello from the keyboard" Enter

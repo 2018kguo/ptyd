@@ -93,6 +93,9 @@ func (v *statusView) key(r rune) statusAction {
 		v.mode, v.command = statusCommand, ""
 	case '?':
 		v.mode = statusHelp
+	case 'h':
+		v.history = !v.history
+		return statusRefresh
 	case 'q':
 		return statusQuit
 	case 'r':
@@ -110,10 +113,20 @@ func (v *statusView) runCommand() statusAction {
 	v.cancelPrompt()
 	v.notice = ""
 	switch {
+	case verb == "info" && arg == "":
+		if len(v.sessions()) > 0 {
+			v.notice = "Window id: " + string(v.sessions()[v.selectedIndex()].ID)
+		}
 	case (verb == "q" || verb == "quit") && arg == "":
 		return statusQuit
 	case (verb == "help" || verb == "h") && arg == "":
 		v.mode = statusHelp
+	case verb == "history" && arg == "":
+		v.history = true
+		return statusRefresh
+	case verb == "active" && arg == "":
+		v.history = false
+		return statusRefresh
 	case verb == "ls" && arg == "":
 		v.query = ""
 		return statusRefresh
@@ -134,7 +147,7 @@ func (v *statusView) runCommand() statusAction {
 		// from a title fragment or silently attach the selected fallback row.
 		infos := make([]terminal.Info, 0, len(v.sessions()))
 		for _, row := range v.sessions() {
-			infos = append(infos, terminal.Info{ID: row.ID, Name: row.Name})
+			infos = append(infos, terminal.Info{ID: row.ID, Name: sessionName(row)})
 		}
 		info, err := client.Find(infos, arg)
 		if err != nil {

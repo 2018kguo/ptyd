@@ -43,7 +43,11 @@ process-generation changes, foreground handoff refusal, persistence, native
 worker survival after detach and picker cancellation/typeahead. Input tests
 check `jk` across read boundaries, key events, literal-input timeouts, paste
 frames and terminal control sequences. Picker tests exercise Vim commands
-and the real PTY handoff.
+and the real PTY handoff. History tests keep completed records available
+without displacing live work. Short-window tests render the selected row
+and controls; incomplete discovery must not claim that no sessions exist.
+Color checks cover a headless daemon, explicit viewer preferences, truecolor
+repaint and title rewriting across every input split.
 
 The optional installed-CLI witnesses use isolated profiles and local fake
 model streams. They make no real model-provider calls and do not attach to
@@ -54,6 +58,10 @@ PTYD_CODEX_TEST_BIN="$(command -v codex)" \
 PTYD_CLAUDE_TEST_BIN="$(command -v claude)" \
   go test ./internal/terminal -run '^TestInstalled(Codex|Claude)ImportKeepsActiveWorker$' -v -count=1
 ```
+
+The Codex check also imports from a daemon with `TERM=dumb` and `NO_COLOR`
+and verifies that the viewing terminal's profile preserves foreground colors
+in the attachment repaint.
 
 Each witness holds a response active while a real native CLI renders new
 output in a ptyd view. Detach must leave the same process generation and
@@ -66,6 +74,6 @@ bounded disconnect check. Native UI redraw is
 not an exact capture of another terminal's past screen or partial output.
 
 The README demo is reproducible with `vhs docs/demo.tape`. Its setup creates
-three disposable local terminals, uses an ephemeral port, and removes its
+disposable local terminals, uses an ephemeral port, and removes its
 own processes and files on exit. It does not need an agent login or call a
 model provider.

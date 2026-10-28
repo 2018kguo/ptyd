@@ -18,6 +18,14 @@ wrap, and are removed when the terminal ends. SIGHUP leaves the daemon
 running. SIGINT/SIGTERM stops requests, checkpoints screens, terminates
 process groups and shuts down.
 
+## Terminal display settings
+
+The daemon can run headless. Programs on PTYs receive `TERM=xterm-256color`
+by default; daemon display flags such as `NO_COLOR` are excluded. CLI-created
+terminals and imported views use the viewing terminal's display settings.
+HTTP callers can set them explicitly. Existing processes keep the environment
+they started with; reopen an imported view to apply a corrected profile.
+
 ## Restore policies
 
 | Policy | After a daemon restart |
@@ -56,7 +64,8 @@ view or shutting down ptyd closes the frontend, while native work continues.
 Unclaimed views expire after one minute. They use no automatic restore
 policy; discover and import again after restarting ptyd.
 
-Use `ptyd ui` for the combined picker. A source
+Use `ptyd ui` for the combined picker. It hides saved history until `h` and
+shows an existing imported window under Open terminals. A source
 reference records which conversation was selected at launch, and does not
 track later navigation inside the native CLI. Generic restart/restore cannot
 reuse that reference without fresh validation. [The import reference](reference.md#import-native-agent-sessions)

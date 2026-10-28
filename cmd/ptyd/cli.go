@@ -136,6 +136,9 @@ func runNew(args []string) int {
 			cfg.Env[k] = v
 		}
 	}
+	if err := client.TerminalEnvironment().Apply(&cfg); err != nil {
+		return fail(err)
+	}
 	interactive := !*detach && term.IsTerminal(int(os.Stdout.Fd()))
 	if cols, rows, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
 		cfg.Cols, cfg.Rows = uint16(cols), uint16(rows)
@@ -149,7 +152,7 @@ func runNew(args []string) int {
 		fmt.Println(info.ID)
 		return 0
 	}
-	code, _ := attach(context.Background(), c, info, false, nil)
+	code, _ := attach(context.Background(), c, info, client.Options{})
 	return code
 }
 
@@ -168,19 +171,21 @@ func runAttach(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	code, _ := attach(context.Background(), c, info, *readOnly, nil)
+	code, _ := attach(context.Background(), c, info, client.Options{ReadOnly: *readOnly})
 	return code
 }
 
 // attach attaches to t and tells the user how it ended. Its exit code is
 // the program's if the program exited.
-func attach(parent context.Context, c client.API, t terminal.Info, readOnly bool, initialInput []byte) (int, []byte) {
+func attach(parent context.Context, c client.API, t terminal.Info, opts client.Options) (int, []byte) {
 	winch := make(chan os.Signal, 1)
 	signal.Notify(winch, syscall.SIGWINCH)
 	defer signal.Stop(winch)
 	ctx, stop := signal.NotifyContext(parent, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-	result, err := client.Attach(ctx, client.Options{Addr: c.Addr, Token: c.Token, ID: string(t.ID), ReadOnly: readOnly, InitialInput: initialInput}, os.Stdin, os.Stdout, winch)
+	opts.Addr, opts.Token, opts.ID = c.Addr, c.Token, string(t.ID)
+	opts.Label = t.Name
+	result, err := client.Attach(ctx, opts, os.Stdin, os.Stdout, winch)
 	var pending []byte
 	if result.Detached && err == nil {
 		pending = result.PendingInput
@@ -361,6 +366,6 @@ func runRestore(args []string) int {
 		fmt.Println(info.ID)
 		return 0
 	}
-	code, _ := attach(context.Background(), c, info, false, nil)
+	code, _ := attach(context.Background(), c, info, client.Options{})
 	return code
 }

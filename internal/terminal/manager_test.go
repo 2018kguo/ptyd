@@ -205,3 +205,25 @@ func TestMergeEnv(t *testing.T) {
 		t.Fatal("dropped malformed entry")
 	}
 }
+
+func TestPTYDisplayDefaultsIgnoreHeadlessDaemon(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "0")
+	m := NewManager()
+	defer m.CloseAll()
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"defaults", nil, "xterm-256color|absent|absent"},
+		{"explicit", map[string]string{"TERM": "vt100", "NO_COLOR": "yes", "FORCE_COLOR": "0"}, "vt100|yes|0"},
+	} {
+		info, err := m.Create(CreateConfig{Name: tc.name, Command: "sh", Args: []string{"-c", `printf '%s|%s|%s\n' "$TERM" "${NO_COLOR-absent}" "${FORCE_COLOR-absent}"`}, Env: tc.env})
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitScreen(t, m, info.ID, tc.want)
+	}
+}

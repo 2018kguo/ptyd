@@ -10,7 +10,7 @@ control. Both use the same daemon and session ids.
 | `ptyd` | Start the daemon; `ptyd -h` lists flags. |
 | `ptyd new [-n name] [-d] [--restore policy] [command [args...]]` | Start and attach; `-d` prints the id without attaching. |
 | `ptyd ls` | List sessions. |
-| `ptyd ui [--discover=false] [--filter text] [--limit N]` | Open the Vim-style session picker; native discovery is on by default. |
+| `ptyd ui [--discover=false] [--history] [--filter text] [--limit N]` | Open the Vim-style session picker; native discovery is on by default. |
 | `ptyd status [--json \| --watch] [--discover] [--limit N] [--filter text] [--tag tags]` | Attention-first overview; live selection or compact agent JSON. |
 | `ptyd agents [--json]` | Discover native Codex and Claude sessions and their import actions. |
 | `ptyd import [-d] [-n name] [--resume] provider:UUID` | Open a view for an exact native conversation; `-d` prints its terminal id. |
@@ -79,12 +79,23 @@ not inferred agent activity.
   truncation explicitly. A row's `attention` counts its retained events,
   capped by the normal watch retention policy.
 
+`?active=true` excludes completed/stopped managed terminals and saved native
+conversations before applying the row limit. `active_only: true` confirms
+that the daemon applied it; `history_hidden` counts matching records omitted
+by this filter. Counts describe the remaining matches. The default API and
+`ptyd status --json` include history.
+
+The live picker requests this filter and groups shown rows by open terminals,
+agents, handoff needs and history. `h` toggles history; `--history` includes
+it at startup. `ptyd ui` defaults to a 500-row limit; `status` keeps its
+50-row default. Filtering and hiding history never delete a session.
+
 `ptyd status --json` returns this same result. On failure it exits nonzero
 and writes an error to stderr. The live `--watch` view keeps the last
 successful snapshot with a visible stale/error notice if refresh fails.
 Enter attaches to the selected exact id; detaching returns to the view.
-Stopped sessions show their saved window. Restarting them still requires
-an explicit `ptyd restore`.
+Stopped sessions stay open read-only in the picker until `jk`. Restarting
+them still requires an explicit `ptyd restore`.
 
 ## Create a session
 
@@ -104,8 +115,12 @@ an explicit `ptyd restore`.
 ```
 
 Only `name` is required. Defaults: the daemon's shell (`SHELL`, else
-`/bin/sh`), working directory and environment; `TERM=xterm-256color` if
-unset; 80x24; restore `none`. Commands are looked up in the daemon's PATH.
+`/bin/sh`), working directory and environment; 80x24; restore `none`.
+Display settings from the daemon are excluded. `TERM` defaults to
+`xterm-256color`; explicit display settings in `env` win. The CLI forwards
+the viewing terminal's `TERM`, `COLORTERM`, `TERM_PROGRAM`, `NO_COLOR`,
+`CLICOLOR`, `CLICOLOR_FORCE` and `FORCE_COLOR` settings. Commands are looked
+up in the daemon's PATH.
 See [restore policies](operating.md#restore-policies) before using agent restore.
 
 ## Choose lines or a screen
@@ -176,7 +191,14 @@ program. Modified keys and key-repeat events do not activate `jk`; unmodified
 kitty and modifyOtherKeys encodings do. On detach, terminal modes reset and
 the attached window moves into local scrollback. Connection loss exits the
 client with code 1; a normal program exit uses its exit code. Stopped sessions
-attach read-only and return immediately.
+attach read-only and return immediately from the standalone command. In the
+picker, their saved screen stays open until `jk`.
+
+TTY attachments identify the view in the window/tab title, including a
+`jk: sessions` return hint. App title updates retain the ptyd prefix and hint;
+the previous title is restored on return. Colors, cursor controls and other
+terminal output pass through. The title is a view label; it does not verify
+the current conversation after navigation inside an agent.
 
 ### Picker controls
 
@@ -189,6 +211,8 @@ attach read-only and return immediately.
 | `:b name` | Attach by exact name, id, unique id prefix or terminal number within shown rows. Ambiguous names are refused. |
 | `:bn` / `:bp` | Attach to the next / previous shown session, wrapping at the ends. |
 | `:ls` | Clear search and refresh the session list. |
+| `h`, `:history` / `:active` | Show history or return to live sessions. |
+| `:info` | Show the selected window id. |
 | `r` | Refresh. |
 | `?`, `:help` | Show controls; `q`, `?` or Escape returns. |
 | `q`, `:q` | Leave the picker; sessions keep running. |
@@ -253,6 +277,12 @@ To import through HTTP, send the exact reference from discovery:
 }
 ```
 
+HTTP callers can add `terminal_env`, a map restricted to the display settings
+listed under [Create a session](#create-a-session). String values set a
+setting; `null` removes it. CLI imports send this profile automatically, so
+a service's `TERM=dumb` or `NO_COLOR` cannot disable the viewer's colors.
+Credentials and agent profile selection are never forwarded through this map.
+
 Replace the example UUID with the discovered id. A stopped Claude conversation
 also needs `"resume": true`; the CLI equivalent is `ptyd import --resume`
 followed by its `claude:UUID` reference. The response contains `terminal`,
@@ -267,7 +297,9 @@ the view with an attachment within one minute; an unclaimed view expires.
 Last detach closes a running temporary frontend. After a frontend exits, its
 exit status remains readable for one minute before cleanup. Closing, killing or expiring that
 frontend does not stop the native worker. Native conversations appear in the
-combined picker; temporary frontends do not add duplicate session rows.
+combined picker. Temporary frontends appear separately under Open terminals,
+so you can reopen that exact window without treating its launch reference
+as its current conversation.
 
 An imported window can navigate to another conversation. Its `source` is
 launch provenance, not proof of its current input target. Another import of

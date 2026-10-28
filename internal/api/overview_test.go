@@ -22,6 +22,9 @@ func TestOverviewAuthenticationAndLimits(t *testing.T) {
 		{"/overview?limit=0", "test-token", 400},
 		{"/overview?limit=501", "test-token", 400},
 		{"/overview?limit=all", "test-token", 400},
+		{"/overview?active=maybe", "test-token", 400},
+		{"/overview?active=true", "test-token", 200},
+		{"/overview?active=false", "test-token", 200},
 		{"/overview?limit=2&q=worker&tag=test", "test-token", 200},
 	} {
 		req := httptest.NewRequest("GET", tc.path, nil)

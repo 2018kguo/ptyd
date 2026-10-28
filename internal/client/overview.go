@@ -11,8 +11,13 @@ import (
 	"github.com/2018kguo/ptyd/internal/terminal"
 )
 
+var ErrOverviewCapabilities = errors.New("daemon does not support live-session filtering; restart the updated daemon")
+
 func (c API) Overview(ctx context.Context, options terminal.OverviewOptions) (terminal.Overview, error) {
 	q := url.Values{}
+	if options.ActiveOnly {
+		q.Set("active", "true")
+	}
 	if options.Discover {
 		q.Set("discover", "true")
 	}
@@ -30,6 +35,9 @@ func (c API) Overview(ctx context.Context, options terminal.OverviewOptions) (te
 	var response *HTTPError
 	if errors.As(err, &response) && response.Status == 404 {
 		return view, fmt.Errorf("restart updated daemon binary or check PTYD_ADDR: %w (no overview at %s)", err, c.Addr)
+	}
+	if err == nil && options.ActiveOnly && !view.ActiveOnly {
+		return view, ErrOverviewCapabilities
 	}
 	return view, err
 }

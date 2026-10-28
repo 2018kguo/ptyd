@@ -319,3 +319,56 @@ func TestAttachedBracketedPasteCannotDetach(t *testing.T) {
 		t.Fatal("real shortcut did not detach")
 	}
 }
+
+func TestSavedScreenStaysOpenUntilUserReturns(t *testing.T) {
+	mgr, addr := startDaemon(t)
+	info, err := mgr.Create(terminal.CreateConfig{Name: "saved", Command: "sh", Args: []string{"-c", "printf SAVED_SCREEN"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "finished", func() bool { row, _ := mgr.Get(info.ID); return row.ExitCode != nil })
+	u := newUserTerminal(t, 80, 24)
+	done := make(chan result, 1)
+	go func() {
+		outcome, err := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: string(info.ID), ReadOnly: true, HoldReadOnly: true, Label: "Saved window"}, u.slave, u.slave, nil)
+		done <- result{outcome.Detached, err}
+	}()
+	eventually(t, "saved screen", func() bool { return strings.Contains(u.text(), "SAVED_SCREEN") })
+	select {
+	case r := <-done:
+		t.Fatalf("saved screen closed before user could read: %+v", r)
+	default:
+	}
+	u.mu.Lock()
+	title := u.screen.Title()
+	u.mu.Unlock()
+	if !strings.Contains(title, "ptyd · Saved window") || !strings.Contains(title, "jk: sessions") {
+		t.Fatalf("missing attached indicator%q", title)
+	}
+	u.typeKeys(t, "jk")
+	select {
+	case r := <-done:
+		if !r.detached || r.err != nil {
+			t.Fatal(r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("saved viewer did not return")
+	}
+}
+
+func TestTerminalEnvironmentKeepsViewerColorPreference(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("LD_PRELOAD", "never-forward")
+	env := TerminalEnvironment()
+	if env["TERM"] == nil || *env["TERM"] != "xterm-256color" || env["NO_COLOR"] == nil || *env["NO_COLOR"] != "1" {
+		t.Fatal("viewer preference lost")
+	}
+	if _, ok := env["LD_PRELOAD"]; ok {
+		t.Fatal("unrelated environment forwarded")
+	}
+	os.Unsetenv("NO_COLOR")
+	if env := TerminalEnvironment(); env["NO_COLOR"] != nil {
+		t.Fatal("absence lost")
+	}
+}

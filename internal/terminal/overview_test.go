@@ -148,3 +148,20 @@ func BenchmarkOverviewJSON(b *testing.B) {
 		b.ReportMetric(float64(len(data)), "response-B")
 	})
 }
+
+func TestActiveOverviewFiltersHistoryBeforeItsBudget(t *testing.T) {
+	zero := 0
+	infos := []Info{}
+	for i := 0; i < 80; i++ {
+		infos = append(infos, Info{ID: ID(fmt.Sprintf("old-%d", i)), Name: "old work", Status: StatusExited, ExitCode: &zero})
+	}
+	infos = append(infos, Info{ID: "live", Name: "live work", Status: StatusRunning})
+	view := BuildOverview(infos, OverviewOptions{ActiveOnly: true, Limit: 1})
+	if view.Counts.Total != 1 || view.HistoryHidden != 80 || view.Truncated || len(view.Sessions) != 1 || view.Sessions[0].ID != "live" {
+		t.Fatalf("history displaced live work: %+v", view)
+	}
+	all := BuildOverview(infos, OverviewOptions{Limit: 100})
+	if all.Counts.Total != 81 || all.HistoryHidden != 0 || len(all.Sessions) != 81 {
+		t.Fatal("default agent overview stopped including history")
+	}
+}

@@ -18,10 +18,11 @@ const (
 
 // OverviewOptions select a bounded view of the canonical session list.
 type OverviewOptions struct {
-	Discover bool
-	Limit    int
-	Query    string
-	Tags     []string
+	ActiveOnly bool
+	Discover   bool
+	Limit      int
+	Query      string
+	Tags       []string
 }
 
 type OverviewCounts struct {
@@ -69,6 +70,8 @@ type SessionSummary struct {
 }
 
 type Overview struct {
+	ActiveOnly         bool             `json:"active_only,omitempty"`
+	HistoryHidden      int              `json:"history_hidden,omitempty"`
 	DiscoveryIssues    []native.Issue   `json:"discovery_issues,omitempty"`
 	DiscoveryTruncated bool             `json:"discovery_truncated,omitempty"`
 	Counts             OverviewCounts   `json:"counts"`
@@ -100,9 +103,13 @@ func BuildOverview(infos []Info, options OverviewOptions) Overview {
 	limit = min(limit, MaxOverviewLimit)
 	query := strings.ToLower(strings.TrimSpace(options.Query))
 	indices := make([]int, 0, min(len(infos), limit))
-	var out Overview
+	out := Overview{ActiveOnly: options.ActiveOnly}
 	for i, info := range infos {
 		if !overviewMatches(info, query, options.Tags) {
+			continue
+		}
+		if options.ActiveOnly && overviewHistory(info) {
+			out.HistoryHidden++
 			continue
 		}
 		out.Counts.Total++
@@ -228,11 +235,8 @@ func BuildDiscoveredOverview(infos []Info, listing native.Listing, options Overv
 	owned := map[native.Ref]bool{}
 	merged := make([]Info, 0, len(infos)+len(listing.Sessions))
 	for _, info := range infos {
-		if info.Source.Provider != "" {
-			continue
-		}
 		merged = append(merged, info)
-		if info.Status == StatusRunning && info.AgentSession != "" {
+		if info.Source.Provider == "" && info.Status == StatusRunning && info.AgentSession != "" {
 			owned[native.Ref{Provider: native.Provider(info.Agent), ID: info.AgentSession}] = true
 		}
 	}
@@ -262,4 +266,25 @@ func BuildDiscoveredOverview(infos []Info, listing native.Listing, options Overv
 	out.DiscoveryIssues = listing.Issues
 	out.DiscoveryTruncated = listing.Truncated
 	return out
+}
+
+// History is retained work, not something a person can open as a live session.
+// Ambiguous native observations stay visible so incomplete discovery cannot
+// silently turn a potentially live agent into an archived record.
+func overviewHistory(info Info) bool {
+	if info.external == nil {
+		return info.Status != StatusRunning
+	}
+	s := info.external
+	if s.Action == native.Resume {
+		return true
+	}
+	if s.Action != native.Unavailable || s.WorkerPID > 0 {
+		return false
+	}
+	switch strings.ToLower(s.Status) {
+	case "done", "completed", "stopped", "failed", "exited":
+		return true
+	}
+	return false
 }
