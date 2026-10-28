@@ -1,0 +1,542 @@
+[
+  {
+    "repeat": 0,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude",
+    "ns": 2983065.0,
+    "MBps": 351.83,
+    "allocated_bytes": 1088277,
+    "allocations": 6159
+  },
+  {
+    "repeat": 0,
+    "label": "baseline",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2572625.0,
+    "MBps": 407.6,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 0,
+    "label": "baseline",
+    "case": "BenchmarkConsume/progress",
+    "ns": 885325.0,
+    "MBps": 1184.65,
+    "allocated_bytes": 28275,
+    "allocations": 217
+  },
+  {
+    "repeat": 0,
+    "label": "baseline",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 57370896.0,
+    "MBps": 18.28,
+    "allocated_bytes": 153964118,
+    "allocations": 745135
+  },
+  {
+    "repeat": 0,
+    "label": "baseline",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 51638792.0,
+    "MBps": 20.31,
+    "allocated_bytes": 158112650,
+    "allocations": 569797
+  },
+  {
+    "repeat": 0,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 4081077.0,
+    "MBps": 257.17,
+    "allocated_bytes": 1125404,
+    "allocations": 6166
+  },
+  {
+    "repeat": 0,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude",
+    "ns": 2801554.0,
+    "MBps": 374.63,
+    "allocated_bytes": 1087861,
+    "allocations": 6159
+  },
+  {
+    "repeat": 0,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2386052.0,
+    "MBps": 439.48,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 0,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/progress",
+    "ns": 725457.0,
+    "MBps": 1445.71,
+    "allocated_bytes": 27488,
+    "allocations": 216
+  },
+  {
+    "repeat": 0,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 18645906.0,
+    "MBps": 56.24,
+    "allocated_bytes": 1313098,
+    "allocations": 15358
+  },
+  {
+    "repeat": 0,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 12184502.0,
+    "MBps": 86.06,
+    "allocated_bytes": 1494740,
+    "allocations": 30071
+  },
+  {
+    "repeat": 0,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 4075401.0,
+    "MBps": 257.53,
+    "allocated_bytes": 1126460,
+    "allocations": 6165
+  },
+  {
+    "repeat": 1,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude",
+    "ns": 3045176.0,
+    "MBps": 344.66,
+    "allocated_bytes": 1089667,
+    "allocations": 6161
+  },
+  {
+    "repeat": 1,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2442986.0,
+    "MBps": 429.23,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 1,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/progress",
+    "ns": 723602.0,
+    "MBps": 1449.42,
+    "allocated_bytes": 27488,
+    "allocations": 216
+  },
+  {
+    "repeat": 1,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 19063545.0,
+    "MBps": 55.01,
+    "allocated_bytes": 1313098,
+    "allocations": 15358
+  },
+  {
+    "repeat": 1,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 12226710.0,
+    "MBps": 85.76,
+    "allocated_bytes": 1494740,
+    "allocations": 30071
+  },
+  {
+    "repeat": 1,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 3782816.0,
+    "MBps": 277.45,
+    "allocated_bytes": 1122845,
+    "allocations": 6164
+  },
+  {
+    "repeat": 1,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude",
+    "ns": 2933878.0,
+    "MBps": 357.73,
+    "allocated_bytes": 1088493,
+    "allocations": 6160
+  },
+  {
+    "repeat": 1,
+    "label": "baseline",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2426279.0,
+    "MBps": 432.19,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 1,
+    "label": "baseline",
+    "case": "BenchmarkConsume/progress",
+    "ns": 814412.0,
+    "MBps": 1287.8,
+    "allocated_bytes": 28188,
+    "allocations": 217
+  },
+  {
+    "repeat": 1,
+    "label": "baseline",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 58304260.0,
+    "MBps": 17.98,
+    "allocated_bytes": 153964094,
+    "allocations": 745135
+  },
+  {
+    "repeat": 1,
+    "label": "baseline",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 56452646.0,
+    "MBps": 18.58,
+    "allocated_bytes": 158112654,
+    "allocations": 569797
+  },
+  {
+    "repeat": 1,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 4011950.0,
+    "MBps": 261.6,
+    "allocated_bytes": 1124635,
+    "allocations": 6166
+  },
+  {
+    "repeat": 2,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude",
+    "ns": 2978609.0,
+    "MBps": 352.36,
+    "allocated_bytes": 1088277,
+    "allocations": 6159
+  },
+  {
+    "repeat": 2,
+    "label": "baseline",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2373927.0,
+    "MBps": 441.72,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 2,
+    "label": "baseline",
+    "case": "BenchmarkConsume/progress",
+    "ns": 800258.0,
+    "MBps": 1310.58,
+    "allocated_bytes": 27945,
+    "allocations": 217
+  },
+  {
+    "repeat": 2,
+    "label": "baseline",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 52594375.0,
+    "MBps": 19.94,
+    "allocated_bytes": 153964094,
+    "allocations": 745135
+  },
+  {
+    "repeat": 2,
+    "label": "baseline",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 49508658.0,
+    "MBps": 21.18,
+    "allocated_bytes": 158055976,
+    "allocations": 569686
+  },
+  {
+    "repeat": 2,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 4069239.0,
+    "MBps": 257.92,
+    "allocated_bytes": 1131716,
+    "allocations": 6167
+  },
+  {
+    "repeat": 2,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude",
+    "ns": 2821148.0,
+    "MBps": 372.03,
+    "allocated_bytes": 1087095,
+    "allocations": 6158
+  },
+  {
+    "repeat": 2,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2412331.0,
+    "MBps": 434.69,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 2,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/progress",
+    "ns": 784156.0,
+    "MBps": 1337.49,
+    "allocated_bytes": 27796,
+    "allocations": 216
+  },
+  {
+    "repeat": 2,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 20160904.0,
+    "MBps": 52.01,
+    "allocated_bytes": 1332565,
+    "allocations": 15390
+  },
+  {
+    "repeat": 2,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 12724138.0,
+    "MBps": 82.41,
+    "allocated_bytes": 1497722,
+    "allocations": 30077
+  },
+  {
+    "repeat": 2,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 3808898.0,
+    "MBps": 275.55,
+    "allocated_bytes": 1126467,
+    "allocations": 6166
+  },
+  {
+    "repeat": 3,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude",
+    "ns": 2881602.0,
+    "MBps": 364.22,
+    "allocated_bytes": 1087095,
+    "allocations": 6158
+  },
+  {
+    "repeat": 3,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2448400.0,
+    "MBps": 428.28,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 3,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/progress",
+    "ns": 723812.0,
+    "MBps": 1448.99,
+    "allocated_bytes": 27475,
+    "allocations": 216
+  },
+  {
+    "repeat": 3,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 19082493.0,
+    "MBps": 54.95,
+    "allocated_bytes": 1313098,
+    "allocations": 15358
+  },
+  {
+    "repeat": 3,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 12233079.0,
+    "MBps": 85.72,
+    "allocated_bytes": 1497722,
+    "allocations": 30077
+  },
+  {
+    "repeat": 3,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 3831650.0,
+    "MBps": 273.91,
+    "allocated_bytes": 1124951,
+    "allocations": 6165
+  },
+  {
+    "repeat": 3,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude",
+    "ns": 3176894.0,
+    "MBps": 330.37,
+    "allocated_bytes": 1087661,
+    "allocations": 6159
+  },
+  {
+    "repeat": 3,
+    "label": "baseline",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2523024.0,
+    "MBps": 415.62,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 3,
+    "label": "baseline",
+    "case": "BenchmarkConsume/progress",
+    "ns": 822499.0,
+    "MBps": 1275.14,
+    "allocated_bytes": 28104,
+    "allocations": 217
+  },
+  {
+    "repeat": 3,
+    "label": "baseline",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 52268208.0,
+    "MBps": 20.06,
+    "allocated_bytes": 153964098,
+    "allocations": 745135
+  },
+  {
+    "repeat": 3,
+    "label": "baseline",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 49042392.0,
+    "MBps": 21.38,
+    "allocated_bytes": 158055982,
+    "allocations": 569686
+  },
+  {
+    "repeat": 3,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 3898738.0,
+    "MBps": 269.2,
+    "allocated_bytes": 1120852,
+    "allocations": 6167
+  },
+  {
+    "repeat": 4,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude",
+    "ns": 2967703.0,
+    "MBps": 353.66,
+    "allocated_bytes": 1087468,
+    "allocations": 6159
+  },
+  {
+    "repeat": 4,
+    "label": "baseline",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2466595.0,
+    "MBps": 425.12,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 4,
+    "label": "baseline",
+    "case": "BenchmarkConsume/progress",
+    "ns": 811419.0,
+    "MBps": 1292.55,
+    "allocated_bytes": 27992,
+    "allocations": 217
+  },
+  {
+    "repeat": 4,
+    "label": "baseline",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 52539073.0,
+    "MBps": 19.96,
+    "allocated_bytes": 153964106,
+    "allocations": 745135
+  },
+  {
+    "repeat": 4,
+    "label": "baseline",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 50716490.0,
+    "MBps": 20.68,
+    "allocated_bytes": 158112654,
+    "allocations": 569797
+  },
+  {
+    "repeat": 4,
+    "label": "baseline",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 4376011.0,
+    "MBps": 239.84,
+    "allocated_bytes": 1127737,
+    "allocations": 6170
+  },
+  {
+    "repeat": 4,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude",
+    "ns": 2947324.0,
+    "MBps": 356.1,
+    "allocated_bytes": 1089918,
+    "allocations": 6161
+  },
+  {
+    "repeat": 4,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/logs",
+    "ns": 2384654.0,
+    "MBps": 439.73,
+    "allocated_bytes": 1163702,
+    "allocations": 10302
+  },
+  {
+    "repeat": 4,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/progress",
+    "ns": 731581.0,
+    "MBps": 1433.61,
+    "allocated_bytes": 27500,
+    "allocations": 216
+  },
+  {
+    "repeat": 4,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/graphemes",
+    "ns": 18969205.0,
+    "MBps": 55.28,
+    "allocated_bytes": 1313098,
+    "allocations": 15358
+  },
+  {
+    "repeat": 4,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/cjk",
+    "ns": 12235107.0,
+    "MBps": 85.7,
+    "allocated_bytes": 1497722,
+    "allocations": 30077
+  },
+  {
+    "repeat": 4,
+    "label": "phosphor",
+    "case": "BenchmarkConsume/claude-persist",
+    "ns": 3458925.0,
+    "MBps": 303.43,
+    "allocated_bytes": 1115441,
+    "allocations": 6163
+  }
+]
