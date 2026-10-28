@@ -2,6 +2,8 @@ package client
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -22,5 +24,9 @@ func (c API) Overview(ctx context.Context, options terminal.OverviewOptions) (te
 	}
 	var view terminal.Overview
 	err := c.DoContext(ctx, "GET", "/overview?"+q.Encode(), nil, &view)
+	var response *HTTPError
+	if errors.As(err, &response) && response.Status == 404 {
+		return view, fmt.Errorf("restart updated daemon binary or check PTYD_ADDR: %w (no overview at %s)", err, c.Addr)
+	}
 	return view, err
 }

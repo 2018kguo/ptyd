@@ -439,7 +439,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 					_ = term.Restore(int(in.Fd()), raw)
 					raw = nil
 					_, _ = io.WriteString(out, "\x1b[0m\x1b[?25h\x1b[?1049l")
-					code, unread := attach(c, terminal.Info{ID: row.ID, Name: row.Name}, false, initial)
+					code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: row.Name}, false, initial)
 					v.notice = ""
 					if code != 0 {
 						v.notice = fmt.Sprintf("Attachment to %s ended with code %d. Its last window is in local scrollback.", row.ID, code)

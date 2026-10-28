@@ -130,21 +130,21 @@ func BenchmarkOverviewJSON(b *testing.B) {
 	b.Run("FullList", func(b *testing.B) {
 		b.ReportAllocs()
 		data, _ := json.Marshal(infos)
-		b.ReportMetric(float64(len(data)), "response-B")
 		for b.Loop() {
 			if _, err := json.Marshal(infos); err != nil {
 				b.Fatal(err)
 			}
 		}
+		b.ReportMetric(float64(len(data)), "response-B")
 	})
 	b.Run("Overview50", func(b *testing.B) {
 		b.ReportAllocs()
 		data, _ := json.Marshal(BuildOverview(infos, OverviewOptions{}))
-		b.ReportMetric(float64(len(data)), "response-B")
 		for b.Loop() {
 			if _, err := json.Marshal(BuildOverview(infos, OverviewOptions{})); err != nil {
 				b.Fatal(err)
 			}
 		}
+		b.ReportMetric(float64(len(data)), "response-B")
 	})
 }

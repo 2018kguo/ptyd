@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/2018kguo/phosphor"
+	"github.com/2018kguo/ptyd/internal/client"
 	"github.com/2018kguo/ptyd/internal/terminal"
 )
 
@@ -192,5 +194,34 @@ func TestCLIStatusWatchDoesNotWaitForRefresh(t *testing.T) {
 	}
 	if code := w.waitExit(); code != 0 {
 		t.Fatalf("exit: %d", code)
+	}
+}
+
+func TestStatusUnsupportedDaemonShowsRecovery(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+	c := client.API{Addr: strings.TrimPrefix(server.URL, "http://")}
+	_, err := c.Overview(context.Background(), terminal.OverviewOptions{})
+	frame := statusFrame(statusView{err: err}, 80, 24)
+	if !strings.Contains(frame, "restart updated daemon binary") || !strings.Contains(frame, "PTYD_ADDR") {
+		t.Fatalf("recovery was clipped: %q", frame)
+	}
+}
+
+func TestStatusAttachPreservesCancellation(t *testing.T) {
+	requested := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested <- struct{}{}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // The overview was cancelled before attachment started.
+	c := client.API{Addr: strings.TrimPrefix(server.URL, "http://")}
+	attach(ctx, c, terminal.Info{ID: "term-test"}, false, nil)
+	select {
+	case <-requested:
+		t.Fatal("attachment discarded overview cancellation")
+	default:
 	}
 }

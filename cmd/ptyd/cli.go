@@ -141,7 +141,7 @@ func runNew(args []string) int {
 		fmt.Println(info.ID)
 		return 0
 	}
-	code, _ := attach(c, info, false, nil)
+	code, _ := attach(context.Background(), c, info, false, nil)
 	return code
 }
 
@@ -160,17 +160,17 @@ func runAttach(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	code, _ := attach(c, info, *readOnly, nil)
+	code, _ := attach(context.Background(), c, info, *readOnly, nil)
 	return code
 }
 
 // attach attaches to t and tells the user how it ended. Its exit code is
 // the program's if the program exited.
-func attach(c client.API, t terminal.Info, readOnly bool, initialInput []byte) (int, []byte) {
+func attach(parent context.Context, c client.API, t terminal.Info, readOnly bool, initialInput []byte) (int, []byte) {
 	winch := make(chan os.Signal, 1)
 	signal.Notify(winch, syscall.SIGWINCH)
 	defer signal.Stop(winch)
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop := signal.NotifyContext(parent, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	result, err := client.Attach(ctx, client.Options{Addr: c.Addr, Token: c.Token, ID: string(t.ID), ReadOnly: readOnly, InitialInput: initialInput}, os.Stdin, os.Stdout, winch)
 	var pending []byte
@@ -353,6 +353,6 @@ func runRestore(args []string) int {
 		fmt.Println(info.ID)
 		return 0
 	}
-	code, _ := attach(c, info, false, nil)
+	code, _ := attach(context.Background(), c, info, false, nil)
 	return code
 }
