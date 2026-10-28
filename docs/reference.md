@@ -10,6 +10,7 @@ control. Both use the same daemon and session ids.
 | `ptyd` | Start the daemon; `ptyd -h` lists flags. |
 | `ptyd new [-n name] [-d] [--restore policy] [command [args...]]` | Start and attach; `-d` prints the id without attaching. |
 | `ptyd ls` | List sessions. |
+| `ptyd ui [--discover=false] [--filter text] [--limit N]` | Open the Vim-style session picker; native discovery is on by default. |
 | `ptyd status [--json \| --watch] [--discover] [--limit N] [--filter text] [--tag tags]` | Attention-first overview; live selection or compact agent JSON. |
 | `ptyd agents [--json]` | Discover native Codex and Claude sessions and their import actions. |
 | `ptyd import [-d] [-n name] [--resume] provider:UUID` | Open a view for an exact native conversation; `-d` prints its terminal id. |
@@ -162,11 +163,41 @@ write can submit a command twice.
 
 ## Attach
 
-Ctrl-\\ twice within a second detaches; a single Ctrl-\\ reaches the program
-after that second. Other keys go straight to it. On detach, terminal modes
-reset and the attached window moves into your local scrollback. A daemon
-connection loss exits the client with code 1; a normal program exit uses
-its exit code. Stopped sessions attach read-only and return immediately.
+Type `j` then `k` within 200 ms to detach. In `ptyd ui` (or
+`status --watch`), this returns to the picker. Standalone `attach`, `new`
+and `import` return to your shell. A lone `j` waits up to 200 ms for `k`;
+to send literal `jk`, pause between the letters or use bracketed paste.
+Bracketed-paste frames pass through unchanged. Unframed pasted input is
+indistinguishable from typing and follows the same shortcut rule. Piped
+input passes through without local shortcuts.
+
+Escape, double Escape, control keys and function keys belong to the attached
+program. Modified keys and key-repeat events do not activate `jk`; unmodified
+kitty and modifyOtherKeys encodings do. On detach, terminal modes reset and
+the attached window moves into local scrollback. Connection loss exits the
+client with code 1; a normal program exit uses its exit code. Stopped sessions
+attach read-only and return immediately.
+
+### Picker controls
+
+| Key or command | Action |
+|---|---|
+| `j` / `k`, arrows | Next / previous session. |
+| `gg` / `G` | First / last session. |
+| `i`, Enter | Attach to the selected session. |
+| `/` | Search; Enter applies, Escape returns to normal mode. |
+| `:b name` | Attach by exact name, id, unique id prefix or terminal number within shown rows. Ambiguous names are refused. |
+| `:bn` / `:bp` | Attach to the next / previous shown session, wrapping at the ends. |
+| `:ls` | Clear search and refresh the session list. |
+| `r` | Refresh. |
+| `?`, `:help` | Show controls; `q`, `?` or Escape returns. |
+| `q`, `:q` | Leave the picker; sessions keep running. |
+
+Escape cancels an unfinished `:` command. Pasted text can edit search and
+command prompts, but cannot execute commands or move the selection. At a
+row limit, `:b` only resolves shown rows; clear the filter or raise `--limit`
+for a target outside that snapshot. Native session handoff still follows the
+[import rules](#import-native-agent-sessions).
 
 Attaching resizes the PTY. Several clients can type; the latest one to type
 wins its window size. `/resize` wins until the next client resize or input.

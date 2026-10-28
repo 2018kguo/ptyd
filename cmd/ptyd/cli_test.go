@@ -233,7 +233,7 @@ func TestCLIAttachDetachExit(t *testing.T) {
 	w := d.open(60, 10, "new", "-n", "w", "--", "sh")
 	w.keys("PS1='$ '; printf '\\033[?1h\\033[?2004h\\033[?25l'; echo typed-$((40+2))\r")
 	w.waitText("typed-42")
-	w.keys("\x1c\x1c")
+	w.keys("jk")
 	if code := w.waitExit(); code != 0 {
 		t.Fatalf("detach exit code %d", code)
 	}
@@ -280,7 +280,7 @@ func TestCLIDaemonKilledWhileAttached(t *testing.T) {
 	w.waitText("before-crash-2")
 	w.keys("echo after-$((1+1))\r")
 	w.waitText("after-2")
-	w.keys("\x1c\x1c")
+	w.keys("jk")
 	w.waitExit()
 
 	w = d.open(60, 10, "attach", "old")
@@ -296,7 +296,7 @@ func TestCLIDaemonKilledWhileAttached(t *testing.T) {
 	w.waitText("ptyd: restarted sh after a daemon restart")
 	w.keys("typed-after-restore\r")
 	w.waitText("typed-after-restore\ntyped-after-restore")
-	w.keys("\x1c\x1c")
+	w.keys("jk")
 	if code := w.waitExit(); code != 0 {
 		t.Fatalf("restore attach exit code %d", code)
 	}

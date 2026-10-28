@@ -152,10 +152,10 @@ func TestCLIStatusWatchAttachReturn(t *testing.T) {
 		d.waitScreen(id, func(s screen) bool { return strings.Contains(strings.Join(s.Lines, "\n"), marker) })
 		if i == 1 {
 			// The next overview key can share a read with both detach keys.
-			w.keys("\x1c\x1cq")
+			w.keys("jkq")
 			break
 		}
-		w.keys("\x1c\x1c")
+		w.keys("jk")
 		w.waitText("ptyd |")
 		w.waitText("watch-target")
 	}
@@ -352,7 +352,7 @@ func TestStatusNativeImportDiscardsPreHandoffKeysAndReleasesView(t *testing.T) {
 	}
 	w.keys("fresh-input\r")
 	w.waitText("fresh-input")
-	w.keys("\x1c\x1cq")
+	w.keys("jkq")
 	if code := w.waitExit(); code != 0 {
 		t.Fatalf("watch exit %d", code)
 	}
@@ -400,7 +400,7 @@ func TestNativeCLIDetachKeepsOtherViewers(t *testing.T) {
 			id := rows[0].ID
 			second := d.open(110, 20, "attach", string(id))
 			second.waitText("VIEW_READY")
-			first.keys("\x1c\x1c")
+			first.keys("jk")
 			if mode == "picker" {
 				first.waitText("native-fixture")
 				first.keys("q")
@@ -414,7 +414,7 @@ func TestNativeCLIDetachKeepsOtherViewers(t *testing.T) {
 			}
 			second.keys("second-client-live\r")
 			second.waitText("second-client-live")
-			second.keys("\x1c\x1c")
+			second.keys("jk")
 			if code := second.waitExit(); code != 0 {
 				t.Fatalf("second viewer exit: %d", code)
 			}
@@ -468,5 +468,156 @@ func TestStatusDiscoveryAllowsBoundedSlowProvider(t *testing.T) {
 	w.keys("q")
 	if code := w.waitExit(); code != 0 {
 		t.Fatalf("picker exit %d", code)
+	}
+}
+
+func TestVimPickerKeysAndCommands(t *testing.T) {
+	v := statusView{}
+	v.refresh(statusResult{view: terminal.Overview{Sessions: []terminal.SessionSummary{{ID: "term-1-aaaa", Name: "one"}, {ID: "term-2-bbbb", Name: "two"}, {ID: "term-3-cccc", Name: "two"}}}})
+	keys := func(s string) statusAction {
+		var action statusAction
+		for _, r := range s {
+			action = v.key(r)
+		}
+		return action
+	}
+	keys("G")
+	if v.selected != "term-3-cccc" {
+		t.Fatal("G did not reach last")
+	}
+	keys("gg")
+	if v.selected != "term-1-aaaa" {
+		t.Fatal("gg did not reach first")
+	}
+	keys("j")
+	if v.selected != "term-2-bbbb" {
+		t.Fatal("j did not move")
+	}
+	keys("k")
+	if v.selected != "term-1-aaaa" {
+		t.Fatal("k did not move")
+	}
+	if keys(":b 2\r") != statusAttach || v.selected != "term-2-bbbb" {
+		t.Fatal("numeric :b did not resolve exact terminal")
+	}
+	if keys(":b two\r") != statusStay || !strings.Contains(v.notice, "matches 2") {
+		t.Fatal("ambiguous buffer target accepted")
+	}
+	if keys(":b absent\r") != statusStay || !strings.Contains(v.notice, "no terminal") {
+		t.Fatal("missing buffer attached fallback")
+	}
+	if keys(":bn\r") != statusAttach || v.selected != "term-3-cccc" {
+		t.Fatal(":bn did not advance")
+	}
+	if keys(":bn\r") != statusAttach || v.selected != "term-1-aaaa" {
+		t.Fatal(":bn did not wrap")
+	}
+	if keys(":bp\r") != statusAttach || v.selected != "term-3-cccc" {
+		t.Fatal(":bp did not wrap")
+	}
+	keys("/snow雪")
+	keys("\x7f")
+	if v.query != "snow" || v.mode != statusSearch {
+		t.Fatal("search backspace split a rune")
+	}
+	keys("\x1b")
+	if v.mode != statusNormal || v.query != "snow" {
+		t.Fatal("Esc did not leave search")
+	}
+	if keys(":ls\r") != statusRefresh || v.query != "" {
+		t.Fatal(":ls did not clear search")
+	}
+	keys(":q\x1b")
+	if v.mode != statusNormal || v.command != "" {
+		t.Fatal("cancelled command retained")
+	}
+	keys("?")
+	if v.mode != statusHelp {
+		t.Fatal("help not opened")
+	}
+	if keys("q") != statusStay || v.mode != statusNormal {
+		t.Fatal("help q quit the picker")
+	}
+	if keys("i") != statusAttach || keys(":q\r") != statusQuit {
+		t.Fatal("Vim attach/quit action missing")
+	}
+}
+
+func TestCLIUIVimControlsAndPaste(t *testing.T) {
+	d := startDaemon(t, freeAddr(t), "--persist-dir=")
+	id, stderr, code := d.cli(nil, "new", "-d", "-n", "vim-target", "--", "cat")
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	id = strings.TrimSpace(id)
+	w := d.open(80, 24, "ui", "--discover=false")
+	w.waitText("vim-target")
+	w.waitText("jk returns here")
+	// A pasted q/i/:q must not quit, attach, or run picker commands.
+	w.mu.Lock()
+	pasteEnabled := w.screen.Modes().BracketedPaste
+	w.mu.Unlock()
+	if !pasteEnabled {
+		t.Fatal("picker did not request bracketed paste")
+	}
+	w.keys("\x1b[200~qi:q\r\x1b[201~?")
+	w.waitText("ptyd controls")
+	w.keys("q:b vim-target\r")
+	w.keys("vim-native-input\r")
+	w.waitText("vim-native-input")
+	// Return and issue a command in the same read; no trailing key is lost.
+	w.keys("jk\x1b[M i!:ls\r")
+	w.waitText("NORMAL | Filter:")
+	w.mu.Lock()
+	pasteEnabled = w.screen.Modes().BracketedPaste
+	w.mu.Unlock()
+	if !pasteEnabled {
+		t.Fatal("picker did not restore paste mode after attachment")
+	}
+
+	w.keys("/vim\r")
+	w.waitText("Filter: vim")
+	for deadline := time.Now().Add(5 * time.Second); strings.Contains(strings.Join(w.lines(), "\n"), "Loading filter"); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("search stayed stale")
+		}
+	}
+	w.keys("i")
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		var info terminal.Info
+		d.do("GET", "/terminals/"+id, nil, &info)
+		if info.Attached > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("i did not attach")
+		}
+	}
+
+	w.waitText("vim-native-input")
+	w.keys("jk:q\r")
+	if code := w.waitExit(); code != 0 {
+		t.Fatalf("picker exit %d", code)
+	}
+	w.mu.Lock()
+	pasteEnabled = w.screen.Modes().BracketedPaste
+	w.mu.Unlock()
+	if pasteEnabled {
+		t.Fatal("picker left paste mode enabled on exit")
+	}
+	var info terminal.Info
+	if d.do("GET", "/terminals/"+id, nil, &info) != 200 || info.Status != terminal.StatusRunning {
+		t.Fatal("quitting picker stopped session")
+	}
+}
+
+func TestPickerFooterFitsShortWindows(t *testing.T) {
+	v := statusView{}
+	v.refresh(statusResult{view: terminal.Overview{Sessions: []terminal.SessionSummary{{ID: "one", Name: "one", Preview: &terminal.OverviewPreview{Text: "output"}}}}})
+	for _, rows := range []int{8, 16, 24} {
+		frame := statusFrame(v, 80, rows)
+		if !strings.Contains(frame, "jk returns here") || !strings.Contains(frame, "q quit") {
+			t.Fatalf("controls clipped at height%d", rows)
+		}
 	}
 }

@@ -167,7 +167,7 @@ func TestAttachInteractiveShell(t *testing.T) {
 		eventually(t, "back at the prompt", func() bool { return strings.Contains(u.text(), "typed-42") })
 	}
 
-	// A lone Ctrl-\ reaches the program after the detach window.
+	// Native control keys still reach the program.
 	u.typeKeys(t, "cat -v\r")
 	time.Sleep(200 * time.Millisecond)
 	u.typeKeys(t, "\x1c")
@@ -179,10 +179,10 @@ func TestAttachInteractiveShell(t *testing.T) {
 	default:
 	}
 
-	// Ctrl-\ twice detaches and restores the local terminal.
-	u.typeKeys(t, "\x1c")
+	// The home-row sequence detaches and restores the local terminal.
+	u.typeKeys(t, "j")
 	time.Sleep(50 * time.Millisecond)
-	u.typeKeys(t, "\x1c")
+	u.typeKeys(t, "k")
 	var r result
 	select {
 	case r = <-done:
@@ -236,8 +236,8 @@ func TestMultipleAttachers(t *testing.T) {
 			return strings.Count(s, "from-a") == 2 && strings.Count(s, "from-b") == 2
 		})
 	}
-	a.typeKeys(t, "\x1c\x1c")
-	b.typeKeys(t, "\x1c\x1c")
+	a.typeKeys(t, "jk")
+	b.typeKeys(t, "jk")
 	<-da
 	<-db
 }
@@ -287,5 +287,35 @@ func TestFind(t *testing.T) {
 		} else if string(got.ID) != want {
 			t.Errorf("%q: %s, want %s", target, got.ID, want)
 		}
+	}
+}
+
+func TestAttachedBracketedPasteCannotDetach(t *testing.T) {
+	mgr, addr := startDaemon(t)
+	info, err := mgr.Create(terminal.CreateConfig{Name: "paste", Command: "sh", Args: []string{"-c", "stty -echo; printf READY; exec cat"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := newUserTerminal(t, 80, 24)
+	done := attach(u, addr, string(info.ID), nil)
+	eventually(t, "ready", func() bool { return strings.Contains(u.text(), "READY") })
+	for _, part := range []string{"\x1b[20", "0~literal jk\r\x1b[20", "1~"} {
+		u.typeKeys(t, part)
+		time.Sleep(sequenceWindow + 30*time.Millisecond)
+	}
+	eventually(t, "pasted literal jk", func() bool { return strings.Contains(u.text(), "literal jk") })
+	select {
+	case result := <-done:
+		t.Fatalf("paste detached: %+v", result)
+	default:
+	}
+	u.typeKeys(t, "jk")
+	select {
+	case result := <-done:
+		if result.err != nil || !result.detached {
+			t.Fatal(result)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("real shortcut did not detach")
 	}
 }

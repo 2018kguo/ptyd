@@ -21,13 +21,6 @@ import (
 	"github.com/2018kguo/ptyd/internal/api"
 )
 
-// DetachKeyHelp describes the detach key for help text.
-const DetachKeyHelp = "Ctrl-\\ twice"
-
-// detachWindow is how long after a first Ctrl-\ a second one detaches.
-// After it, the held Ctrl-\ is passed through to the program.
-const detachWindow = time.Second
-
 // resetLocal undoes modes a program may have switched on in the local
 // terminal through the passthrough stream: synchronized output, SGR, the
 // alternate screen, hidden cursor, application cursor keys and keypad,
@@ -91,7 +84,8 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 	}
 	defer conn.Close()
 
-	if term.IsTerminal(int(in.Fd())) {
+	interactiveInput := term.IsTerminal(int(in.Fd()))
+	if interactiveInput {
 		state, err := term.MakeRaw(int(in.Fd()))
 		if err != nil {
 			return result, fmt.Errorf("raw mode: %w", err)
@@ -135,10 +129,19 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		_, err := conn.Write(api.AppendFrame(nil, typ, payload))
 		return err
 	}
-	var held []byte // a first detach key press, not yet forwarded
+	var controls detachFilter
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	defer timer.Stop()
+	sequenceTimer := time.NewTimer(time.Hour)
+	sequenceTimer.Stop()
+	defer sequenceTimer.Stop()
+	sendInput := func(p []byte) error {
+		if len(p) == 0 || readOnly {
+			return nil
+		}
+		return send(api.FrameInput, p)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -151,78 +154,45 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 				_ = send(api.FrameResize, binary.BigEndian.AppendUint16(binary.BigEndian.AppendUint16(nil, uint16(c)), uint16(r)))
 			}
 		case <-timer.C:
-			if held != nil && !readOnly {
-				_ = send(api.FrameInput, held)
+			if err := sendInput(controls.expire(time.Now())); err != nil {
+				return result, nil
 			}
-			held = nil
+		case <-sequenceTimer.C:
+			if err := sendInput(controls.flushSequence()); err != nil {
+				return result, nil
+			}
 		case p, ok := <-input.Bytes:
 			if !ok {
+				_ = sendInput(controls.flushSequence())
 				result.Detached = true
 				return result, nil
 			}
-			for len(p) > 0 {
-				index, n, release := nextDetachEvent(p)
-				if index > 0 {
-					prefix := p[:index]
-					if held != nil {
-						prefix = append(held, prefix...)
-						held = nil
-						timer.Stop()
-					}
-					if !readOnly {
-						if err := send(api.FrameInput, prefix); err != nil {
-							return result, nil // the connection broke
-						}
-					}
-				}
-				p = p[index:]
-				if len(p) == 0 {
-					break
-				}
-				key := p[:n]
-				p = p[n:]
-				if release {
-					if held != nil {
-						held = append(held, key...)
-					} else if !readOnly {
-						if err := send(api.FrameInput, key); err != nil {
-							return result, nil
-						}
-					}
-					continue
-				}
-				if held != nil {
-					held = nil // both presses and their release events are consumed
-					result.Detached = true
-					result.PendingInput = append(bytes.Clone(p), input.Remainder()...)
+			if !interactiveInput {
+				if err := sendInput(p); err != nil {
 					return result, nil
 				}
-				held = bytes.Clone(key)
-				timer.Reset(detachWindow)
+				continue
 			}
+			forward, detached, tail := controls.feed(p, time.Now())
+			if err := sendInput(forward); err != nil {
+				return result, nil
+			}
+			if detached {
+				result.Detached = true
+				result.PendingInput = append(bytes.Clone(tail), input.Remainder()...)
+				return result, nil
+			}
+			timer.Stop()
+			if !controls.deadline.IsZero() {
+				timer.Reset(time.Until(controls.deadline))
+			}
+			sequenceTimer.Stop()
+			if len(controls.pending) > 0 {
+				sequenceTimer.Reset(sequenceWindow)
+			}
+
 		}
 	}
-}
-
-// The detach key, Ctrl-\, as the legacy control byte, the kitty keyboard
-// protocol (press, with or without event types) and xterm
-// modifyOtherKeys encodings.
-var detachKeys = [][]byte{[]byte("\x1c"), []byte("\x1b[92;5u"), []byte("\x1b[92;5:1u"), []byte("\x1b[27;5;92~")}
-
-// nextDetachEvent recognizes complete detach tokens within a read. Terminal
-// reads may coalesce a command, both presses, and the caller's next key.
-func nextDetachEvent(p []byte) (index, size int, release bool) {
-	index = len(p)
-	for _, key := range detachKeys {
-		if i := bytes.Index(p, key); i >= 0 && i < index {
-			index, size = i, len(key)
-		}
-	}
-	keyup := []byte("\x1b[92;5:3u")
-	if i := bytes.Index(p, keyup); i >= 0 && i < index {
-		index, size, release = i, len(keyup), true
-	}
-	return
 }
 
 // dial performs the upgrade handshake.

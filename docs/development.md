@@ -40,7 +40,10 @@ fake-agent tests alone. Emulator changes belong in
 Ordinary tests use fake native CLIs, a Unix WebSocket fixture and real local
 PTYs. They cover exact identity, partial discovery, concurrent imports,
 process-generation changes, foreground handoff refusal, persistence, native
-worker survival after detach and picker cancellation/typeahead.
+worker survival after detach and picker cancellation/typeahead. Input tests
+check `jk` across read boundaries, key events, literal-input timeouts, paste
+frames and terminal control sequences. Picker tests exercise Vim commands
+and the real PTY handoff.
 
 The optional installed-CLI witnesses use isolated profiles and local fake
 model streams. They make no real model-provider calls and do not attach to
@@ -61,3 +64,8 @@ setup RPC client too, then checks the model stream stays active for 200 ms
 without a viewer or observer before querying native state again. This is a
 bounded disconnect check. Native UI redraw is
 not an exact capture of another terminal's past screen or partial output.
+
+The README demo is reproducible with `vhs docs/demo.tape`. Its setup creates
+three disposable local terminals, uses an ephemeral port, and removes its
+own processes and files on exit. It does not need an agent login or call a
+model provider.
