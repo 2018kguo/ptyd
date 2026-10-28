@@ -40,9 +40,18 @@ func runAgents(args []string) int {
 	for _, s := range listing.Sessions {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s.Ref.Key(), displayText(s.Name, 50), displayText(s.Status, 24), s.Action, displayText(s.CWD, 60))
 	}
+	for _, p := range listing.Processes {
+		fmt.Fprintf(tw, "%s\t%s\toriginal tab\tuse original tab\t%s\n", p.Key(), displayText(p.Name(), 50), displayText(p.CWD, 60))
+	}
 	_ = tw.Flush()
+	if listing.ProcessIssue != "" {
+		fmt.Fprintln(os.Stderr, listing.ProcessIssue)
+	}
 	for _, issue := range listing.Issues {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", issue.Provider, displayText(issue.Message, 300))
+	}
+	if listing.ProcessesTruncated {
+		fmt.Fprintln(os.Stderr, "Original terminal tabs were truncated; some processes are omitted.")
 	}
 	if listing.Truncated {
 		fmt.Fprintln(os.Stderr, "Native discovery was truncated; some sessions are omitted.")

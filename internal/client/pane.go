@@ -20,6 +20,7 @@ type pane struct {
 	screen       *phosphor.Terminal
 	out          io.Writer
 	label        string
+	finished     bool
 	cols, rows   int
 	changed      bool
 	lastModes    phosphor.Modes
@@ -94,7 +95,11 @@ func (p *pane) draw(force bool) error {
 		b = view.AppendRowANSI(b, y)
 	}
 	b = fmt.Appendf(b, "\x1b[%d;1H\x1b[0m\x1b[7m", p.rows)
-	text := paneLabel(p.label, p.cols)
+	state := "attached"
+	if p.finished {
+		state = "finished"
+	}
+	text := paneLabel(p.label, state, p.cols)
 	b = append(b, text...)
 	b = append(b, strings.Repeat(" ", max(p.cols-displayWidth(text), 0))...)
 	b = append(b, "\x1b[0m"...)
@@ -161,7 +166,7 @@ func displayWidth(s string) int {
 	}
 	return n
 }
-func paneLabel(label string, cols int) string {
+func paneLabel(label, state string, cols int) string {
 	var clean strings.Builder
 	for _, r := range label {
 		if !unicode.IsControl(r) {
@@ -169,7 +174,7 @@ func paneLabel(label string, cols int) string {
 		}
 	}
 	hint := "jk: sessions"
-	prefix := " ptyd · attached · "
+	prefix := " ptyd · " + state + " · "
 	if cols < displayWidth(prefix)+displayWidth(hint)+6 {
 		return clipPane("ptyd · "+hint, cols)
 	}
@@ -272,4 +277,12 @@ func (p *pane) appendHistory(b []byte) ([]byte, bool) {
 	p.history = p.history[:0]
 	p.historyBytes = 0
 	return b, added
+}
+
+func (p *pane) finish() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.finished = true
+	p.changed = true
+	p.haveModes = false // EOF must flush even an unfinished synchronized update.
 }

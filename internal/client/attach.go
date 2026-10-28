@@ -47,14 +47,14 @@ func scrollOff(rows int) string {
 
 // Options configure Attach.
 type Options struct {
-	Addr         string // host:port of the daemon
-	Token        string
-	ID           string
-	ReadOnly     bool
-	Label        string
-	HoldReadOnly bool
-	Raw          bool // pass bytes directly; no reserved status row
-	rendered     bool
+	Addr     string // host:port of the daemon
+	Token    string
+	ID       string
+	ReadOnly bool
+	Label    string
+	Hold     bool
+	Raw      bool // pass bytes directly; no reserved status row
+	rendered bool
 	// InitialInput precedes bytes read from the local terminal.
 	InitialInput []byte
 }
@@ -214,7 +214,11 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 			if copyErr != nil && !errors.Is(copyErr, io.EOF) {
 				return result, copyErr
 			}
-			if opts.HoldReadOnly && readOnly {
+			if opts.Hold {
+				readOnly = true
+				if frame != nil {
+					frame.finish()
+				}
 				outputDone = nil
 				continue
 			}

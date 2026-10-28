@@ -33,7 +33,7 @@ Usage:
   ptyd agents [--json]              discover native Codex and Claude sessions
   ptyd import [-d] [-n name] [--resume] <codex:UUID|claude:UUID>
                                    import an existing agent conversation
-  ptyd attach [--readonly] <terminal>
+  ptyd attach [--readonly] [--raw] <terminal>
   ptyd restore [--policy auto|rerun|agent] <terminal>
                                    start a stopped or exited terminal again and attach
   ptyd kill <terminal>...

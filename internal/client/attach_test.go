@@ -332,7 +332,7 @@ func TestSavedScreenStaysOpenUntilUserReturns(t *testing.T) {
 	u := newUserTerminal(t, 80, 24)
 	done := make(chan result, 1)
 	go func() {
-		outcome, err := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: string(info.ID), ReadOnly: true, HoldReadOnly: true, Label: "Saved window"}, u.slave, u.slave, nil)
+		outcome, err := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: string(info.ID), ReadOnly: true, Hold: true, Label: "Saved window"}, u.slave, u.slave, nil)
 		done <- result{outcome.Detached, err}
 	}()
 	eventually(t, "saved screen", func() bool { return strings.Contains(u.text(), "SAVED_SCREEN") })

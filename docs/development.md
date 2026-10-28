@@ -93,3 +93,9 @@ across detach. These checks cover different parts of the attachment path.
 Pane tests also cover clears, alternate screens, mixed Unicode modes, palette
 changes, retained history, narrow footers and mouse coordinates. Framed streams
 start and recover with exact snapshots rather than ANSI reconstruction.
+
+Native discovery tests cover loaded Codex threads without rollouts, original-tab
+observations without conversation authority, same-terminal deduplication and
+managed child exclusion. Picker tests retain a failed frontend screen through
+ordinary keystrokes until `jk`. Process metadata parser tests include embedded
+whitespace and stop before environment fields.

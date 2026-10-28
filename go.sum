@@ -1,7 +1,5 @@
-github.com/2018kguo/phosphor v0.4.3 h1:b3/yZjWaPQzu+c1ScDOAJp0dPwD5dHZcJVcvGIdJSM4=
-github.com/2018kguo/phosphor v0.4.3/go.mod h1:XZNmcnmuVOhNo34gQmli2ccEuikqMiplQARRlM8m+8c=
-github.com/2018kguo/phosphor v0.4.4-0.20261028213020-953d3c211568 h1:T2EBs1rlJWxm5/VDiK4uB35BU97lxP0swDwkOolK5n8=
-github.com/2018kguo/phosphor v0.4.4-0.20261028213020-953d3c211568/go.mod h1:XZNmcnmuVOhNo34gQmli2ccEuikqMiplQARRlM8m+8c=
+github.com/2018kguo/phosphor v0.4.4 h1:DLpMtPkKohg0f27hDuqLKQTzUIHn0oJks3YwDe38pgk=
+github.com/2018kguo/phosphor v0.4.4/go.mod h1:XZNmcnmuVOhNo34gQmli2ccEuikqMiplQARRlM8m+8c=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=

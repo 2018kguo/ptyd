@@ -216,7 +216,7 @@ func (v *statusView) refresh(result statusResult) {
 	if result.err != nil {
 		return
 	} // retain the last successful snapshot
-	groups := map[string]int{"Open terminals": 0, "Agents": 1, "Needs attention": 2, "History": 3}
+	groups := map[string]int{"Open terminals": 0, "Agents": 1, "Needs attention": 2, "Original tabs": 3, "History": 4}
 	sort.SliceStable(result.view.Sessions, func(i, j int) bool {
 		a, b := result.view.Sessions[i], result.view.Sessions[j]
 		if x, y := groups[sessionGroup(a)], groups[sessionGroup(b)]; x != y {
@@ -358,7 +358,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		_ = term.Restore(int(in.Fd()), raw)
 		raw = nil
 		_, _ = io.WriteString(out, "\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
-		code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: sessionApp(row) + " · " + sessionName(row)}, client.Options{InitialInput: initial, ReadOnly: row.External == nil && row.State != terminal.OverviewRunning, HoldReadOnly: true})
+		code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: sessionApp(row) + " · " + sessionName(row)}, client.Options{InitialInput: initial, ReadOnly: row.External == nil && row.State != terminal.OverviewRunning, Hold: true})
 		v.notice = "Returned from " + sessionName(row) + "."
 		if code != 0 {
 			v.notice = "The window closed. Refresh or open it again."
@@ -514,6 +514,10 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 						continue
 					}
 					row := v.sessions()[v.selectedIndex()]
+					if row.Local != nil {
+						v.notice = row.Local.Guidance()
+						continue
+					}
 					if row.External != nil {
 						if row.External.Action != native.Attach {
 							v.notice = row.External.Reason

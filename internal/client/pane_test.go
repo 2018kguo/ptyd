@@ -335,3 +335,29 @@ func TestQueuedHistoryReflowsWhenResizeOvertakesDraw(t *testing.T) {
 		t.Fatalf("old-width suffix lost: %s", all)
 	}
 }
+
+func TestFinishedPaneFlushesUnfinishedSynchronizedUpdate(t *testing.T) {
+	var out bytes.Buffer
+	p := newPane(&out, "fixture", 80, 24)
+	p.Write([]byte("READY"))
+	if err := p.draw(false); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	p.Write([]byte("\x1b[?2026h\x1b[HSTARTUP_FAILED"))
+	if err := p.draw(false); err != nil {
+		t.Fatal(err)
+	}
+	if out.Len() != 0 {
+		t.Fatal("synchronized update painted early")
+	}
+	p.finish()
+	if err := p.draw(false); err != nil {
+		t.Fatal(err)
+	}
+	screen := phosphor.New(80, 24)
+	screen.Write(out.Bytes())
+	if !strings.Contains(screen.Line(0), "STARTUP_FAILED") || !strings.Contains(screen.Line(23), "finished") {
+		t.Fatalf("final error hidden: %q / %q", screen.Line(0), screen.Line(23))
+	}
+}

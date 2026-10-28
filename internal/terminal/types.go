@@ -105,6 +105,7 @@ const (
 // Info is metadata about a terminal session. It deliberately does NOT include
 // scrollback; fetch that via GET /terminals/{id}/output (Manager.Output).
 type Info struct {
+	local    *native.LocalProcess
 	external *native.Session // populated only when projecting native discovery
 	// Source is launch provenance; a CLI can navigate to another conversation.
 	// It never authorizes reuse as an exact native input target.

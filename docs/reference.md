@@ -200,7 +200,8 @@ kitty and modifyOtherKeys encodings do. On detach, terminal modes reset and
 the attached window moves into local scrollback. Connection loss exits the
 client with code 1; a normal program exit uses its exit code. Stopped sessions
 attach read-only and return immediately from the standalone command. In the
-picker, their saved screen stays open until `jk`.
+picker, saved screens and newly exited frontends stay open until `jk`. Further
+keystrokes stay local after output ends; the footer changes to “finished.”
 
 Human TTY attachments reserve the bottom row for the session name and
 `jk: sessions`. The app receives one fewer PTY row and cannot draw over this
@@ -251,7 +252,8 @@ payload: `i` for input; `r` for two big-endian uint16 values (cols, rows).
 
 `ptyd agents --json` and `GET /agents` query the installed native CLIs in the
 daemon's environment. Codex discovery reads its running local daemon over its
-Unix socket. Claude discovery uses `claude agents --json --all`. Neither probe
+Unix socket. Threads without a saved rollout or marked ephemeral remain
+unavailable; a loaded/idle status alone does not make them resumable. Claude discovery uses `claude agents --json --all`. Neither probe
 starts a turn or selects a conversation by title, timestamp or “last.”
 
 Each session has a `ref` (`provider` and full UUID), `name`, `cwd`, native
@@ -271,6 +273,24 @@ these rows. Running, stopped and exited counts still describe managed
 terminals. Counts cover all matching rows before the view limit. Native
 `status` comes from the runtime rather than terminal-output heuristics.
 Ordinary `GET /overview` does not run native probes.
+
+Discovery also returns a separate `processes` list for same-user foreground
+Codex and Claude terminal processes not identified by their native APIs. These
+are observations of original tabs, not conversation references. Rows include
+provider, PID, process generation, terminal path, directory and parent PIDs;
+arguments, prompts and environment values are omitted. The picker groups them
+under Original tabs. They cannot authorize import or input. A standalone Codex
+process must keep using its original terminal; Claude can register its handoff
+with `/bg` there.
+
+Overview process rows use `local_process`, `state: "external"` and a
+`process:...` picker key. `counts.original_tabs` counts these rows separately;
+`counts.total` and `counts.external` include them. Managed process descendants
+are excluded, and multiple observations of one foreground group/terminal are
+collapsed. A process observation cannot prove which shared-daemon conversation
+an original frontend displays. `process_issue` and `processes_truncated` report
+inventory limits separately from native import authority. The overview folds
+process truncation into `discovery_truncated` and retains `process_issue`.
 
 Discovery is cached for five seconds. `issues` (or `discovery_issues` in the
 overview) and `truncated`/`discovery_truncated` describe incomplete reads;
@@ -326,8 +346,10 @@ Imported views are not automatically restored after a ptyd restart. Refresh
 native discovery and import again; generic restart/restore refuses to bypass
 fresh native validation. This leaves native worker lifecycle with its owner.
 
-Only the configured local profiles are discovered. Codex must expose its
-loaded sessions through the shared daemon; standalone `--no-daemon`, other
+Only the configured local profiles supply native conversation identities.
+Original-tab process observations can reveal additional running tabs without
+an import route. Codex must expose saved, loaded sessions through the shared
+daemon; standalone workers, other
 profiles and remote hosts are outside this import path. Claude foreground
 handoff follows [Claude's native rules](https://code.claude.com/docs/en/agent-view#what-carries-over-when-you-background),
 including work that must finish or restart. Ptyd does not press those controls

@@ -126,10 +126,18 @@ An intentional `NO_COLOR` setting is respected. Ptyd also answers startup
 terminal queries before a viewer connects, so Codex can draw its shaded composer.
 The viewing terminal supplies its foreground/background colors when available.
 
-Codex sessions must be loaded in its shared local daemon. For a foreground
+Codex sessions must have a saved rollout and be loaded in its shared local daemon.
+A loaded thread without saved history is shown as “Not saved yet.” For a foreground
 Claude session, run `/bg` in its original tab and let Claude finish its own
 handoff, then refresh the picker. A stopped Claude conversation requires
 an explicit `ptyd import --resume` using the reference printed by `ptyd agents`.
+
+Original terminal processes missing from the native listings appear under
+**Original tabs**, with their terminal names. These rows explain how to proceed;
+they do not guess a conversation or restart its worker. Some standalone Codex
+processes cannot move live: keep that tab open, and start future sessions with
+`ptyd new -- codex`. A frontend that exits leaves its final screen visible until
+you return with `jk`, so startup errors remain readable.
 
 Ptyd rechecks native identity around view creation. It refuses incomplete or
 ambiguous listings and never resumes “the latest” conversation. Native CLIs
