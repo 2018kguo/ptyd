@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -17,6 +18,7 @@ func TestIdleCheckpointKeepsScreenAndContinuation(t *testing.T) {
 	}
 	term.persist = &persister{dir: dir}
 	defer term.stopPersisting()
+	fillColdRing(term.ring, ringCapacity)
 	// Populate the backing rows, erase them, and leave both a prompt and
 	// an unfinished CSI at the boundary where output becomes quiet.
 	for range 30 {
@@ -25,10 +27,18 @@ func TestIdleCheckpointKeepsScreenAndContinuation(t *testing.T) {
 	term.consume([]byte("\x1b[2J\x1b[Hprompt$ \x1b[3"))
 	term.persist.stopTimer()
 	before := term.screen.Repaint(true)
+	beforeRing := term.ring.Snapshot(-1, 0)
+	beforeSlots, beforePending := len(term.ring.lines), cap(term.ring.pending)
 	term.mu.Lock()
 	term.lastOutputAt = time.Now().Add(-2 * ckptSettle)
 	term.mu.Unlock()
 	term.settleFired()
+	if !reflect.DeepEqual(beforeRing, term.ring.Snapshot(-1, 0)) {
+		t.Fatal("idle checkpoint changed retained output")
+	}
+	if len(term.ring.lines) >= beforeSlots || cap(term.ring.pending) >= beforePending {
+		t.Fatal("idle checkpoint did not reclaim ring storage")
+	}
 	if _, err := os.Stat(filepath.Join(dir, ckptFile)); err != nil {
 		t.Fatal(err)
 	}

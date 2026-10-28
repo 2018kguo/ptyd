@@ -260,6 +260,7 @@ func (t *terminal) settleFired() {
 	t.mu.Lock()
 	if !p.stopped && time.Since(t.lastOutputAt) >= ckptSettle {
 		t.screen.Compact()
+		t.ring.Compact()
 	}
 	t.mu.Unlock()
 	t.scrMu.Unlock()
