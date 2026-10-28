@@ -11,7 +11,7 @@ same command execution as your local user.
 | `--token` | `PTYD_TOKEN` | Generated at startup |
 | `--persist-dir` | `PTYD_PERSIST_DIR` | `~/.local/state/ptyd/terminals-<port>` |
 | `--log-dir` | `PTYD_LOG_DIR` | Off |
-| `--scrollback-bytes` | — | `1048576` retained-line bytes per terminal |
+| `--scrollback-bytes` | None | `1048576` retained-line bytes per terminal |
 
 An empty `--persist-dir=` disables saving. Raw log mirrors cap at 32 MiB,
 wrap, and are removed when the terminal ends. SIGHUP leaves the daemon
@@ -64,9 +64,11 @@ recent output. Tail files total about 8 MiB plus the checkpoint. Checkpoints
 run after quiet output, large tails, normal exits and graceful shutdown.
 Idle sessions have no persistence timer or open tail file.
 
-Ptyd v0.3.0 reads v0.2.0 binary checkpoints and older ANSI checkpoints.
-New snapshots require v0.3.0 or later, even though the outer header remains
-version 2. Reading an old file leaves it unchanged until the next checkpoint.
+Ptyd reads the earlier binary and ANSI checkpoint formats. Upgrade readers
+before writing new checkpoints; an older binary may reject the emulator
+snapshot even when it recognizes the outer header. Keep a backup before an
+upgrade if you need to roll back. Reading an old file leaves it unchanged
+until the next checkpoint.
 Use exact checkpoints for persistence; ANSI attachment has the emulator's
 [export limits](https://github.com/2018kguo/phosphor#tradeoffs).
 

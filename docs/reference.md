@@ -106,6 +106,22 @@ bracketed paste, the payload is one paste followed by Enter. Named keys:
 enter, tab, esc, space, backspace, arrows, home, end, pgup, pgdn, delete,
 a single character, or control forms `ctrl+c`, `c-c`, `^c`.
 
+## Keep context between agent turns
+
+Keep the terminal id and the last `latest_seq` you read. On the next turn,
+request `/output?since=N` to fetch new lines. Add `tail` to cap the returned
+context; retention and tail limits can omit older lines. Use `/screen`
+when the program redraws a window rather than printing a transcript.
+
+Before submitting another command, note the current output position and
+pass it as `since` to `/wait`. This excludes old committed lines that happen
+to match the same pattern. Pending prompt matches use `seq:-1`; they are
+observations of the current prompt, not positions to use as the next cursor.
+
+Check `matched` and `reason` before acting on a wait. A timeout leaves the
+program running. Read its state before resending input, since a repeated
+write can submit a command twice.
+
 ## Attach
 
 Ctrl-\\ twice within a second detaches; a single Ctrl-\\ reaches the program

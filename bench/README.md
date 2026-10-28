@@ -10,12 +10,13 @@ client delivery can dominate.
 ```sh
 bench/run.sh > new.txt
 BENCH='Consume|WriteStream' COUNT=10 bench/run.sh > new.txt
-bench/ab.sh v0.2.0 ./internal/terminal 'Consume'
-ROUNDS=6 OUT=/tmp/load-ab.jsonl bench/load-ab.sh v0.2.0
+bench/ab.sh main ./internal/terminal 'Consume'
+ROUNDS=6 OUT=/tmp/load-ab.jsonl bench/load-ab.sh main
 bench/load.sh /tmp/load.jsonl
 ```
 
-The A/B scripts alternate versions on the same host. Compare distributions,
+Replace `main` with the baseline commit you want to compare. The A/B scripts
+alternate builds on the same host. Compare distributions,
 not one fastest sample. Load tests report output throughput, echo latency,
 CPU, RSS, GC and persistence overhead. `PTYD_SCALE_N` controls the idle
 session count; host PTY and process limits still apply.
@@ -26,10 +27,10 @@ Its idle heap excludes processes, output rings and attach queues in ptyd.
 
 ## Results and tradeoffs
 
-[Phosphor v0.4.0 integration](phosphor-v0.4.0/README.md) records the current
-profile capture: four load runs, two OSes, with attached clients, SSE and
+[The idle-state profile capture](phosphor-v0.4.0/README.md) records four
+load runs on two OSes, with attached clients, SSE and
 persistence. They are smoke/profile samples, not a before/after speedup.
-[The v0.3.0 integration](phosphor-v0.3.0/README.md) retains the earlier
+[The exact-checkpoint integration](phosphor-v0.3.0/README.md) retains the earlier
 checkpoint and restore measurements.
 
 The daemon's main I/O optimizations were measured before the emulator was
