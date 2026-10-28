@@ -1,6 +1,11 @@
-# ptyd
-
-**Terminals that agents can drive and people can take over.**
+<h1 align="center">ptyd</h1>
+<p align="center">Terminals that agents can drive and people can take over.</p>
+<p align="center">
+  <a href="#use-it">Get started</a> ·
+  <a href="#what-an-agent-gets">Why ptyd</a> ·
+  <a href="docs/reference.md">Reference</a> ·
+  <a href="docs/operating.md">Operating ptyd</a>
+</p>
 
 An agent can leave a build running, return on its next turn and read what
 changed. It can answer a prompt in the same shell or inspect an editor's
@@ -120,32 +125,18 @@ Watches record matches without a polling loop. The
 
 ## Why HTTP
 
-HTTP lets a shell script, test harness or agent tool call the daemon with
-the HTTP client it already has. JSON results are inspectable with curl, and
-clients need no ptyd SDK. The CLI is a convenience over the same operations.
+HTTP makes the same operations available to shell scripts, test harnesses
+and agent tools without a ptyd SDK. The useful parts for agents are named
+sessions, output cursors, waits, watches and screen reads. A tool can expose
+those as small actions; the model does not need to construct curl commands.
 
-Agent ergonomics come from the operations above. A tool wrapper can expose
-them as small actions; it does not need to make the model compose curl.
-In a repo clone, the shell helper already wraps common actions:
+Use `wait`, watches or SSE to avoid polling, and `since` to read only new
+output. Interactive attach uses a persistent byte stream with input and
+resize frames. The [shell helper](scripts/ptyd-ctl.sh) wraps common calls.
 
-```sh
-scripts/ptyd-ctl.sh send "$ID" 'echo helper-ready'
-scripts/ptyd-ctl.sh wait "$ID" '^helper-ready$' 5
-scripts/ptyd-ctl.sh output "$ID" -1 20
-```
-
-Use `wait`, watches and SSE for output instead of repeated polling.
-For repeated prompts, use the HTTP `since` filter to exclude old lines;
-the [agent-turn guide](docs/reference.md#keep-context-between-agent-turns)
-explains the cursor.
-Interactive attach upgrades one connection to a persistent byte stream,
-with frames for input and resize.
-
-HTTP parsing, JSON and local TCP have a cost; spawning curl for every call
-adds process overhead too. A Unix socket could carry the same HTTP API and
-use filesystem permissions, but ptyd currently listens on TCP. A dedicated
-binary protocol would need its own clients. The benchmarks do not compare
-these transports, so they do not establish HTTP as the fastest choice.
+HTTP, JSON and local TCP add overhead. Ptyd does not currently support Unix
+sockets, and its benchmarks do not compare control transports. HTTP was
+chosen for integration, not a measured speed advantage.
 
 ## What restoring means
 
@@ -176,7 +167,7 @@ the policies, agent argument restrictions and checkpoint compatibility.
 [Benchmarks](bench/README.md) explain the current measurements, their limits and how to rerun them.
 The emulator's small idle footprint is only one part of total daemon memory.
 
-## Docs
+## Documentation
 
 - [API and CLI reference](docs/reference.md): requests, output, keys and attach protocol
 - [Operating ptyd](docs/operating.md): restore, persistence, authentication, services and scale
