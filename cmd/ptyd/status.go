@@ -88,6 +88,13 @@ func overviewCounts(view terminal.Overview) string {
 	return text
 }
 
+func overviewIdle(row terminal.SessionSummary) string {
+	if row.IdleSeconds == nil || row.State != terminal.OverviewRunning {
+		return "-"
+	}
+	return shortDuration(time.Duration(*row.IdleSeconds * float64(time.Second)))
+}
+
 func printStatus(w io.Writer, view terminal.Overview) {
 	fmt.Fprintln(w, overviewCounts(view))
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -102,7 +109,7 @@ func printStatus(w io.Writer, view terminal.Overview) {
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
 			displayText(string(row.ID), 80), displayText(row.Name, 64), overviewState(row),
-			shortDuration(time.Duration(row.IdleSeconds*float64(time.Second))), row.Attention, row.Attached,
+			overviewIdle(row), row.Attention, row.Attached,
 			displayText(row.CWD, 60), displayText(preview, 80))
 	}
 	_ = tw.Flush()
@@ -141,12 +148,15 @@ type statusResult struct {
 	err   error
 }
 
+const statusEnter = "\x1b[?1049h\x1b[?25l\x1b[?2027l"
+
 type statusView struct {
 	snapshot *statusSnapshot
 	selected terminal.ID
 	query    string
 	editing  bool
 	err      error
+	notice   string
 }
 
 type statusSnapshot struct {
@@ -253,6 +263,8 @@ func statusFrame(v statusView, cols, rows int) string {
 		lines = append(lines, "STALE / unavailable: "+v.err.Error())
 	} else if v.snapshot == nil || v.snapshot.query != v.query {
 		lines = append(lines, "Loading filter; rows below are from the last successful snapshot.")
+	} else if v.notice != "" {
+		lines = append(lines, v.notice)
 	} else {
 		lines = append(lines, "Attention is recorded watch matches; running does not imply an agent is working.")
 	}
@@ -271,7 +283,7 @@ func statusFrame(v statusView, cols, rows int) string {
 			marker = "> "
 		}
 		line := marker + padStatus(string(row.ID), 20) + padStatus(row.Name, 20) + padStatus(overviewState(row), 12)
-		line += padStatus(shortDuration(time.Duration(row.IdleSeconds*float64(time.Second))), 6)
+		line += padStatus(overviewIdle(row), 6)
 		line += fmt.Sprintf("%4d %7d", row.Attention, row.Attached)
 		lines = append(lines, line)
 	}
@@ -320,12 +332,12 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		}
 		_, _ = io.WriteString(out, "\x1b[0m\x1b[?25h\x1b[?1049l")
 	}()
-	input, err := client.NewInput(ctx, in)
+	input, err := client.NewInput(ctx, in, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { input.Close() }()
-	_, _ = io.WriteString(out, "\x1b[?1049h\x1b[?25l")
+	_, _ = io.WriteString(out, statusEnter)
 	queries := make(chan string, 1)
 	updates := make(chan statusResult, 1)
 	go refreshStatus(ctx, c, options, queries, updates)
@@ -421,11 +433,17 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 						continue
 					}
 					row := v.sessions()[v.selectedIndex()]
-					input.Close()
+					initial := append([]byte(nil), pending...)
+					initial = append(initial, input.Remainder()...)
+					pending = nil
 					_ = term.Restore(int(in.Fd()), raw)
 					raw = nil
 					_, _ = io.WriteString(out, "\x1b[0m\x1b[?25h\x1b[?1049l")
-					attach(c, terminal.Info{ID: row.ID, Name: row.Name}, false)
+					code, unread := attach(c, terminal.Info{ID: row.ID, Name: row.Name}, false, initial)
+					v.notice = ""
+					if code != 0 {
+						v.notice = fmt.Sprintf("Attachment to %s ended with code %d. Its last window is in local scrollback.", row.ID, code)
+					}
 					if ctx.Err() != nil {
 						return nil
 					}
@@ -433,11 +451,12 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 					if err != nil {
 						return err
 					}
-					input, err = client.NewInput(ctx, in)
+					nextInput, err := client.NewInput(ctx, in, unread)
 					if err != nil {
 						return err
 					}
-					_, _ = io.WriteString(out, "\x1b[?1049h\x1b[?25l")
+					input = nextInput
+					_, _ = io.WriteString(out, statusEnter)
 					v.selected = row.ID
 					queueStatusQuery(queries, v.query)
 				}

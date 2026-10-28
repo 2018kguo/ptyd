@@ -54,7 +54,7 @@ type SessionSummary struct {
 	Agent       string           `json:"agent,omitempty"`
 	State       OverviewState    `json:"state"`
 	ExitCode    *int             `json:"exit_code,omitempty"`
-	IdleSeconds float64          `json:"idle_seconds"`
+	IdleSeconds *float64         `json:"idle_seconds"`
 	Attached    int              `json:"attached"`
 	LatestSeq   int64            `json:"latest_seq"`
 	Attention   int              `json:"attention"`
@@ -125,10 +125,15 @@ func BuildOverview(infos []Info, options OverviewOptions) Overview {
 	out.Sessions = make([]SessionSummary, 0, len(indices))
 	for _, i := range indices {
 		info := infos[i]
+		var idle *float64
+		if info.LastOutputAt != nil {
+			seconds := info.IdleSeconds
+			idle = &seconds
+		}
 		out.Sessions = append(out.Sessions, SessionSummary{
 			ID: info.ID, Name: info.Name, CWD: info.CWD,
 			Command: filepath.Base(info.Command), Agent: info.Agent,
-			State: overviewState(info), ExitCode: info.ExitCode, IdleSeconds: info.IdleSeconds,
+			State: overviewState(info), ExitCode: info.ExitCode, IdleSeconds: idle,
 			Attached: info.Attached, LatestSeq: info.LatestSeq, Attention: len(info.Attention),
 			Preview: overviewPreview(info),
 		})

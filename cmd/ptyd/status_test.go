@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/terminal"
 )
 
@@ -125,7 +126,9 @@ func TestCLIStatusWatchAttachReturn(t *testing.T) {
 	w := d.open(110, 18, "status", "--watch")
 	w.waitText("watch-target")
 	for i := 0; i < 2; i++ {
-		w.keys("\r")
+		marker := strings.Repeat("live-", i+1)
+		// Enter and subsequent program input can arrive in one PTY read.
+		w.keys("\r" + marker + "\r")
 		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
 			var info terminal.Info
 			d.do("GET", "/terminals/"+id, nil, &info)
@@ -136,16 +139,31 @@ func TestCLIStatusWatchAttachReturn(t *testing.T) {
 				t.Fatal("overview did not attach selected id")
 			}
 		}
-		marker := strings.Repeat("live-", i+1)
-		w.keys(marker + "\r")
 		d.waitScreen(id, func(s screen) bool { return strings.Contains(strings.Join(s.Lines, "\n"), marker) })
+		if i == 1 {
+			// The next overview key can share a read with both detach keys.
+			w.keys("\x1c\x1cq")
+			break
+		}
 		w.keys("\x1c\x1c")
 		w.waitText("ptyd |")
 		w.waitText("watch-target")
 	}
-	w.keys("q")
 	if code := w.waitExit(); code != 0 {
 		t.Fatalf("watch exit %d", code)
+	}
+}
+
+func TestStatusScalarLayoutAfterAttachment(t *testing.T) {
+	for _, text := range []string{"👩‍💻", "☔︎", "e\u0301", "项目"} {
+		s := phosphor.New(80, 2)
+		s.Write([]byte("\x1b[?2027h" + statusEnter + padStatus(text, 20)))
+		if s.Modes().GraphemeClustering || s.Cursor().X != 20 {
+			t.Fatalf("%q: mode=%v x=%d", text, s.Modes().GraphemeClustering, s.Cursor().X)
+		}
+	}
+	if overviewIdle(terminal.SessionSummary{State: terminal.OverviewRunning}) != "-" {
+		t.Fatal("unobserved output claimed recent activity")
 	}
 }
 

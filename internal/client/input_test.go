@@ -68,7 +68,7 @@ func TestInputCancellationLeavesNextBytesForNextOwner(t *testing.T) {
 	defer write.Close()
 	flags := inputFlags(t, read)
 	ctx, cancel := context.WithCancel(context.Background())
-	input, err := NewInput(ctx, read)
+	input, err := NewInput(ctx, read, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestInputCancellationLeavesNextBytesForNextOwner(t *testing.T) {
 	if _, err := write.WriteString("next"); err != nil {
 		t.Fatal(err)
 	}
-	next, err := NewInput(context.Background(), read)
+	next, err := NewInput(context.Background(), read, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestInputCloseJoinsIdleReaderAndIsConcurrent(t *testing.T) {
 	}
 	defer read.Close()
 	defer write.Close()
-	input, err := NewInput(context.Background(), read)
+	input, err := NewInput(context.Background(), read, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +124,80 @@ func TestInputCloseJoinsIdleReaderAndIsConcurrent(t *testing.T) {
 	}
 }
 
+func TestInputRemainderPreservesPrefixAndPrefetchedBytes(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	defer write.Close()
+	prefix := []byte("prefix")
+	input, err := NewInput(context.Background(), read, prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	prefix[0] = 'x'
+	if got := string(receiveInput(t, input)); got != "prefix" {
+		t.Fatalf("initial bytes = %q", got)
+	}
+	if _, err := write.WriteString("prefetched"); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := read.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fd int
+	if err := conn.Control(func(value uintptr) { fd = int(value) }); err != nil {
+		t.Fatal(err)
+	}
+	// Wait until the kernel queue is empty without receiving the channel.
+	// The reader now holds bytes that the next owner must receive.
+	eventually(t, "input prefetch", func() bool {
+		poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+		if _, err := unix.Poll(poll, 0); err != nil {
+			t.Fatal(err)
+		}
+		return poll[0].Revents&unix.POLLIN == 0
+	})
+	remainder := input.Remainder()
+	if string(remainder) != "prefetched" || len(input.Remainder()) != 0 {
+		t.Fatalf("handoff bytes = %q", remainder)
+	}
+	next, err := NewInput(context.Background(), read, remainder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer next.Close()
+	if got := string(receiveInput(t, next)); got != "prefetched" {
+		t.Fatalf("next owner received %q", got)
+	}
+	if _, err := write.WriteString("later"); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(receiveInput(t, next)); got != "later" {
+		t.Fatalf("file input overtook the handoff: %q", got)
+	}
+}
+
+func TestInputRemainderPreservesUndeliveredInitialBytes(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	defer write.Close()
+	input, err := NewInput(context.Background(), read, []byte("queued"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(input.Remainder()); got != "queued" {
+		t.Fatalf("unread prefix = %q", got)
+	}
+	input.Close()
+}
+
 func TestInputEOFAndReadErrorReleaseOwnership(t *testing.T) {
 	t.Run("EOF", func(t *testing.T) {
 		read, write, err := os.Pipe()
@@ -131,7 +205,7 @@ func TestInputEOFAndReadErrorReleaseOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer read.Close()
-		input, err := NewInput(context.Background(), read)
+		input, err := NewInput(context.Background(), read, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -156,7 +230,7 @@ func TestInputEOFAndReadErrorReleaseOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer directory.Close()
-		input, err := NewInput(context.Background(), directory)
+		input, err := NewInput(context.Background(), directory, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -172,11 +246,68 @@ func TestInputEOFAndReadErrorReleaseOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 		file.Close()
-		if input, err := NewInput(context.Background(), file); err == nil {
+		if input, err := NewInput(context.Background(), file, nil); err == nil {
 			input.Close()
 			t.Fatal("accepted a closed input file")
 		}
 	})
+}
+
+func TestAttachHandsOffCoalescedInputForEveryDetachEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		name, key, release string
+	}{
+		{"legacy", "\x1c", ""},
+		{"kitty", "\x1b[92;5u", ""},
+		{"kitty events", "\x1b[92;5:1u", "\x1b[92;5:3u"},
+		{"modifyOtherKeys", "\x1b[27;5;92~", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mgr, addr := startDaemon(t)
+			info, err := mgr.Create(terminal.CreateConfig{Name: "cat", Command: "cat", Cols: 40, Rows: 5})
+			if err != nil {
+				t.Fatal(err)
+			}
+			u := newUserTerminal(t, 40, 5)
+			initial := []byte("from-overview\r" + tc.key + tc.release + tc.key + "q")
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			outcome, err := Attach(ctx, Options{Addr: addr, Token: "tok", ID: string(info.ID), InitialInput: initial}, u.slave, u.slave, nil)
+			if err != nil || !outcome.Detached || string(outcome.PendingInput) != "q" {
+				t.Fatalf("coalesced handoff = %+v, %v", outcome, err)
+			}
+			if _, _, err := mgr.Wait(ctx, info.ID, "^from-overview$", -1, 0); err != nil {
+				t.Fatalf("prefix was not sent before detaching: %v", err)
+			}
+			view, err := NewInput(context.Background(), u.slave, outcome.PendingInput)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if got := string(receiveInput(t, view)); got != "q" {
+				t.Fatalf("overview did not receive its next key: %q", got)
+			}
+		})
+	}
+}
+
+func TestAttachProgramExitDoesNotReturnProgramInput(t *testing.T) {
+	mgr, addr := startDaemon(t)
+	info, err := mgr.Create(terminal.CreateConfig{Name: "finished", Command: "sh", Args: []string{"-c", "printf program-finished"}, Cols: 40, Rows: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "program exit", func() bool {
+		got, err := mgr.Get(info.ID)
+		return err == nil && got.Status == terminal.StatusExited
+	})
+	u := newUserTerminal(t, 40, 5)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	outcome, err := Attach(ctx, Options{Addr: addr, Token: "tok", ID: string(info.ID), InitialInput: []byte("q\r")}, u.slave, u.slave, nil)
+	if err != nil || outcome.Detached || len(outcome.PendingInput) != 0 {
+		t.Fatalf("program exit replayed input as overview controls: %+v, %v", outcome, err)
+	}
 }
 
 func TestAttachReturnsInputOwnershipOnEveryDetach(t *testing.T) {
@@ -210,7 +341,7 @@ func TestAttachReturnsInputOwnershipOnEveryDetach(t *testing.T) {
 		// The user can type while the dashboard redraws, before it starts
 		// its next reader. Those bytes must stay queued for that owner.
 		time.Sleep(20 * time.Millisecond)
-		view, err := NewInput(context.Background(), u.slave)
+		view, err := NewInput(context.Background(), u.slave, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

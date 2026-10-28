@@ -141,7 +141,8 @@ func runNew(args []string) int {
 		fmt.Println(info.ID)
 		return 0
 	}
-	return attach(c, info, false)
+	code, _ := attach(c, info, false, nil)
+	return code
 }
 
 func runAttach(args []string) int {
@@ -159,37 +160,42 @@ func runAttach(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	return attach(c, info, *readOnly)
+	code, _ := attach(c, info, *readOnly, nil)
+	return code
 }
 
 // attach attaches to t and tells the user how it ended. Its exit code is
 // the program's if the program exited.
-func attach(c client.API, t terminal.Info, readOnly bool) int {
+func attach(c client.API, t terminal.Info, readOnly bool, initialInput []byte) (int, []byte) {
 	winch := make(chan os.Signal, 1)
 	signal.Notify(winch, syscall.SIGWINCH)
 	defer signal.Stop(winch)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
-	detached, err := client.Attach(ctx, client.Options{Addr: c.Addr, Token: c.Token, ID: string(t.ID), ReadOnly: readOnly}, os.Stdin, os.Stdout, winch)
-	if err != nil {
-		return fail(err)
+	result, err := client.Attach(ctx, client.Options{Addr: c.Addr, Token: c.Token, ID: string(t.ID), ReadOnly: readOnly, InitialInput: initialInput}, os.Stdin, os.Stdout, winch)
+	var pending []byte
+	if result.Detached && err == nil {
+		pending = result.PendingInput
 	}
-	if detached {
+	if err != nil {
+		return fail(err), pending
+	}
+	if result.Detached {
 		fmt.Fprintf(os.Stderr, "[detached from %s]\n", label(t))
-		return 0
+		return 0, pending
 	}
 	// The output ended: the program exited, or the daemon went away.
 	info, err := waitExited(c, t.ID)
 	switch {
 	case errors.Is(err, client.ErrDaemonDown):
 		fmt.Fprintf(os.Stderr, "[lost the connection: ptyd at %s stopped]\n", c.Addr)
-		return 1
+		return 1, pending
 	case err != nil:
 		fmt.Fprintf(os.Stderr, "[lost the connection to ptyd: %v]\n", err)
-		return 1
+		return 1, pending
 	case info.Status == terminal.StatusRunning:
 		fmt.Fprintf(os.Stderr, "[the connection to ptyd closed; %s is still running]\n", label(t))
-		return 1
+		return 1, pending
 	case info.ExitCode == nil:
 		msg := fmt.Sprintf("[%s is not running; this is its last window]", label(t))
 		if info.Notice != "" {
@@ -197,13 +203,13 @@ func attach(c client.API, t terminal.Info, readOnly bool) int {
 		}
 		msg += fmt.Sprintf("\n[start it again: ptyd restore %s]", t.ID)
 		fmt.Fprintln(os.Stderr, msg)
-		return 1
+		return 1, pending
 	case *info.ExitCode < 0:
 		fmt.Fprintln(os.Stderr, "[terminal exited (killed by a signal)]")
-		return 1
+		return 1, pending
 	default:
 		fmt.Fprintf(os.Stderr, "[terminal exited (code %d)]\n", *info.ExitCode)
-		return min(*info.ExitCode, 255)
+		return min(*info.ExitCode, 255), pending
 	}
 }
 
@@ -347,5 +353,6 @@ func runRestore(args []string) int {
 		fmt.Println(info.ID)
 		return 0
 	}
-	return attach(c, info, false)
+	code, _ := attach(c, info, false, nil)
+	return code
 }

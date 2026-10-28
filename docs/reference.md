@@ -66,6 +66,8 @@ not inferred agent activity.
 - Each row keeps its exact `id`, observed `state` (`running`, `stopped`
   or `exited`), exit code, idle time,
   attached-client count and `latest_seq` for incremental output reads.
+  `idle_seconds` is null when the process has not produced observed output;
+  the human view shows a dash.
 - A `preview` comes from the newest retained watch match, a restore notice
   or pending output, in that order. It is at most 160 codepoints and marks
   truncation explicitly. A row's `attention` counts its retained events,

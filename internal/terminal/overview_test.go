@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -87,6 +88,20 @@ func TestOverviewLimits(t *testing.T) {
 	}
 }
 
+func TestOverviewUnobservedIdle(t *testing.T) {
+	now := time.Now()
+	infos := []Info{{ID: "silent", Status: StatusRunning}, {ID: "observed", Status: StatusRunning, LastOutputAt: &now, IdleSeconds: 12}}
+	view := BuildOverview(infos, OverviewOptions{})
+	for _, row := range view.Sessions {
+		if row.ID == "silent" && row.IdleSeconds != nil {
+			t.Fatal("invented output time")
+		}
+		if row.ID == "observed" && (row.IdleSeconds == nil || *row.IdleSeconds != 12) {
+			t.Fatal("lost observed idle time")
+		}
+	}
+}
+
 func BenchmarkOverview(b *testing.B) {
 	infos := make([]Info, 1000)
 	for i := range infos {
@@ -96,4 +111,40 @@ func BenchmarkOverview(b *testing.B) {
 	for b.Loop() {
 		BuildOverview(infos, OverviewOptions{})
 	}
+}
+
+// A fleet of 1,000 sessions, with one watch each and an outstanding match on
+// every tenth session. Both encoders start from the same canonical metadata.
+func BenchmarkOverviewJSON(b *testing.B) {
+	now := time.Date(2026, time.October, 27, 12, 0, 0, 0, time.UTC)
+	infos := make([]Info, 1000)
+	for i := range infos {
+		infos[i] = Info{ID: ID(fmt.Sprintf("term-%d-abcd", i)), Name: fmt.Sprintf("worker-%d", i),
+			CWD: "/work/project", Command: "claude", Args: []string{"--model", "default"}, Tags: []string{"agent"},
+			PID: 1000 + i, Status: StatusRunning, CreatedAt: now, LastOutputAt: &now, IdleSeconds: 1.5, LatestSeq: 4999, Pending: "ready> ",
+			Watches: []WatchSpec{{Name: "question", Pattern: "[?] $", Once: true}}}
+		if i%10 == 0 {
+			infos[i].Attention = []AttentionEvent{{Watch: "question", Line: Line{Seq: 4999, Text: "Continue with the operation? ", At: now}, At: now}}
+		}
+	}
+	b.Run("FullList", func(b *testing.B) {
+		b.ReportAllocs()
+		data, _ := json.Marshal(infos)
+		b.ReportMetric(float64(len(data)), "response-B")
+		for b.Loop() {
+			if _, err := json.Marshal(infos); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("Overview50", func(b *testing.B) {
+		b.ReportAllocs()
+		data, _ := json.Marshal(BuildOverview(infos, OverviewOptions{}))
+		b.ReportMetric(float64(len(data)), "response-B")
+		for b.Loop() {
+			if _, err := json.Marshal(BuildOverview(infos, OverviewOptions{})); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
