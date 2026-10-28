@@ -1,0 +1,15 @@
+{
+  "ptyd_source_commit": "767d71197234f9f80d53a150d355239f96d25be5",
+  "phosphor_production_commit": "43271f30a8388d2edfea0d04138275d1a77a03be",
+  "phosphor_collection": "local final production source through temporary module replacement; published module is pinned before release",
+  "go_mac": "go version go1.26.3 darwin/arm64",
+  "go_linux": "go version go1.26.10 linux/arm64",
+  "linux_image": "sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af",
+  "method": "bench/pgo.sh; 32 producers at1MiB/s and8flat-out, one attacher/SSE perproducer, persistence,10s each; PGOdisabled duringcollection; CPU/mutex/block/traceprofiling enabled. Strict client-progress/liveness/error gates passed.",
+  "interpretation": "Four profile/smoke captures, not a before/after speedup. CPU/RSS refer to daemon/test process, excluding producer children. Trace/profile overhead is included.",
+  "profile_sha256": {
+    "mac.pgo": "0ccf27d712db68e64b21b12f68a23ecd44958b2ab5fd54fb0719904add59a369",
+    "linux.pgo": "2c13bb25e06aca0648ceaa220a165724d52deef46d713fa7d08bc1e07900e6a6"
+  },
+  "merged_profile_sha256": "4591502b8ce36acfdd18492ec0a64e055d7c011ae8e8e9d5daa396bf89f0f141"
+}

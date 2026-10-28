@@ -79,6 +79,17 @@ diagnostics. A/B runs use the same harness against both production revisions;
 each revision keeps its own build profile. Earlier mixed exploratory runs are
 retained without quoting selected subsets as current gains.
 
+## Build profile capture
+
+The build profile was refreshed with four standard macOS/Linux captures:
+32 steady producers and eight flat-out producers on each OS, with persistence,
+attach and SSE enabled. All strict client-progress and liveness checks passed.
+[Source, toolchains and profile hashes](profiles/metadata.json) and
+[macOS](profiles/mac-load.jsonl) /[Linux](profiles/linux-load.jsonl) records
+retain the method. Collection enables profiling and tracing with PGO disabled;
+these are profile/smoke captures, not an end-to-end speedup or unprofiled latency
+claim. The daemon counters exclude producer-child CPU and memory.
+
 ## Reproduce
 
 ```sh
