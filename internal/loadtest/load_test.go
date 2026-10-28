@@ -30,7 +30,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -106,6 +108,7 @@ func envInt(name string, def int) int {
 type Result struct {
 	Label                    string
 	N, Rate, Attach, Streams int
+	Burst                    int
 	Persist                  bool
 	Seconds                  float64
 	EchoP50Ms, EchoP99Ms     float64
@@ -128,14 +131,86 @@ type Result struct {
 	CheckpointsPerSec  float64
 }
 
+var errLoadStopped = errors.New("load measurement complete")
+
+// Only our explicit teardown may close a healthy reader. EOF and unrelated
+// errors remain failures even when they race the end of the measurement.
+func loadReadError(ctx context.Context, err error) error {
+	if context.Cause(ctx) == errLoadStopped &&
+		(errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) || errors.Is(err, errLoadStopped) || errors.Is(err, http.ErrBodyReadAfterClose)) {
+		return nil
+	}
+	if err == nil {
+		return io.EOF
+	}
+	return err
+}
+
+func drainAttach(ctx context.Context, conn net.Conn, br io.Reader, count *atomic.Int64) error {
+	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopClose()
+	defer conn.Close()
+	buf := make([]byte, 64<<10)
+	for {
+		n, err := br.Read(buf)
+		count.Add(int64(n))
+		if err != nil {
+			return loadReadError(ctx, err)
+		}
+	}
+}
+
+func drainSSE(ctx context.Context, resp *http.Response, count *atomic.Int64) error {
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("SSE returned HTTP %d", resp.StatusCode)
+	}
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 64<<10), 1<<20)
+	for sc.Scan() {
+		if string(sc.Bytes()) == "event: line" {
+			count.Add(1)
+		}
+	}
+	return loadReadError(ctx, sc.Err())
+}
+
+func loadClientCounts(counters []atomic.Int64) []int64 {
+	out := make([]int64, len(counters))
+	for i := range counters {
+		out[i] = counters[i].Load()
+	}
+	return out
+}
+
+func loadDelivered(before, after []int64) (int64, error) {
+	var total int64
+	for i, count := range after {
+		delta := count - before[i]
+		if delta <= 0 {
+			return 0, fmt.Errorf("client %d delivered no output in the measured window; increase duration for low rates", i)
+		}
+		total += delta
+	}
+	return total, nil
+}
+
 func TestLoad(t *testing.T) {
 	cfg := Result{
 		Label: os.Getenv("PTYD_LOAD_LABEL"),
 		N:     envInt("PTYD_LOAD_N", 32), Rate: envInt("PTYD_LOAD_RATE", 1<<20),
+		Burst:  envInt("PTYD_LOAD_BURST", 0),
 		Attach: envInt("PTYD_LOAD_ATTACH", 1), Streams: envInt("PTYD_LOAD_STREAMS", 1),
 		Persist: envInt("PTYD_LOAD_PERSIST", 1) == 1,
 	}
-	dur := time.Duration(envInt("PTYD_LOAD_SECONDS", 10)) * time.Second
+	seconds := envInt("PTYD_LOAD_SECONDS", 10)
+	dur := time.Duration(seconds) * time.Second
+	if cfg.N < 1 || cfg.Rate < 0 || cfg.Burst < 0 || cfg.Attach < 0 || cfg.Streams < 0 || dur <= 0 {
+		t.Fatal("load requires positive N/SECONDS and nonnegative RATE/BURST/ATTACH/STREAMS")
+	}
+	if cfg.Burst > 0 && (cfg.Rate == 0 || cfg.Burst > seconds/2) {
+		t.Fatal("burst load requires positive RATE and SECONDS covering at least two BURST intervals")
+	}
 
 	opts := terminal.Options{}
 	if cfg.Persist {
@@ -156,51 +231,42 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var attachBytes, sseLines atomic.Int64
+	ctx, cancel := context.WithCancelCause(context.Background())
+	attachCounts := make([]atomic.Int64, cfg.N*cfg.Attach)
+	sseCounts := make([]atomic.Int64, cfg.N*cfg.Streams)
 	var wg sync.WaitGroup
-	defer wg.Wait()
-	defer cancel()
+	stopClients := func() {
+		cancel(errLoadStopped)
+		wg.Wait()
+	}
+	defer stopClients()
 
 	// Producers, each with its clients.
 	for i := range cfg.N {
 		info, err := mgr.Create(terminal.CreateConfig{
 			Name: fmt.Sprintf("prod-%d", i), Command: self, Cols: 120, Rows: 40,
-			Env: map[string]string{"PTYD_LOAD_PRODUCER": strconv.Itoa(cfg.Rate), "PTYD_LOAD_BURST": os.Getenv("PTYD_LOAD_BURST")},
+			Env: map[string]string{"PTYD_LOAD_PRODUCER": strconv.Itoa(cfg.Rate), "PTYD_LOAD_BURST": strconv.Itoa(cfg.Burst)},
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		for range cfg.Attach {
+		for client := range cfg.Attach {
 			conn, br := dialAttach(t, addr, info.ID, true)
 			wg.Go(func() {
-				defer conn.Close()
-				go func() { <-ctx.Done(); conn.Close() }()
-				buf := make([]byte, 64<<10)
-				for {
-					n, err := br.Read(buf)
-					attachBytes.Add(int64(n))
-					if err != nil {
-						return
-					}
+				if err := drainAttach(ctx, conn, br, &attachCounts[i*cfg.Attach+client]); err != nil {
+					t.Errorf("attach %s/%d ended: %v", info.ID, client, err)
 				}
 			})
 		}
-		for range cfg.Streams {
+		for client := range cfg.Streams {
 			req, _ := http.NewRequestWithContext(ctx, "GET", "http://"+addr+"/terminals/"+string(info.ID)+"/stream", nil)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)
 			}
 			wg.Go(func() {
-				defer resp.Body.Close()
-				sc := bufio.NewScanner(resp.Body)
-				sc.Buffer(make([]byte, 64<<10), 1<<20)
-				for sc.Scan() {
-					if len(sc.Bytes()) > 6 && string(sc.Bytes()[:6]) == "event:" {
-						sseLines.Add(1)
-					}
+				if err := drainSSE(ctx, resp, &sseCounts[i*cfg.Streams+client]); err != nil {
+					t.Errorf("SSE %s/%d ended: %v", info.ID, client, err)
 				}
 			})
 		}
@@ -214,7 +280,10 @@ func TestLoad(t *testing.T) {
 	econn, ebr := dialAttach(t, addr, echo.ID, false)
 	defer econn.Close()
 	received := make(chan byte, 1024)
-	go func() {
+	wg.Go(func() {
+		defer close(received)
+		stopClose := context.AfterFunc(ctx, func() { _ = econn.Close() })
+		defer stopClose()
 		buf := make([]byte, 4096)
 		for {
 			n, err := ebr.Read(buf)
@@ -225,11 +294,13 @@ func TestLoad(t *testing.T) {
 				}
 			}
 			if err != nil {
-				close(received)
+				if err := loadReadError(ctx, err); err != nil {
+					t.Errorf("echo attachment ended: %v", err)
+				}
 				return
 			}
 		}
-	}()
+	})
 	key := func(c byte) time.Duration {
 		start := time.Now()
 		if _, err := econn.Write(api.AppendFrame(nil, api.FrameInput, []byte{c})); err != nil {
@@ -258,13 +329,16 @@ func TestLoad(t *testing.T) {
 	}
 
 	time.Sleep(time.Second) // let the producers reach steady state
+	if t.Failed() {
+		t.Fatal("load clients failed during warmup")
+	}
 	stopProfiles := startProfiles(t)
 	runtime.GC()
 	ms0 := readMetrics()
 	cpu0 := cpuTime()
 	met0 := mgr.Metrics()
 	out0 := met0.BytesEmitted
-	att0, sse0 := attachBytes.Load(), sseLines.Load()
+	att0, sse0 := loadClientCounts(attachCounts), loadClientCounts(sseCounts)
 	start := time.Now()
 
 	var lat []time.Duration
@@ -278,8 +352,22 @@ func TestLoad(t *testing.T) {
 	cfg.CPUCores = (cpuTime() - cpu0).Seconds() / elapsed
 	met := mgr.Metrics()
 	cfg.OutputMBps = float64(met.BytesEmitted-out0) / elapsed / 1e6
-	cfg.AttachMBps = float64(attachBytes.Load()-att0) / elapsed / 1e6
-	cfg.SSELinesPerSec = float64(sseLines.Load()-sse0) / elapsed
+	att, err := loadDelivered(att0, loadClientCounts(attachCounts))
+	if err != nil {
+		t.Errorf("attach: %v", err)
+	}
+	sse, err := loadDelivered(sse0, loadClientCounts(sseCounts))
+	if err != nil {
+		t.Errorf("SSE: %v", err)
+	}
+	if met.BytesEmitted-out0 <= int64(len(lat)) {
+		t.Error("no producer output processed in the measured window; increase duration for low rates")
+	}
+	if running := met.PerStatus[string(terminal.StatusRunning)]; running != cfg.N+1 {
+		t.Errorf("load lost producers: %d running terminals, want %d", running, cfg.N+1)
+	}
+	cfg.AttachMBps = float64(att) / elapsed / 1e6
+	cfg.SSELinesPerSec = float64(sse) / elapsed
 	ms1 := readMetrics()
 	cfg.GCPauseP50Us = pauseQuantile(ms0.pauses, ms1.pauses, 0.5) * 1e6
 	cfg.GCPauseP99Us = pauseQuantile(ms0.pauses, ms1.pauses, 0.99) * 1e6
@@ -299,14 +387,24 @@ func TestLoad(t *testing.T) {
 	}
 	cfg.FsyncsPerSec = float64(met.Fsyncs-met0.Fsyncs) / elapsed
 	cfg.CheckpointsPerSec = float64(met.Checkpoints-met0.Checkpoints) / elapsed
+	stopClients()
+	if t.Failed() {
+		t.Fatal("load clients failed; discarding measurement")
+	}
 
-	line, _ := json.Marshal(cfg)
+	line, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Logf("%s", line)
 	if path := os.Getenv("PTYD_LOAD_OUT"); path != "" {
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err == nil {
-			fmt.Fprintf(f, "%s\n", line)
-			f.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = f.Write(append(line, '\n'))
+		if err = errors.Join(err, f.Close()); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
