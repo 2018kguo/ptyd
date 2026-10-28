@@ -544,16 +544,24 @@ func (m *Manager) Wait(ctx context.Context, id ID, pattern string, sinceSeq int6
 	}
 	beforeContext = max(beforeContext, 0)
 
-	// recent holds the matching candidate plus up to beforeContext lines.
+	// recent retains only the requested preceding lines. Once full, first
+	// points to the oldest entry; overwrite it instead of allocating a new
+	// sliding slice for every line scanned.
 	var recent []Line
+	first := 0
 	check := func(lines []Line) (Line, []Line, bool) {
 		for _, line := range lines {
-			recent = append(recent, line)
-			if len(recent) > beforeContext+1 {
-				recent = recent[len(recent)-(beforeContext+1):]
-			}
 			if line.Seq > sinceSeq && re.MatchString(line.Text) {
-				return line, contextBefore(recent, len(recent)-1, beforeContext), true
+				return line, contextBefore(recent, first), true
+			}
+			if len(recent) < beforeContext {
+				recent = append(recent, line)
+			} else if beforeContext > 0 {
+				recent[first] = line
+				first++
+				if first == len(recent) {
+					first = 0
+				}
 			}
 		}
 		return Line{}, nil, false
@@ -577,7 +585,7 @@ func (m *Manager) Wait(ctx context.Context, id ID, pattern string, sinceSeq int6
 		}
 		text, settleIn := t.settledPending()
 		if text != "" && settleIn == 0 && re.MatchString(text) {
-			return Line{Seq: -1, Text: text, At: time.Now()}, contextBefore(recent, len(recent), beforeContext), nil
+			return Line{Seq: -1, Text: text, At: time.Now()}, contextBefore(recent, first), nil
 		}
 		if closed {
 			return Line{}, nil, ErrNotRunning
@@ -659,13 +667,13 @@ func (t *terminal) settledPending() (string, time.Duration) {
 	return pending, 0
 }
 
-func contextBefore(lines []Line, matchIdx, n int) []Line {
-	if n <= 0 || matchIdx <= 0 {
+func contextBefore(lines []Line, first int) []Line {
+	if len(lines) == 0 {
 		return nil
 	}
-	start := max(matchIdx-n, 0)
-	out := make([]Line, matchIdx-start)
-	copy(out, lines[start:matchIdx])
+	out := make([]Line, len(lines))
+	n := copy(out, lines[first:])
+	copy(out[n:], lines[:first])
 	return out
 }
 

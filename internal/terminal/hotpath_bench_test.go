@@ -320,6 +320,28 @@ func BenchmarkRingSubscribe(b *testing.B) {
 	}
 }
 
+// BenchmarkWaitRetained measures an agent waiting for a marker after a full
+// retained output window, with and without preceding context.
+func BenchmarkWaitRetained(b *testing.B) {
+	for _, before := range []int{0, 3, 256} {
+		b.Run(fmt.Sprintf("Context=%d", before), func(b *testing.B) {
+			m := NewManager()
+			t := fakeTerminal(m, 0, 80, 24)
+			for range ringCapacity - 1 {
+				t.ring.Write([]byte("ordinary output\n"))
+			}
+			t.ring.Write([]byte("MATCH\n"))
+			b.ReportAllocs()
+			for b.Loop() {
+				line, context, err := m.Wait(context.Background(), t.info.ID, "^MATCH$", -1, before)
+				if err != nil || line.Text != "MATCH" || len(context) != before {
+					b.Fatalf("wait: line=%+v context=%d err=%v", line, len(context), err)
+				}
+			}
+		})
+	}
+}
+
 // BenchmarkRestoreGhosts is a daemon start that restores 100 terminals
 // with the rerun policy (each: rebuild the screen, stop the old process
 // group, start the command, checkpoint the restored screen).
