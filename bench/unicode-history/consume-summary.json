@@ -1,0 +1,86 @@
+{
+  "BenchmarkConsume/cjk": {
+    "baseline": {
+      "ns": 50716490.0,
+      "MBps": 20.68,
+      "allocated_bytes": 158112650,
+      "allocations": 569797
+    },
+    "phosphor": {
+      "ns": 12233079.0,
+      "MBps": 85.72,
+      "allocated_bytes": 1497722,
+      "allocations": 30077
+    }
+  },
+  "BenchmarkConsume/claude": {
+    "baseline": {
+      "ns": 2978609.0,
+      "MBps": 352.36,
+      "allocated_bytes": 1088277,
+      "allocations": 6159
+    },
+    "phosphor": {
+      "ns": 2881602.0,
+      "MBps": 364.22,
+      "allocated_bytes": 1087861,
+      "allocations": 6159
+    }
+  },
+  "BenchmarkConsume/claude-persist": {
+    "baseline": {
+      "ns": 4069239.0,
+      "MBps": 257.92,
+      "allocated_bytes": 1125404,
+      "allocations": 6167
+    },
+    "phosphor": {
+      "ns": 3808898.0,
+      "MBps": 275.55,
+      "allocated_bytes": 1124951,
+      "allocations": 6165
+    }
+  },
+  "BenchmarkConsume/graphemes": {
+    "baseline": {
+      "ns": 52594375.0,
+      "MBps": 19.94,
+      "allocated_bytes": 153964098,
+      "allocations": 745135
+    },
+    "phosphor": {
+      "ns": 19063545.0,
+      "MBps": 55.01,
+      "allocated_bytes": 1313098,
+      "allocations": 15358
+    }
+  },
+  "BenchmarkConsume/logs": {
+    "baseline": {
+      "ns": 2466595.0,
+      "MBps": 425.12,
+      "allocated_bytes": 1163702,
+      "allocations": 10302
+    },
+    "phosphor": {
+      "ns": 2412331.0,
+      "MBps": 434.69,
+      "allocated_bytes": 1163702,
+      "allocations": 10302
+    }
+  },
+  "BenchmarkConsume/progress": {
+    "baseline": {
+      "ns": 814412.0,
+      "MBps": 1287.8,
+      "allocated_bytes": 28104,
+      "allocations": 217
+    },
+    "phosphor": {
+      "ns": 725457.0,
+      "MBps": 1445.71,
+      "allocated_bytes": 27488,
+      "allocations": 216
+    }
+  }
+}

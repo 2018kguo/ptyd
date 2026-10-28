@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -48,6 +49,12 @@ var hotStreams = []struct {
 	{"claude", benchdata.Claude(1<<20, 120, 40)},
 	{"logs", benchdata.Logs(1 << 20)},
 	{"progress", benchdata.Progress(1 << 20)},
+	{"graphemes", repeatedUnicodeStream("日本語 e\u0301 👩‍💻 🇺🇸 👨‍👩‍👧‍👦 한글\r\n")},
+	{"cjk", repeatedUnicodeStream("日本語 中文 한글 테스트\r\n")},
+}
+
+func repeatedUnicodeStream(line string) []byte {
+	return []byte("\x1b[?2027h" + strings.Repeat(line, (1<<20)/len(line)+1))
 }
 
 // BenchmarkConsume is the whole per-read output path of one terminal
