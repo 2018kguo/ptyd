@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,13 +22,20 @@ import (
 	"golang.org/x/term"
 )
 
-func runStatus(args []string) int {
-	fs, addr := newFlags("status", "[--json | --watch] [--discover] [--limit N] [--filter text] [--tag tags]",
+func runStatus(args []string) int { return runOverview(args, false) }
+func runUI(args []string) int     { return runOverview(args, true) }
+
+func runOverview(args []string, interactive bool) int {
+	name := "status"
+	if interactive {
+		name = "ui"
+	}
+	fs, addr := newFlags(name, "[--json | --watch] [--discover] [--limit N] [--filter text] [--tag tags]",
 		"See attention, running and stopped sessions. --json returns a compact snapshot.\n"+
-			"--watch opens a live selector: arrows or j/k, Enter to attach, / to filter, q to quit.")
+			"--watch opens a Vim-style picker: j/k, gg/G, i or Enter, /, : commands, ? for help.")
 	asJSON := fs.Bool("json", false, "Print structured JSON for agents")
-	discover := fs.Bool("discover", false, "Include native Codex and Claude sessions started outside ptyd")
-	watch := fs.Bool("watch", false, "Open the live terminal overview")
+	discover := fs.Bool("discover", interactive, "Include native Codex and Claude sessions started outside ptyd")
+	watch := fs.Bool("watch", interactive, "Open the live terminal overview")
 	limit := fs.Int("limit", terminal.DefaultOverviewLimit, "Maximum rows (counts include every match)")
 	query := fs.String("filter", "", "Match id, name, directory, command or agent")
 	tags := fs.String("tag", "", "Match any of these comma-separated tags")
@@ -165,15 +173,17 @@ type statusResult struct {
 	err   error
 }
 
-const statusEnter = "\x1b[?1049h\x1b[?25l\x1b[?2027l"
+const statusEnter = "\x1b[?1049h\x1b[?25l\x1b[?2027l\x1b[?2004h"
 
 type statusView struct {
-	snapshot *statusSnapshot
-	selected terminal.ID
-	query    string
-	editing  bool
-	err      error
-	notice   string
+	snapshot  *statusSnapshot
+	selected  terminal.ID
+	query     string
+	mode      statusMode
+	command   string
+	gotoFirst bool
+	err       error
+	notice    string
 }
 
 type statusSnapshot struct {
@@ -292,14 +302,19 @@ func statusFrame(v statusView, cols, rows int) string {
 		issue := v.snapshot.view.DiscoveryIssues[0]
 		lines = append(lines, string(issue.Provider)+": "+issue.Message)
 	} else {
-		lines = append(lines, "Attention is recorded watch matches; running does not imply an agent is working.")
+		lines = append(lines, "Choose a session. Use i to enter and quick jk to return.")
 	}
 	filter := "Filter: " + v.query
-	if v.editing {
-		filter += " | Enter applies, Esc returns"
+	switch v.mode {
+	case statusSearch:
+		filter = "/" + v.query + " | Enter applies, Esc returns"
+	case statusCommand:
+		filter = ":" + v.command
+	default:
+		filter = "NORMAL | " + filter
 	}
-	lines = append(lines, filter, "  "+padStatus("ID", 20)+padStatus("NAME", 20)+padStatus("STATE", 12)+" IDLE  ATTN  CLIENTS")
-	available := max(rows-10, 1)
+	lines = append(lines, filter, "  "+padStatus("ID", 20)+" "+padStatus("NAME", 20)+" "+padStatus("STATE", 12)+" IDLE  ATTN  CLIENTS")
+	available := max(rows-11, 1)
 	selected := v.selectedIndex()
 	start := max(selected-available+1, 0)
 	for i := start; i < len(v.sessions()) && i < start+available; i++ {
@@ -308,7 +323,7 @@ func statusFrame(v statusView, cols, rows int) string {
 		if row.ID == v.selected {
 			marker = "> "
 		}
-		line := marker + padStatus(string(row.ID), 20) + padStatus(row.Name, 20) + padStatus(overviewState(row), 12)
+		line := marker + padStatus(string(row.ID), 20) + " " + padStatus(row.Name, 20) + " " + padStatus(overviewState(row), 12)
 		line += padStatus(overviewIdle(row), 6)
 		line += fmt.Sprintf("%4d %7d", row.Attention, row.Attached)
 		lines = append(lines, line)
@@ -318,7 +333,11 @@ func statusFrame(v statusView, cols, rows int) string {
 	}
 	if len(v.sessions()) > 0 {
 		row := v.sessions()[selected]
-		lines = append(lines, "", "Directory: "+row.CWD, "Command: "+row.Command+" | Agent: "+row.Agent)
+		detail := "Command: " + row.Command
+		if row.Agent != "" {
+			detail += " | Agent: " + row.Agent
+		}
+		lines = append(lines, "", "Directory: "+row.CWD, detail)
 		if row.Preview != nil {
 			preview := row.Preview.Source + ": " + row.Preview.Text
 			if row.Preview.Truncated {
@@ -327,7 +346,18 @@ func statusFrame(v statusView, cols, rows int) string {
 			lines = append(lines, preview)
 		}
 	}
-	lines = append(lines, "", "↑/↓ or j/k select | Enter attach | Ctrl-\\ twice returns | / filter | r refresh | q quit")
+	lines = append(lines, "", "j/k move | i/Enter attach | / search | : command | ? help | q quit", "Attached: jk returns here | gg/G first/last")
+	if v.mode == statusHelp {
+		lines = []string{"ptyd controls", "", "j / k       Select the next / previous session", "gg / G      Select the first / last session", "i / Enter   Attach to the selected session", "/           Search by name, directory, command or agent", "Esc         Leave search or command entry", "r           Refresh", "", ":b name     Attach to a shown session by exact name or id", ":bn / :bp   Attach to the next / previous shown session", ":ls         Clear search and list sessions", ":q          Leave the picker; sessions keep running", ":help / ?   Show this help", "", "While attached: type j then k within 200 ms to return.", "To type literal jk, pause between letters or use bracketed paste.", "", "q, ? or Esc returns to the picker"}
+	}
+	footerRows := 2
+	if v.mode == statusHelp {
+		footerRows = 1
+	}
+	if rows >= footerRows && len(lines) > rows {
+		footer := append([]string(nil), lines[len(lines)-footerRows:]...)
+		lines = append(lines[:rows-footerRows], footer...)
+	}
 	var out strings.Builder
 	out.WriteString("\x1b[H\x1b[2J")
 	for i, line := range lines {
@@ -356,7 +386,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		if raw != nil {
 			_ = term.Restore(int(in.Fd()), raw)
 		}
-		_, _ = io.WriteString(out, "\x1b[0m\x1b[?25h\x1b[?1049l")
+		_, _ = io.WriteString(out, "\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
 	}()
 	input, err := client.NewInput(ctx, in, nil)
 	if err != nil {
@@ -369,6 +399,8 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 	go refreshStatus(ctx, c, options, queries, updates)
 	v := statusView{query: options.Query}
 	var pending []byte
+	pasting := false
+	escapeExpired := false
 	escapeTimer := time.NewTimer(time.Hour)
 	escapeTimer.Stop()
 	defer escapeTimer.Stop()
@@ -385,7 +417,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 	showTerminal := func(row terminal.SessionSummary, initial []byte) error {
 		_ = term.Restore(int(in.Fd()), raw)
 		raw = nil
-		_, _ = io.WriteString(out, "\x1b[0m\x1b[?25h\x1b[?1049l")
+		_, _ = io.WriteString(out, "\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
 		code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: row.Name}, false, initial)
 		v.notice = ""
 		if code != 0 {
@@ -452,25 +484,60 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		case <-resize:
 			draw()
 		case <-escapeTimer.C:
-			if len(pending) > 0 && pending[0] == 0x1b {
-				pending = nil
-				v.editing = false
+			if !pasting && len(pending) == 1 && pending[0] == 0x1b {
+				escapeExpired = true
+				v.cancelPrompt()
 				draw()
 			}
-		case bytes, ok := <-input.Bytes:
+		case chunk, ok := <-input.Bytes:
 			if !ok {
 				return nil
 			}
 			if importCancel != nil {
-				for _, b := range bytes {
+				for _, b := range chunk {
 					if b == 'q' || b == 3 {
 						return nil
 					}
 				}
 				continue
 			}
-			pending = append(pending, bytes...)
+			if escapeExpired && len(pending) == 1 && len(chunk) > 0 && chunk[0] != '[' && chunk[0] != 'O' {
+				pending = nil
+			}
+			escapeExpired = false
+			pending = append(pending, chunk...)
 			for len(pending) > 0 {
+				if pasting {
+					end := []byte("\x1b[201~")
+					if bytes.HasPrefix(pending, end) {
+						pasting = false
+						pending = pending[len(end):]
+						continue
+					}
+					if bytes.HasPrefix(end, pending) {
+						break
+					}
+					r, n := utf8.DecodeRune(pending)
+					if !utf8.FullRune(pending) {
+						break
+					}
+					pending = pending[n:]
+					// Paste can edit a prompt, but never execute a command or
+					// navigate the normal-mode picker, even if it has newlines.
+					if v.mode == statusSearch || v.mode == statusCommand {
+						if r == '\r' || r == '\n' || r == '\t' {
+							r = ' '
+						}
+						if !unicode.IsControl(r) {
+							before := v.query
+							v.key(r)
+							if before != v.query {
+								queueStatusQuery(queries, v.query)
+							}
+						}
+					}
+					continue
+				}
 				r, n := utf8.DecodeRune(pending)
 				if r == utf8.RuneError && !utf8.FullRune(pending) {
 					break
@@ -481,47 +548,28 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 						escapeTimer.Reset(100 * time.Millisecond)
 						break
 					}
+					escapeTimer.Stop()
+					pasting = bytes.Equal(pending[:consumed], []byte("\x1b[200~"))
 					pending = pending[consumed:]
 					if direction != 0 {
 						v.move(direction)
 					} else if consumed == 1 {
-						v.editing = false
+						v.cancelPrompt()
 					}
 					continue
 				}
 				pending = pending[n:]
-				if v.editing {
-					switch r {
-					case 0x03:
-						return nil
-					case '\r', '\n':
-						v.editing = false
-					case 0x7f, 0x08:
-						if v.query != "" {
-							_, n := utf8.DecodeLastRuneInString(v.query)
-							v.query = v.query[:len(v.query)-n]
-							queueStatusQuery(queries, v.query)
-						}
-					default:
-						if !unicode.IsControl(r) && utf8.RuneCountInString(v.query) < 200 {
-							v.query += string(r)
-							queueStatusQuery(queries, v.query)
-						}
-					}
-					continue
-				}
-				switch r {
-				case 'q', 0x03:
-					return nil
-				case 'j':
-					v.move(1)
-				case 'k':
-					v.move(-1)
-				case '/':
-					v.editing = true
-				case 'r':
+				previousQuery := v.query
+				action := v.key(r)
+				if previousQuery != v.query {
 					queueStatusQuery(queries, v.query)
-				case '\r', '\n':
+				}
+				switch action {
+				case statusQuit:
+					return nil
+				case statusRefresh:
+					queueStatusQuery(queries, v.query)
+				case statusAttach:
 					if len(v.sessions()) == 0 || v.snapshot == nil || v.snapshot.query != v.query {
 						continue
 					}
@@ -537,7 +585,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 						operation, cancelOperation := context.WithCancel(ctx)
 						importCancel = cancelOperation
 						request := terminal.ImportRequest{Ref: row.External.Ref}
-						v.notice = "Opening native session… q or Ctrl-C cancels."
+						v.notice = "Opening native session… q cancels."
 						draw()
 						go func() {
 							result, err := c.ImportAgent(operation, request)
@@ -577,7 +625,17 @@ func statusEscape(p []byte) (consumed, direction int) {
 	if p[1] != '[' && p[1] != 'O' {
 		return 1, 0
 	}
+	if len(p) >= 3 && bytes.Equal(p[:3], []byte("\x1b[M")) {
+		n, complete := client.MouseReportLength(p)
+		if !complete {
+			return 0, 0
+		}
+		return n, 0
+	}
 	for i := 2; i < len(p); i++ {
+		if i >= 128 {
+			return i, 0
+		}
 		if p[i] >= 0x40 && p[i] <= 0x7e {
 			switch p[i] {
 			case 'A':

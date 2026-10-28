@@ -56,7 +56,7 @@ view or shutting down ptyd closes the frontend, while native work continues.
 Unclaimed views expire after one minute. They use no automatic restore
 policy; discover and import again after restarting ptyd.
 
-Use `ptyd status --watch --discover` for the combined picker. A source
+Use `ptyd ui` for the combined picker. A source
 reference records which conversation was selected at launch, and does not
 track later navigation inside the native CLI. Generic restart/restore cannot
 reuse that reference without fresh validation. [The import reference](reference.md#import-native-agent-sessions)

@@ -16,7 +16,7 @@ a client disconnects. The CLI and local HTTP API control the same sessions.
 After a daemon restart, ptyd brings back the saved screen and can restart
 the command or resume a supported agent's conversation.
 
-![An agent running under ptyd, driven over HTTP and resumed after the daemon restarts](docs/demo.gif)
+![Switching between running terminals with Vim-style controls](docs/demo.gif)
 
 ## What an agent gets
 
@@ -59,12 +59,15 @@ ptyd new
 Linux and macOS; the build toolchain is declared in [go.mod](go.mod).
 The daemon listens on `127.0.0.1:4242`. Commands find its saved token automatically.
 
-Press **Ctrl-\\ twice** to detach. Come back with:
+Type **jk** quickly (j, then k) to detach. Open the session picker with:
 
 ```sh
-ptyd ls
-ptyd attach 1
+ptyd ui
 ```
+
+Use `j/k` to move, `i` or Enter to attach, and quick `jk` to return.
+`/` searches, `gg/G` jumps to the first/last session, and `:q` leaves the
+picker without stopping work. Press `?` for the full controls.
 
 Or start a command in the background:
 
@@ -84,9 +87,11 @@ ptyd status --json          # structured overview for an agent
 ptyd status --watch         # live selector; Enter attaches
 ```
 
-In the live view, use arrows or j/k to select, Enter to attach, and
-Ctrl-\\ twice to return. Press / to filter by name, directory, command or
-agent. The selection follows its session id as rows reorder.
+`ptyd ui` opens the live view with native discovery enabled. The selection
+follows its session id as rows reorder. Use `:b name` to attach to a shown
+session, `:bn`/`:bp` for the next/previous one, and `:ls` to clear the search.
+The controls follow Vim/Helix's modal pattern, including the documented
+[`jk` mapping](https://docs.helix-editor.com/remapping.html).
 
 Attention means a configured watch matched output. Running and idle time
 are process observations; they do not classify an agent's thoughts.
@@ -104,11 +109,11 @@ the fields. The live interaction was informed by
 
 ```sh
 ptyd agents                         # native sessions and what can be imported
-ptyd status --watch --discover      # managed terminals and native agents together
+ptyd ui                             # managed terminals and native agents together
 ```
 
 Select an outside session and press Enter. Ptyd opens a terminal view using
-that agent's native attach API, with its exact conversation id. Ctrl-\ twice
+that agent's native attach API, with its exact conversation id. Quick `jk`
 returns to the picker and releases the view; the native worker keeps running.
 Your original tab stays open until you close it yourself.
 

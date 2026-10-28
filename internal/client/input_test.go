@@ -255,12 +255,12 @@ func TestInputEOFAndReadErrorReleaseOwnership(t *testing.T) {
 
 func TestAttachHandsOffCoalescedInputForEveryDetachEncoding(t *testing.T) {
 	for _, tc := range []struct {
-		name, key, release string
+		name, first, second string
 	}{
-		{"legacy", "\x1c", ""},
-		{"kitty", "\x1b[92;5u", ""},
-		{"kitty events", "\x1b[92;5:1u", "\x1b[92;5:3u"},
-		{"modifyOtherKeys", "\x1b[27;5;92~", ""},
+		{"plain", "j", "k"},
+		{"kitty", "\x1b[106u", "\x1b[107u"},
+		{"kitty events", "\x1b[106;1:1u\x1b[106;1:3u", "\x1b[107;1:1u"},
+		{"modifyOtherKeys", "\x1b[27;1;106~", "\x1b[27;1;107~"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mgr, addr := startDaemon(t)
@@ -269,7 +269,7 @@ func TestAttachHandsOffCoalescedInputForEveryDetachEncoding(t *testing.T) {
 				t.Fatal(err)
 			}
 			u := newUserTerminal(t, 40, 5)
-			initial := []byte("from-overview\r" + tc.key + tc.release + tc.key + "q")
+			initial := []byte("from-overview\r" + tc.first + tc.second + "q")
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			outcome, err := Attach(ctx, Options{Addr: addr, Token: "tok", ID: string(info.ID), InitialInput: initial}, u.slave, u.slave, nil)
@@ -326,7 +326,7 @@ func TestAttachReturnsInputOwnershipOnEveryDetach(t *testing.T) {
 		before := len(u.rawOutput())
 		done := attach(u, addr, string(info.ID), make(chan os.Signal))
 		eventually(t, "attached window", func() bool { return len(u.rawOutput()) > before })
-		u.typeKeys(t, "\x1c\x1c")
+		u.typeKeys(t, "jk")
 		select {
 		case result := <-done:
 			if result.err != nil || !result.detached {

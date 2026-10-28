@@ -27,6 +27,7 @@ Usage:
   ptyd new [-n name] [-d] [--restore auto|none|rerun|agent] [command [args...]]
                                    start a terminal ($SHELL by default) and attach
   ptyd ls                          list terminals
+  ptyd ui                          open the session picker (j/k, /, : commands)
   ptyd status [--json | --watch] [--discover]
                                    attention-first session overview
   ptyd agents [--json]              discover native Codex and Claude sessions
@@ -39,7 +40,7 @@ Usage:
   ptyd token                       print the token, for curl -H "X-Ptyd-Token: $(ptyd token)"
 
 <terminal> is an id, its number (3 for term-3-ab12), a name or a unique id
-prefix. Press Ctrl-\ twice to detach. Commands reach the daemon at $PTYD_ADDR
+prefix. Type jk quickly to detach. Commands reach the daemon at $PTYD_ADDR
 (default 127.0.0.1:4242) with $PTYD_TOKEN, or the token the daemon saved
 in ~/.local/state/ptyd.
 `
@@ -56,6 +57,7 @@ var commands = map[string]func(args []string) int{
 	"new":     runNew,
 	"ls":      runLs,
 	"status":  runStatus,
+	"ui":      runUI,
 	"agents":  runAgents,
 	"import":  runImport,
 	"attach":  runAttach,

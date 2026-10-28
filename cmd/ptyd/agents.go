@@ -15,7 +15,7 @@ import (
 )
 
 func runAgents(args []string) int {
-	fs, addr := newFlags("agents", "[--json]", "Discover existing Codex and Claude sessions without starting workers.\nUse status --watch --discover for the combined picker.")
+	fs, addr := newFlags("agents", "[--json]", "Discover existing Codex and Claude sessions without starting workers.\nUse ptyd ui for the combined picker.")
 	asJSON := fs.Bool("json", false, "Print native sessions, import actions and discovery failures as JSON")
 	_ = fs.Parse(args)
 	if fs.NArg() != 0 {
