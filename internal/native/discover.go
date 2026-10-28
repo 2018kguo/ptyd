@@ -33,6 +33,7 @@ func (d *Discoverer) List(ctx context.Context) Listing {
 		return d.cached
 	}
 	out := d.Fresh(ctx)
+	out.Processes, out.ProcessIssue, out.ProcessesTruncated = discoverProcesses(ctx, out.Sessions)
 	if ctx.Err() == nil {
 		d.cached = out
 		d.at = time.Now()

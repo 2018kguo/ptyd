@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,6 +29,8 @@ import (
 //     carries cols and rows as two big-endian uint16s.
 const (
 	AttachProtocol = "ptyd-attach"
+	FrameOutput    = 'o'
+	FrameSnapshot  = 's'
 	FrameInput     = 'i'
 	FrameResize    = 'r'
 	maxFrame       = 1 << 20
@@ -41,7 +44,7 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	cols, _ := strconv.ParseUint(q.Get("cols"), 10, 16)
 	rows, _ := strconv.ParseUint(q.Get("rows"), 10, 16)
-	at, err := s.mgr.Attach(terminal.ID(r.PathValue("id")), uint16(cols), uint16(rows), q.Get("readonly") == "1")
+	at, err := s.mgr.Attach(terminal.ID(r.PathValue("id")), terminal.AttachOptions{Cols: uint16(cols), Rows: uint16(rows), ReadOnly: q.Get("readonly") == "1", Rendered: q.Get("rendered") == "1"})
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -58,8 +61,12 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 	ro := ""
+	rendered := q.Get("rendered") == "1"
+	if rendered {
+		ro += "X-Ptyd-Rendered: 1\r\n"
+	}
 	if at.ReadOnly() {
-		ro = "X-Ptyd-Readonly: 1\r\n"
+		ro += "X-Ptyd-Readonly: 1\r\n"
 	}
 	if _, err := fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: %s\r\n%s\r\n", AttachProtocol, ro); err != nil {
 		return
@@ -78,11 +85,23 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
 		_ = readFrames(brw.Reader, at)
 	}()
 	for {
-		b, err := at.Read(ctx)
+		update, err := at.ReadUpdate(ctx)
 		if err != nil {
 			return
 		}
-		if _, err := conn.Write(b); err != nil {
+		if rendered {
+			kind := byte(FrameOutput)
+			if update.Snapshot {
+				kind = FrameSnapshot
+			}
+			var header [5]byte
+			header[0] = kind
+			binary.BigEndian.PutUint32(header[1:], uint32(len(update.Data)))
+			parts := net.Buffers{header[:], update.Data}
+			if _, err := parts.WriteTo(conn); err != nil {
+				return
+			}
+		} else if _, err := conn.Write(update.Data); err != nil {
 			return
 		}
 	}

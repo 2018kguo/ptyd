@@ -216,7 +216,7 @@ func (v *statusView) refresh(result statusResult) {
 	if result.err != nil {
 		return
 	} // retain the last successful snapshot
-	groups := map[string]int{"Open terminals": 0, "Agents": 1, "Needs attention": 2, "History": 3}
+	groups := map[string]int{"Open terminals": 0, "Agents": 1, "Needs attention": 2, "Original tabs": 3, "History": 4}
 	sort.SliceStable(result.view.Sessions, func(i, j int) bool {
 		a, b := result.view.Sessions[i], result.view.Sessions[j]
 		if x, y := groups[sessionGroup(a)], groups[sessionGroup(b)]; x != y {
@@ -325,7 +325,8 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		}
 		_, _ = io.WriteString(out, "\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
 	}()
-	input, err := client.NewInput(ctx, in, nil)
+	colors, initial := client.ProbeColors(ctx, in, out)
+	input, err := client.NewInput(ctx, in, initial)
 	if err != nil {
 		return err
 	}
@@ -357,7 +358,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 		_ = term.Restore(int(in.Fd()), raw)
 		raw = nil
 		_, _ = io.WriteString(out, "\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
-		code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: sessionApp(row) + " · " + sessionName(row)}, client.Options{InitialInput: initial, ReadOnly: row.External == nil && row.State != terminal.OverviewRunning, HoldReadOnly: true})
+		code, unread := attach(ctx, c, terminal.Info{ID: row.ID, Name: sessionApp(row) + " · " + sessionName(row)}, client.Options{InitialInput: initial, ReadOnly: row.External == nil && row.State != terminal.OverviewRunning, Hold: true})
 		v.notice = "Returned from " + sessionName(row) + "."
 		if code != 0 {
 			v.notice = "The window closed. Refresh or open it again."
@@ -513,6 +514,10 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 						continue
 					}
 					row := v.sessions()[v.selectedIndex()]
+					if row.Local != nil {
+						v.notice = row.Local.Guidance()
+						continue
+					}
 					if row.External != nil {
 						if row.External.Action != native.Attach {
 							v.notice = row.External.Reason
@@ -523,7 +528,7 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 						}
 						operation, cancelOperation := context.WithCancel(ctx)
 						importCancel = cancelOperation
-						request := terminal.ImportRequest{Ref: row.External.Ref, TerminalEnv: client.TerminalEnvironment()}
+						request := terminal.ImportRequest{Ref: row.External.Ref, TerminalEnv: client.TerminalEnvironment(), TerminalColors: colors}
 						v.notice = "Opening native session… q cancels."
 						draw()
 						go func() {
@@ -559,6 +564,14 @@ func watchStatus(c client.API, options terminal.OverviewOptions, in, out *os.Fil
 // Unknown keys are ignored as a whole rather than leaking into the filter.
 func statusEscape(p []byte) (consumed, direction int) {
 	if len(p) < 2 {
+		return 0, 0
+	}
+	if strings.ContainsRune("]P_^X", rune(p[1])) {
+		for i := 2; i < len(p); i++ {
+			if p[i] == 7 && p[1] == ']' || i > 2 && p[i] == '\\' && p[i-1] == 0x1b {
+				return i + 1, 0
+			}
+		}
 		return 0, 0
 	}
 	if p[1] != '[' && p[1] != 'O' {

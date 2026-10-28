@@ -127,6 +127,9 @@ func TestCodexDiscoveryUsesReadOnlyRPCAndPinsTheDaemon(t *testing.T) {
 	}
 	var mu sync.Mutex
 	var methods []string
+	path := "/tmp/rollout.jsonl"
+	savedPath := &path
+	ephemeral := false
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/rpc" {
 			t.Errorf("wrong endpoint %s", r.URL.Path)
@@ -170,7 +173,10 @@ func TestCodexDiscoveryUsesReadOnlyRPCAndPinsTheDaemon(t *testing.T) {
 				if json.Unmarshal(req.Params, &p) != nil || p.ID != fixtureID || p.Turns {
 					t.Error("read altered scope or requested history")
 				}
-				out = map[string]any{"thread": map[string]any{"id": fixtureID, "cwd": "/tmp", "name": "fixture", "source": "cli", "createdAt": 1700000000, "status": map[string]any{"type": "active", "activeFlags": []string{"waitingOnApproval"}}}}
+				mu.Lock()
+				path, temporary := savedPath, ephemeral
+				mu.Unlock()
+				out = map[string]any{"thread": map[string]any{"id": fixtureID, "cwd": "/tmp", "name": "fixture", "path": path, "ephemeral": temporary, "source": "cli", "createdAt": 1700000000, "status": map[string]any{"type": "active", "activeFlags": []string{"waitingOnApproval"}}}}
 			default:
 				t.Errorf("discovery attempted %s", req.Method)
 				return
@@ -199,9 +205,28 @@ func TestCodexDiscoveryUsesReadOnlyRPCAndPinsTheDaemon(t *testing.T) {
 		t.Fatalf("wrong identity/status %+v", rows[0])
 	}
 	mu.Lock()
-	defer mu.Unlock()
-	if !reflect.DeepEqual(methods, []string{"initialize", "initialized", "thread/loaded/list", "thread/read"}) {
-		t.Fatalf("methods: %v", methods)
+	gotMethods := append([]string(nil), methods...)
+	mu.Unlock()
+	if !reflect.DeepEqual(gotMethods, []string{"initialize", "initialized", "thread/loaded/list", "thread/read"}) {
+		t.Fatalf("methods: %v", gotMethods)
+	}
+	for _, tc := range []struct {
+		name      string
+		path      *string
+		ephemeral bool
+	}{{"no rollout", nil, false}, {"ephemeral", &path, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			mu.Lock()
+			savedPath, ephemeral = tc.path, tc.ephemeral
+			mu.Unlock()
+			rows, _, err := codexSessions(ctx)
+			if err != nil || len(rows) != 1 || rows[0].Action != Unavailable || rows[0].Status != "not_saved" || !strings.Contains(rows[0].Reason, "no saved rollout") {
+				t.Fatalf("unsafe ready thread: %+v %v", rows, err)
+			}
+			if _, err = Plan(rows[0], true); err == nil {
+				t.Fatal("unsaved thread authorized an import")
+			}
+		})
 	}
 }
 func TestNativeLimitsAndCancellation(t *testing.T) {

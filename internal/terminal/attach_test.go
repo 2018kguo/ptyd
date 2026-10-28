@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/2018kguo/phosphor"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +24,7 @@ func TestSlowAttacherGetsRepaint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close(info.ID)
-	at, err := m.Attach(info.ID, 0, 0, false)
+	at, err := m.Attach(info.ID, AttachOptions{Cols: 0, Rows: 0, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,12 +85,12 @@ func TestTypingClientGetsItsSize(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close(info.ID)
-	a, err := m.Attach(info.ID, 100, 30, false)
+	a, err := m.Attach(info.ID, AttachOptions{Cols: 100, Rows: 30, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	b, err := m.Attach(info.ID, 60, 20, false)
+	b, err := m.Attach(info.ID, AttachOptions{Cols: 60, Rows: 20, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,5 +170,118 @@ func TestAttachCoalescesBulkOutput(t *testing.T) {
 	defer a.mu.Unlock()
 	if cap(a.spare) > maxIdleBuffer || cap(at.last) > maxIdleBuffer {
 		t.Fatalf("quiet client keeps %d and %d bytes", cap(a.spare), cap(at.last))
+	}
+}
+
+func TestTerminalRepliesBeforeViewAndWithReadOnlyRawObserver(t *testing.T) {
+	for _, observed := range []bool{false, true} {
+		t.Run(fmt.Sprint(observed), func(t *testing.T) {
+			m := NewManager()
+			defer m.CloseAll()
+			reply := filepath.Join(t.TempDir(), "replies")
+			script := `stty -echo; read start; stty raw; printf '\033[H'; i=0; while [ $i -lt 16 ]; do printf '\033[6n'; i=$((i+1)); done; dd bs=1 count=96 of="$1" 2>/dev/null; printf 'REPLIES_DONE\r\n'; exec cat`
+			info, err := m.Create(CreateConfig{Name: "query-burst", Command: "sh", Args: []string{"-c", script, "fixture", reply}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if observed {
+				passive, err := m.Attach(info.ID, AttachOptions{Cols: 80, Rows: 24, ReadOnly: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer passive.Close()
+				view, err := m.Attach(info.ID, AttachOptions{Cols: 80, Rows: 24, Rendered: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer view.Close()
+			}
+			if err := m.Write(info.ID, "\n"); err != nil {
+				t.Fatal(err)
+			}
+			waitScreen(t, m, info.ID, "REPLIES_DONE")
+			data, err := os.ReadFile(reply)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != strings.Repeat("\x1b[1;1R", 16) {
+				t.Fatalf("lost finite query burst: %q", data)
+			}
+		})
+	}
+}
+func TestSparseStaticViewKeepsAcceptedSnapshotGeometry(t *testing.T) {
+	scr := phosphor.New(65535, 65)
+	scr.Write([]byte("SPARSE"))
+	at, err := staticAttachment(scr, AttachOptions{Cols: 80, Rows: 24, ReadOnly: true, Rendered: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer at.Close()
+	data, err := at.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := phosphor.New(1, 1)
+	if err := restored.RestoreSnapshot(data, trustedSnapshotLimits()); err != nil {
+		t.Fatal(err)
+	}
+	if w, h := scr.Size(); w != 65535 || h != 65 {
+		t.Fatal("viewer changed retained screen")
+	}
+	if w, h := restored.Size(); w != 80 || h != 24 {
+		t.Fatal("static view not fitted")
+	}
+}
+
+func TestRenderedOverflowRecoversPaletteAndFutureOutput(t *testing.T) {
+	m := NewManager()
+	defer m.CloseAll()
+	script := `read start; printf '\033]4;1;rgb:12/34/56\007\033[31mX\033[0m'; dd if=/dev/zero bs=1024 count=2048 2>/dev/null; printf '\r\nDONE\r\n'; exec cat`
+	info, err := m.Create(CreateConfig{Name: "render-overflow", Command: "sh", Args: []string{"-c", script}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, err := m.Attach(info.ID, AttachOptions{Cols: 80, Rows: 24, Rendered: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer at.Close()
+	initial, err := at.ReadUpdate(context.Background())
+	if err != nil || !initial.Snapshot {
+		t.Fatal("missing initial snapshot", err)
+	}
+	if err := m.Write(info.ID, "\n"); err != nil {
+		t.Fatal(err)
+	}
+	waitScreen(t, m, info.ID, "DONE")
+	next, err := at.ReadUpdate(context.Background())
+	if err != nil || !next.Snapshot {
+		t.Fatal("overflow lost snapshot framing", err)
+	}
+	view := phosphor.New(1, 1)
+	if err := view.RestoreSnapshot(next.Data, trustedSnapshotLimits()); err != nil {
+		t.Fatal(err)
+	}
+	if c := view.Palette().Colors[1]; c != (phosphor.RGB{R: 18, G: 52, B: 86}) {
+		t.Fatalf("resync lost palette: %+v", c)
+	}
+	if err := at.Write([]byte("future\r")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for {
+		update, err := at.ReadUpdate(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if update.Snapshot {
+			t.Fatal("ordinary output marked snapshot")
+		}
+		view.Write(update.Data)
+		if strings.Contains(strings.Join(view.Lines(), "\n"), "future") {
+			break
+		}
 	}
 }

@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"fmt"
+	"github.com/2018kguo/phosphor"
 	"io"
 	"sync"
 	"time"
@@ -35,12 +36,14 @@ const (
 // feeds the screen), so a repaint taken under scrMu is exactly in step
 // with the queue.
 type attacher struct {
-	mu       sync.Mutex
-	buf      []byte
-	spare    []byte // a buffer the reader is done with, reused by push
-	overflow bool   // dropped output; the next read is a repaint
-	ended    bool   // the terminal's output has ended
-	wake     chan struct{}
+	renderedView bool
+	rawResponder bool // writable raw viewer supplies terminal replies
+	mu           sync.Mutex
+	buf          []byte
+	spare        []byte // a buffer the reader is done with, reused by push
+	overflow     bool   // dropped output; the next read is a repaint
+	ended        bool   // the terminal's output has ended
+	wake         chan struct{}
 }
 
 func (a *attacher) push(p []byte) {
@@ -90,6 +93,7 @@ type Attachment struct {
 	sent     time.Time // when the previous Read returned output
 	held     bool      // the queue was held back once for Coalesce
 	timer    *time.Timer
+	rendered bool
 	readOnly bool
 	once     sync.Once
 
@@ -102,28 +106,34 @@ type Attachment struct {
 // resized to them first (the most recent attacher's size wins). The first
 // Read returns a repaint of the screen with its scrollback. A ghost can be
 // attached read-only: the client gets its saved screen, then EOF.
-func (m *Manager) Attach(id ID, cols, rows uint16, readOnly bool) (*Attachment, error) {
+type AttachOptions struct {
+	Cols, Rows uint16
+	ReadOnly   bool
+	Rendered   bool
+}
+
+func (m *Manager) Attach(id ID, options AttachOptions) (*Attachment, error) {
+	cols, rows, readOnly := options.Cols, options.Rows, options.ReadOnly
 	t, err := m.get(id)
 	if err != nil {
-		if g, ok := m.ghostScreen(id, cols, rows); ok {
-			return &Attachment{initial: g, readOnly: true, a: &attacher{ended: true, wake: make(chan struct{}, 1)}}, nil
+		if scr, ok := m.loadGhostScreen(id); ok {
+			return staticAttachment(scr, options)
 		}
 		return nil, err
 	}
 	if cols > 0 && rows > 0 && !readOnly && t.running() {
 		_ = t.resize(cols, rows)
 	}
-	a := &attacher{wake: make(chan struct{}, 1)}
+	a := &attacher{wake: make(chan struct{}, 1), renderedView: options.Rendered, rawResponder: !options.Rendered && !options.ReadOnly}
 	t.scrMu.Lock()
+	if readOnly && t.outputEnded {
+		// A static view neither claims a native frontend nor changes its lifetime.
+		at, err := staticAttachment(t.screen, options)
+		t.scrMu.Unlock()
+		return at, err
+	}
 	if t.cfg.source.Provider != "" {
 		if t.nativeClosing {
-			if readOnly && t.outputEnded {
-				// Copy the ended screen without claiming the native frontend or
-				// extending its cleanup deadline.
-				initial := t.screen.Repaint(true)
-				t.scrMu.Unlock()
-				return &Attachment{initial: initial, readOnly: true, a: &attacher{ended: true, wake: make(chan struct{}, 1)}}, nil
-			}
 			t.scrMu.Unlock()
 			return nil, fmt.Errorf("native view has closed; refresh discovery and import again")
 		}
@@ -132,7 +142,11 @@ func (m *Manager) Attach(id ID, cols, rows uint16, readOnly bool) (*Attachment, 
 			t.nativeDeadline = nil
 		}
 	}
+
 	initial := t.screen.Repaint(true)
+	if options.Rendered {
+		initial = t.screen.Snapshot()
+	}
 	if t.outputEnded {
 		a.ended = true
 	} else {
@@ -144,7 +158,7 @@ func (m *Manager) Attach(id ID, cols, rows uint16, readOnly bool) (*Attachment, 
 	}
 	t.scrMu.Unlock()
 	m.activeSubs.Add(1)
-	return &Attachment{t: t, a: a, initial: initial, readOnly: readOnly, cols: cols, rows: rows}, nil
+	return &Attachment{t: t, a: a, initial: initial, rendered: options.Rendered, readOnly: readOnly, cols: cols, rows: rows}, nil
 }
 
 // ReadOnly reports whether input and resizes are ignored.
@@ -153,25 +167,35 @@ func (at *Attachment) ReadOnly() bool { return at.readOnly }
 // Read waits for output and returns it. It returns io.EOF once the
 // terminal's output has ended and everything was delivered, and ctx's
 // error if ctx ends first. The bytes are valid until the next Read.
+type AttachmentUpdate struct {
+	Data     []byte
+	Snapshot bool
+}
+
 func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
+	update, err := at.ReadUpdate(ctx)
+	return update.Data, err
+}
+
+func (at *Attachment) ReadUpdate(ctx context.Context) (AttachmentUpdate, error) {
 	if at.initial != nil {
 		b := at.initial
 		at.initial = nil
-		return b, nil
+		return AttachmentUpdate{Data: b, Snapshot: at.rendered}, nil
 	}
 	a := at.a
 	for {
 		a.mu.Lock()
 		if a.overflow {
 			a.mu.Unlock()
-			return at.repaint(), nil
+			return AttachmentUpdate{Data: at.repaint(), Snapshot: at.rendered}, nil
 		}
 		if n := len(a.buf); n > 0 {
 			if wait := Coalesce - time.Since(at.sent); wait > 0 && !at.held && n >= CoalesceMin && n < holdMax {
 				a.mu.Unlock()
 				at.held = true
 				if err := at.sleep(ctx, wait); err != nil {
-					return nil, err
+					return AttachmentUpdate{}, err
 				}
 				continue
 			}
@@ -183,13 +207,13 @@ func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
 			a.buf, a.spare = nil, at.last
 			at.last = b
 			a.mu.Unlock()
-			return b, nil
+			return AttachmentUpdate{Data: b}, nil
 		}
 		ended := a.ended
 		big := cap(a.spare) > maxIdleBuffer || cap(at.last) > maxIdleBuffer
 		a.mu.Unlock()
 		if ended {
-			return nil, io.EOF
+			return AttachmentUpdate{}, io.EOF
 		}
 		// A client that stays quiet for a second gives back the large
 		// buffers a burst left it.
@@ -209,7 +233,7 @@ func (at *Attachment) Read(ctx context.Context) ([]byte, error) {
 				at.last = nil
 			}
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return AttachmentUpdate{}, ctx.Err()
 		}
 	}
 }
@@ -248,6 +272,9 @@ func (at *Attachment) repaint() []byte {
 	at.a.mu.Lock()
 	at.a.buf, at.a.overflow = nil, false
 	at.a.mu.Unlock()
+	if at.rendered {
+		return t.screen.Snapshot()
+	}
 	return t.screen.Repaint(false)
 }
 
@@ -360,4 +387,19 @@ func (m *Manager) expireNativeView(id ID) {
 			_ = m.Close(id)
 		}
 	})
+}
+
+func staticAttachment(scr *phosphor.Terminal, options AttachOptions) (*Attachment, error) {
+	copy := phosphor.New(1, 1)
+	if err := copy.RestoreSnapshot(scr.Snapshot(), trustedSnapshotLimits()); err != nil {
+		return nil, err
+	}
+	if options.Cols > 0 && options.Rows > 0 {
+		copy.Resize(int(options.Cols), int(options.Rows))
+	}
+	initial := copy.Repaint(true)
+	if options.Rendered {
+		initial = copy.Snapshot()
+	}
+	return &Attachment{initial: initial, readOnly: true, rendered: options.Rendered, a: &attacher{ended: true, wake: make(chan struct{}, 1)}}, nil
 }

@@ -159,6 +159,8 @@ func codexSessions(ctx context.Context) ([]Session, bool, error) {
 			Thread struct {
 				ID        string          `json:"id"`
 				Name      string          `json:"name"`
+				Path      *string         `json:"path"`
+				Ephemeral bool            `json:"ephemeral"`
 				CWD       string          `json:"cwd"`
 				Source    json.RawMessage `json:"source"`
 				CreatedAt int64           `json:"createdAt"`
@@ -185,12 +187,18 @@ func codexSessions(ctx context.Context) ([]Session, bool, error) {
 		s := Session{Ref: ref, Name: t.Name, CWD: t.CWD, Status: t.Status.Type, StartedAt: time.Unix(t.CreatedAt, 0), Endpoint: endpoint, WorkerPID: rpc.peerPID}
 		switch t.Status.Type {
 		case "idle", "active":
-			s.Action = Attach
+			if t.Ephemeral || t.Path == nil || !filepath.IsAbs(*t.Path) {
+				s.Action = Unavailable
+				s.Status = "not_saved"
+				s.Reason = "Codex has no saved rollout for this thread yet, so its terminal cannot resume it. Use the original Codex tab until it saves a turn, then refresh."
+			} else {
+				s.Action = Attach
+			}
 		default:
 			s.Action = Unavailable
 			s.Reason = "Codex has not confirmed a loaded, attachable session; open it in Codex and refresh."
 		}
-		if len(t.Status.ActiveFlags) > 0 {
+		if len(t.Status.ActiveFlags) > 0 && s.Action == Attach {
 			s.Status = t.Status.ActiveFlags[0]
 			s.WaitingFor = strings.Join(t.Status.ActiveFlags, ", ")
 		}

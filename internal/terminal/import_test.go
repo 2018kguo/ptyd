@@ -67,7 +67,7 @@ func TestImportCreatesAViewAndLastDetachKeepsNativeWorker(t *testing.T) {
 	if result.Terminal.PID == worker.Pid || result.Terminal.Source != session.Ref || result.Reused {
 		t.Fatalf("wrong frontend identity: %+v", result)
 	}
-	a, err := m.Attach(result.Terminal.ID, 80, 24, false)
+	a, err := m.Attach(result.Terminal.ID, AttachOptions{Cols: 80, Rows: 24, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,11 +231,11 @@ func TestNativeViewLivesUntilLastAttachment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := m.Attach(result.Terminal.ID, 80, 24, false)
+	first, err := m.Attach(result.Terminal.ID, AttachOptions{Cols: 80, Rows: 24, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := m.Attach(result.Terminal.ID, 80, 24, false)
+	second, err := m.Attach(result.Terminal.ID, AttachOptions{Cols: 80, Rows: 24, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestImportReusesCurrentManagedHookWithoutChangingItsLifetime(t *testing.T) 
 	if err != nil || !result.Reused || result.Terminal.ID != info.ID || result.Terminal.Source.Provider != "" {
 		t.Fatalf("managed session not reused: %+v %v", result, err)
 	}
-	a, err := m.Attach(result.Terminal.ID, 80, 24, false)
+	a, err := m.Attach(result.Terminal.ID, AttachOptions{Cols: 80, Rows: 24, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestNativeFrontendExitStatusSurvivesOutputEOFAndLastDetach(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := m.Attach(result.Terminal.ID, 80, 24, false)
+	a, err := m.Attach(result.Terminal.ID, AttachOptions{Cols: 80, Rows: 24, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestNativeFrontendExitStatusSurvivesOutputEOFAndLastDetach(t *testing.T) {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	saved, err := m.Attach(result.Terminal.ID, 80, 24, true)
+	saved, err := m.Attach(result.Terminal.ID, AttachOptions{Cols: 80, Rows: 24, ReadOnly: true})
 	if err != nil {
 		t.Fatalf("ended native screen could not be viewed: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestImportedFrontendUsesViewingTerminalColors(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitScreen(t, m, result.Terminal.ID, "VIEW_COLOR_OK")
-	a, err := m.Attach(result.Terminal.ID, 80, 24, false)
+	a, err := m.Attach(result.Terminal.ID, AttachOptions{Cols: 80, Rows: 24, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}

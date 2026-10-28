@@ -726,3 +726,23 @@ func TestCompactPickerRetainsRefreshWarnings(t *testing.T) {
 		}
 	}
 }
+
+func TestPickerKeepsFrontendFailureUntilUserReturns(t *testing.T) {
+	d, _, _ := nativeCLIFixture(t, "#!/bin/sh\nprintf 'NATIVE_STARTUP_ERROR: missing rollout\\n'\nexit 7\n")
+	w := d.open(110, 24, "ui")
+	w.waitText("native-fixture")
+	w.keys("\r")
+	w.waitText("NATIVE_STARTUP_ERROR: missing rollout")
+	w.waitText("finished")
+	w.keys("ordinary input\r")
+	time.Sleep(100 * time.Millisecond)
+	if !strings.Contains(strings.Join(w.lines(), "\n"), "NATIVE_STARTUP_ERROR: missing rollout") {
+		t.Fatalf("error vanished after key: %q", w.lines())
+	}
+	w.keys("jk")
+	w.waitText("ptyd  /  Sessions")
+	w.keys("q")
+	if code := w.waitExit(); code != 0 {
+		t.Fatalf("picker exit %d", code)
+	}
+}

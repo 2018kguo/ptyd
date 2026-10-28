@@ -14,7 +14,7 @@ control. Both use the same daemon and session ids.
 | `ptyd status [--json \| --watch] [--discover] [--limit N] [--filter text] [--tag tags]` | Attention-first overview; live selection or compact agent JSON. |
 | `ptyd agents [--json]` | Discover native Codex and Claude sessions and their import actions. |
 | `ptyd import [-d] [-n name] [--resume] provider:UUID` | Open a view for an exact native conversation; `-d` prints its terminal id. |
-| `ptyd attach [--readonly] terminal` | Attach to a running session or view a stopped one's screen. |
+| `ptyd attach [--readonly] [--raw] terminal` | Attach to a running session or view a stopped one's screen. |
 | `ptyd restore [--policy policy] terminal` | Start a stopped terminal again under the same id, then attach. |
 | `ptyd kill terminal...` | Kill and forget sessions. |
 | `ptyd token` | Print the daemon token for an HTTP client. |
@@ -106,6 +106,7 @@ them still requires an explicit `ptyd restore`.
   "args": ["-l"],
   "cwd": "/tmp",
   "env": {"FOO": "bar"},
+  "terminal_colors": {"foreground":"#d8dee9","background":"#282c34"},
   "tags": ["build"],
   "cols": 120,
   "rows": 40,
@@ -121,6 +122,13 @@ Display settings from the daemon are excluded. `TERM` defaults to
 the viewing terminal's `TERM`, `COLORTERM`, `TERM_PROGRAM`, `NO_COLOR`,
 `CLICOLOR`, `CLICOLOR_FORCE` and `FORCE_COLOR` settings. Commands are looked
 up in the daemon's PATH.
+
+`terminal_colors` optionally supplies the default foreground/background pair
+as `#RRGGBB`. Interactive creation and import probe the viewing terminal under
+a shared 250 ms deadline; unsupported hosts use the emulator's default palette.
+Unrelated keys read during this probe are preserved. Detached/API creation can
+supply colors explicitly. Ptyd answers VT queries while no writable raw viewer
+is responsible for replies, including before the first attachment.
 See [restore policies](operating.md#restore-policies) before using agent restore.
 
 ## Choose lines or a screen
@@ -192,12 +200,17 @@ kitty and modifyOtherKeys encodings do. On detach, terminal modes reset and
 the attached window moves into local scrollback. Connection loss exits the
 client with code 1; a normal program exit uses its exit code. Stopped sessions
 attach read-only and return immediately from the standalone command. In the
-picker, their saved screen stays open until `jk`.
+picker, saved screens and newly exited frontends stay open until `jk`. Further
+keystrokes stay local after output ends; the footer changes to “finished.”
 
-TTY attachments identify the view in the window/tab title, including a
-`jk: sessions` return hint. App title updates retain the ptyd prefix and hint;
-the previous title is restored on return. Colors, cursor controls and other
-terminal output pass through. The title is a view label; it does not verify
+Human TTY attachments reserve the bottom row for the session name and
+`jk: sessions`. The app receives one fewer PTY row and cannot draw over this
+indicator by clearing, scrolling or switching screens. The client draws cells
+and preserves the app's cursor, keyboard modes, colors and links. Mouse events
+for the status row do not reach the app. The window/tab title identifies the
+view too. App title updates retain the ptyd prefix and hint;
+the previous title is restored on return. `ptyd attach --raw` forwards terminal
+output directly without reserving a row; piped output remains raw too. The title is a view label; it does not verify
 the current conversation after navigation inside an agent.
 
 ### Picker controls
@@ -225,7 +238,8 @@ for a target outside that snapshot. Native session handoff still follows the
 
 Attaching resizes the PTY. Several clients can type; the latest one to type
 wins its window size. `/resize` wins until the next client resize or input.
-A slow client's 1 MiB queue overflows into a fresh repaint. Continuous
+A slow client's 1 MiB queue overflows into a fresh snapshot for a framed view,
+or a repaint for a raw viewer. Continuous
 output flushes at most every 4 ms; small echoes and output after quiet flush
 immediately.
 
@@ -238,7 +252,8 @@ payload: `i` for input; `r` for two big-endian uint16 values (cols, rows).
 
 `ptyd agents --json` and `GET /agents` query the installed native CLIs in the
 daemon's environment. Codex discovery reads its running local daemon over its
-Unix socket. Claude discovery uses `claude agents --json --all`. Neither probe
+Unix socket. Threads without a saved rollout or marked ephemeral remain
+unavailable; a loaded/idle status alone does not make them resumable. Claude discovery uses `claude agents --json --all`. Neither probe
 starts a turn or selects a conversation by title, timestamp or “last.”
 
 Each session has a `ref` (`provider` and full UUID), `name`, `cwd`, native
@@ -258,6 +273,24 @@ these rows. Running, stopped and exited counts still describe managed
 terminals. Counts cover all matching rows before the view limit. Native
 `status` comes from the runtime rather than terminal-output heuristics.
 Ordinary `GET /overview` does not run native probes.
+
+Discovery also returns a separate `processes` list for same-user foreground
+Codex and Claude terminal processes not identified by their native APIs. These
+are observations of original tabs, not conversation references. Rows include
+provider, PID, process generation, terminal path, directory and parent PIDs;
+arguments, prompts and environment values are omitted. The picker groups them
+under Original tabs. They cannot authorize import or input. A standalone Codex
+process must keep using its original terminal; Claude can register its handoff
+with `/bg` there.
+
+Overview process rows use `local_process`, `state: "external"` and a
+`process:...` picker key. `counts.original_tabs` counts these rows separately;
+`counts.total` and `counts.external` include them. Managed process descendants
+are excluded, and multiple observations of one foreground group/terminal are
+collapsed. A process observation cannot prove which shared-daemon conversation
+an original frontend displays. `process_issue` and `processes_truncated` report
+inventory limits separately from native import authority. The overview folds
+process truncation into `discovery_truncated` and retains `process_issue`.
 
 Discovery is cached for five seconds. `issues` (or `discovery_issues` in the
 overview) and `truncated`/`discovery_truncated` describe incomplete reads;
@@ -282,6 +315,7 @@ listed under [Create a session](#create-a-session). String values set a
 setting; `null` removes it. CLI imports send this profile automatically, so
 a service's `TERM=dumb` or `NO_COLOR` cannot disable the viewer's colors.
 Credentials and agent profile selection are never forwarded through this map.
+Imports also accept the optional `terminal_colors` pair described above.
 
 Replace the example UUID with the discovered id. A stopped Claude conversation
 also needs `"resume": true`; the CLI equivalent is `ptyd import --resume`
@@ -312,11 +346,29 @@ Imported views are not automatically restored after a ptyd restart. Refresh
 native discovery and import again; generic restart/restore refuses to bypass
 fresh native validation. This leaves native worker lifecycle with its owner.
 
-Only the configured local profiles are discovered. Codex must expose its
-loaded sessions through the shared daemon; standalone `--no-daemon`, other
+Only the configured local profiles supply native conversation identities.
+Original-tab process observations can reveal additional running tabs without
+an import route. Codex must expose saved, loaded sessions through the shared
+daemon; standalone workers, other
 profiles and remote hosts are outside this import path. Claude foreground
 handoff follows [Claude's native rules](https://code.claude.com/docs/en/agent-view#what-carries-over-when-you-background),
 including work that must finish or restart. Ptyd does not press those controls
 for you, close an original tab, inject a prompt or adopt an arbitrary macOS PTY.
 The native CLI may show its own authentication, trust or update prompts, and
 its redraw/history behavior determines what the new view displays.
+
+### Framed attach protocol
+
+The default attach protocol remains an ANSI repaint followed by raw output.
+Clients that render their own view request `?rendered=1`; the server confirms
+with `X-Ptyd-Rendered: 1`. Server output then uses the existing five-byte frame
+header (type byte, big-endian uint32 length) with `s` for an exact Phosphor
+snapshot and `o` for subsequent terminal bytes. The first frame is a snapshot.
+Overflow and resize also send snapshots, preserving palette and hidden state.
+The bundled client accepts frames up to 64 MiB and fails on malformed framing.
+Client input and resize frames keep their existing format.
+
+The emulator supplies query replies for framed viewers and headless sessions.
+A writable raw viewer answers through its real terminal; a read-only raw viewer
+never takes that responsibility. Replies use a bounded byte queue so a child
+that stops reading stdin cannot block terminal output.

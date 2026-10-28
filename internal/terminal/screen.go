@@ -79,17 +79,3 @@ func (m *Manager) loadGhostScreen(id ID) (*phosphor.Terminal, bool) {
 	}
 	return scr, true
 }
-
-// ghostScreen returns the repaint of a ghost's saved screen, fitted to
-// cols x rows if they are set (a ghost cannot be resized, and its window
-// may be larger than the client's).
-func (m *Manager) ghostScreen(id ID, cols, rows uint16) ([]byte, bool) {
-	scr, ok := m.loadGhostScreen(id)
-	if !ok {
-		return nil, false
-	}
-	if cols > 0 && rows > 0 {
-		scr.Resize(int(cols), int(rows))
-	}
-	return scr.Repaint(true), true
-}

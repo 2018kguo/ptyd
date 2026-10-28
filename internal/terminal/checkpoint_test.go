@@ -319,7 +319,7 @@ func TestAttachGhost(t *testing.T) {
 	}
 	waitFor(t, "output", func() bool { s, _ := m1.Screen(info.ID, false); return s.Lines[0] == "saved-text" })
 	m2 := persistManager(t, dir)
-	at, err := m2.Attach(info.ID, 80, 24, false)
+	at, err := m2.Attach(info.ID, AttachOptions{Cols: 80, Rows: 24, ReadOnly: false})
 	if err != nil {
 		t.Fatal(err)
 	}

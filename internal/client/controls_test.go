@@ -147,3 +147,38 @@ func TestAltPrefixesAndBareEscapeDoNotDisableDetach(t *testing.T) {
 		}
 	}
 }
+
+func TestFramedInputConsumesFooterMouseAndLateProbeReplies(t *testing.T) {
+	for _, packet := range []string{"\x1b[<0;5;24M", "\x1b[<0;5;24m", "\x1b[32;5;24M", "\x1b[M" + string([]byte{32, 37, 56}), "\x1b]10;rgb:d8/d8/d8\a", "\x1b]11;rgb:28/2c/34\x1b\\"} {
+		for cut := 0; cut <= len(packet); cut++ {
+			f := detachFilter{mouseRows: 23, filterColorReplies: true}
+			now := time.Now()
+			a, d, _ := f.feed([]byte(packet[:cut]), now)
+			b, e, _ := f.feed([]byte(packet[cut:]+"x"), now)
+			if d || e || string(append(a, b...)) != "x" {
+				t.Fatalf("cut%d leaked host-only input: %q %q", cut, a, b)
+			}
+		}
+	}
+	f := detachFilter{mouseRows: 23, filterColorReplies: true}
+	wanted := "\x1b[<0;5;23M\x1b[200~\x1b]11;rgb:28/2c/34\a\x1b[201~"
+	out, detached, _ := f.feed([]byte(wanted), time.Now())
+	if detached || string(out) != wanted {
+		t.Fatal("app mouse/paste changed")
+	}
+}
+
+func TestFramedControlPrefixesStayFramedPastKeyTimeout(t *testing.T) {
+	for _, packet := range []string{"\x1b[<0;5;24M", "\x1b]11;rgb:28/2c/34\x1b\\"} {
+		for cut := 2; cut < len(packet); cut++ {
+			f := detachFilter{mouseRows: 23, filterColorReplies: true}
+			now := time.Now()
+			first, _, _ := f.feed([]byte(packet[:cut]), now)
+			timed := f.flushSequence()
+			rest, _, _ := f.feed([]byte(packet[cut:]+"x"), now.Add(300*time.Millisecond))
+			if string(append(append(first, timed...), rest...)) != "x" {
+				t.Fatalf("cut%d leaked metadata: %q %q %q", cut, first, timed, rest)
+			}
+		}
+	}
+}

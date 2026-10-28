@@ -3,6 +3,7 @@ package terminal
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/2018kguo/ptyd/internal/native"
 	"slices"
 	"strings"
 	"testing"
@@ -163,5 +164,25 @@ func TestActiveOverviewFiltersHistoryBeforeItsBudget(t *testing.T) {
 	all := BuildOverview(infos, OverviewOptions{Limit: 100})
 	if all.Counts.Total != 81 || all.HistoryHidden != 0 || len(all.Sessions) != 81 {
 		t.Fatal("default agent overview stopped including history")
+	}
+}
+
+func TestOriginalTabsStayVisibleWithoutBecomingManagedSessions(t *testing.T) {
+	listing := native.Listing{Processes: []native.LocalProcess{
+		{Provider: native.Codex, PID: 10, Generation: "one", Terminal: "/dev/ttys000", CWD: "/work"},
+		{Provider: native.Claude, PID: 21, Generation: "two", Terminal: "/dev/ttys001", CWD: "/work", Ancestors: []int{20}},
+		{Provider: native.Codex, PID: 22, Generation: "three", Terminal: "/dev/ttys002", CWD: "/work"},
+	}, ProcessIssue: "inventory partially unavailable", ProcessesTruncated: true}
+	owned := []Info{{ID: "managed", PID: 20, Status: StatusRunning, Command: "sh"}, {ID: "direct", PID: 22, Status: StatusRunning, Command: "codex"}}
+	v := BuildDiscoveredOverview(owned, listing, OverviewOptions{ActiveOnly: true, Limit: 100})
+	if len(v.Sessions) != 3 || v.Counts.OriginalTabs != 1 || v.Counts.Running != 2 || v.Counts.External != 1 || v.ProcessIssue != listing.ProcessIssue || !v.DiscoveryTruncated {
+		t.Fatalf("wrong projection: %+v", v)
+	}
+	for _, row := range v.Sessions {
+		if row.Local != nil {
+			if row.External != nil || row.Source.Provider != "" || row.Local.PID != 10 || row.State != OverviewExternal {
+				t.Fatalf("process gained native authority: %+v", row)
+			}
+		}
 	}
 }

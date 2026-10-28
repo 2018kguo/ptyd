@@ -22,14 +22,17 @@ const (
 // escape strings and modified keys must never become local commands.
 // All clocks and output are supplied by Attach; this parser performs no I/O.
 type detachFilter struct {
-	held, pending []byte
-	pendingSent   int
-	deadline      time.Time
-	pasteEnd      int
-	paste         bool
-	stringCode    byte
-	stringEsc     bool
-	longCSI       bool
+	mouseRows          int // framed viewport; zero keeps all raw coordinates
+	filterColorReplies bool
+	colorReply         []byte
+	held, pending      []byte
+	pendingSent        int
+	deadline           time.Time
+	pasteEnd           int
+	paste              bool
+	stringCode         byte
+	stringEsc          bool
+	longCSI            bool
 }
 
 func (f *detachFilter) release(out []byte) []byte {
@@ -50,6 +53,9 @@ func (f *detachFilter) expire(now time.Time) []byte {
 // paste/mouse/keyboard continuations cannot become local commands.
 func (f *detachFilter) flushSequence() []byte {
 	out := f.release(nil)
+	if len(f.pending) >= 2 && ((f.mouseRows > 0 && f.pending[1] == '[') || (f.filterColorReplies && f.pending[1] == ']')) {
+		return out
+	}
 	out = append(out, f.pending[f.pendingSent:]...)
 	f.pendingSent = len(f.pending)
 	return out
@@ -68,6 +74,22 @@ func (f *detachFilter) feed(p []byte, now time.Time) (out []byte, detached bool,
 	}
 	f.pending, f.pendingSent = nil, 0
 	for len(p) > 0 {
+		if len(f.colorReply) > 0 {
+			b := p[0]
+			p = p[1:]
+			f.colorReply = append(f.colorReply, b)
+			ended := b == 7 || len(f.colorReply) > 1 && b == '\\' && f.colorReply[len(f.colorReply)-2] == 0x1b
+			if ended || len(f.colorReply) > 128 || b == 0x18 || b == 0x1a {
+				if len(f.colorReply) > 128 {
+					f.stringCode = ']'
+				}
+				if _, _, ok := parseColorReply(f.colorReply); !ended || !ok {
+					out = append(out, f.colorReply...)
+				}
+				f.colorReply = nil
+			}
+			continue
+		}
 		if f.paste {
 			b := p[0]
 			out = append(out, b)
@@ -134,6 +156,18 @@ func (f *detachFilter) feed(p []byte, now time.Time) (out []byte, detached bool,
 				}
 				n = 3
 			case ']', 'P', '_', '^', 'X':
+				if f.filterColorReplies && p[1] == ']' {
+					if len(p) < 5 {
+						f.pending, f.pendingSent = bytes.Clone(p), sent
+						break
+					}
+					if bytes.HasPrefix(p, []byte("\x1b]10;")) || bytes.HasPrefix(p, []byte("\x1b]11;")) {
+						f.colorReply = bytes.Clone(p[:5])
+						p = p[5:]
+						sent = 0
+						continue
+					}
+				}
 				if len(p) < 3 {
 					f.pending, f.pendingSent = bytes.Clone(p), sent
 					break
@@ -158,6 +192,11 @@ func (f *detachFilter) feed(p []byte, now time.Time) (out []byte, detached bool,
 		}
 		key := p[:n]
 		p = p[n:]
+		if f.mouseRows > 0 && mouseRow(key) > f.mouseRows {
+			sent = 0
+			out = f.release(out)
+			continue
+		}
 		letter, event := homeRowKey(key)
 		forwardKey := key
 		if sent > 0 {
@@ -265,4 +304,40 @@ func MouseReportLength(p []byte) (int, bool) {
 		n += size
 	}
 	return n, true
+}
+
+// mouseRow returns a complete report's 1-based row; non-mouse frames return0.
+func mouseRow(p []byte) int {
+	if bytes.HasPrefix(p, []byte("\x1b[M")) {
+		at := 3
+		row := 0
+		for i := 0; i < 3 && at < len(p); i++ {
+			r, n := utf8.DecodeRune(p[at:])
+			if r == utf8.RuneError && n == 1 {
+				r = rune(p[at])
+			}
+			at += n
+			if i == 2 {
+				row = int(r) - 32
+			}
+		}
+		return row
+	}
+	if len(p) < 7 || !bytes.HasPrefix(p, []byte("\x1b[")) {
+		return 0
+	}
+	final := p[len(p)-1]
+	if final != 'M' && final != 'm' {
+		return 0
+	}
+	body := strings.TrimPrefix(string(p[2:len(p)-1]), "<")
+	parts := strings.Split(body, ";")
+	if len(parts) != 3 {
+		return 0
+	}
+	row, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return 0
+	}
+	return row
 }

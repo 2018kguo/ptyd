@@ -52,6 +52,9 @@ func sessionApp(row terminal.SessionSummary) string {
 	return "Terminal"
 }
 func sessionState(row terminal.SessionSummary) string {
+	if row.Local != nil {
+		return "Original tab"
+	}
 	if row.External != nil {
 		s := row.External
 		switch s.Action {
@@ -60,6 +63,9 @@ func sessionState(row terminal.SessionSummary) string {
 		case native.Resume:
 			return "Saved"
 		case native.Unavailable:
+			if s.Status == "not_saved" {
+				return "Not saved yet"
+			}
 			return "Unavailable"
 		}
 		if s.WaitingFor != "" {
@@ -103,6 +109,9 @@ func sessionName(row terminal.SessionSummary) string {
 	return sessionApp(row) + " session"
 }
 func sessionGroup(row terminal.SessionSummary) string {
+	if row.Local != nil {
+		return "Original tabs"
+	}
 	if row.External == nil {
 		if row.State == terminal.OverviewRunning {
 			return "Open terminals"
@@ -145,7 +154,7 @@ func statusNotice(v statusView) statusLine {
 		return statusLine{"Updating sessions…", "2"}
 	} else if v.notice != "" {
 		return statusLine{v.notice, "33"}
-	} else if len(v.snapshot.view.DiscoveryIssues) > 0 || v.snapshot.view.DiscoveryTruncated {
+	} else if len(v.snapshot.view.DiscoveryIssues) > 0 || v.snapshot.view.DiscoveryTruncated || v.snapshot.view.ProcessIssue != "" {
 		return statusLine{"Some agents could not be discovered. Press ? for help.", "33"}
 	}
 	return statusLine{}
@@ -159,9 +168,13 @@ func statusFrame(v statusView, cols, rows int) string {
 		add("Finding your sessions…", "2")
 	} else {
 		view := v.snapshot.view
-		count := fmt.Sprintf("%d sessions", view.Counts.Total)
-		if view.Counts.Total == 1 {
+		sessionCount := view.Counts.Total - view.Counts.OriginalTabs
+		count := fmt.Sprintf("%d sessions", sessionCount)
+		if sessionCount == 1 {
 			count = "1 session"
+		}
+		if view.Counts.OriginalTabs > 0 {
+			count += fmt.Sprintf(" · %d original tabs", view.Counts.OriginalTabs)
 		}
 		if v.history {
 			count += " · history shown"
@@ -222,7 +235,7 @@ func statusFrame(v statusView, cols, rows int) string {
 		add(text+sessionState(row), style)
 	}
 	if v.snapshot != nil && len(v.sessions()) == 0 {
-		if v.err != nil || len(v.snapshot.view.DiscoveryIssues) > 0 || v.snapshot.view.DiscoveryTruncated {
+		if v.err != nil || len(v.snapshot.view.DiscoveryIssues) > 0 || v.snapshot.view.DiscoveryTruncated || v.snapshot.view.ProcessIssue != "" {
 			add("No sessions in this list. Discovery is incomplete.", "33")
 		} else if v.query != "" {
 			add("No sessions match this search.", "2")
@@ -238,7 +251,9 @@ func statusFrame(v statusView, cols, rows int) string {
 		add("", "")
 		add(sessionName(row), "1")
 		add(sessionApp(row)+" · "+friendlyCWD(row.CWD), "2")
-		if row.External != nil && row.External.Action == native.Background {
+		if row.Local != nil {
+			add(row.Local.Guidance(), "33")
+		} else if row.External != nil && row.External.Action == native.Background {
 			add("In the original Claude tab, run /bg. Then press r here.", "33")
 		} else if row.External != nil && row.External.Action == native.Resume {
 			add("Saved conversation. Resume explicitly with ptyd import --resume.", "2")
@@ -263,6 +278,9 @@ func statusFrame(v statusView, cols, rows int) string {
 	if v.mode == statusHelp {
 		lines = []statusLine{{"ptyd  /  Controls", "1;36"}, {"", ""}, {"i / Enter   Open selected session", ""}, {"j / k       Move between sessions", ""}, {"gg / G      First / last session", ""}, {"/           Search by name, app or folder", ""}, {"h           Show or hide saved history", ""}, {"r           Refresh", ""}, {":b name     Open a shown session by name or id", ""}, {":bn / :bp   Open next / previous session", ""}, {":ls         Clear search", ""}, {":q          Leave ptyd; work keeps running", ""}, {"", ""}, {"While attached: quick jk returns to sessions.", "1;32"}, {"The window title identifies the ptyd view.", "2"}, {"Literal jk: pause between letters or use bracketed paste.", "2"}, {"Claude foreground tabs need /bg before ptyd can open them.", "2"}, {"", ""}, {"q, ? or Esc returns to sessions", "2"}}
 		if v.snapshot != nil {
+			if v.snapshot.view.ProcessIssue != "" {
+				lines = append(lines, statusLine{v.snapshot.view.ProcessIssue, "33"})
+			}
 			for _, issue := range v.snapshot.view.DiscoveryIssues {
 				lines = append(lines, statusLine{string(issue.Provider) + ": " + issue.Message, "33"})
 			}
@@ -301,7 +319,7 @@ func statusFrame(v statusView, cols, rows int) string {
 		}
 		if len(v.sessions()) == 0 {
 			text := "No sessions. h shows history."
-			if v.err != nil || v.snapshot == nil || len(v.snapshot.view.DiscoveryIssues) > 0 || v.snapshot.view.DiscoveryTruncated {
+			if v.err != nil || v.snapshot == nil || len(v.snapshot.view.DiscoveryIssues) > 0 || v.snapshot.view.DiscoveryTruncated || v.snapshot.view.ProcessIssue != "" {
 				text = "Sessions unavailable. r retries."
 			}
 			compact = append(compact, statusLine{text, "2"})

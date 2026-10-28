@@ -26,12 +26,13 @@ type OverviewOptions struct {
 }
 
 type OverviewCounts struct {
-	External  int `json:"external"`
-	Total     int `json:"total"`
-	Running   int `json:"running"`
-	Exited    int `json:"exited"`
-	Stopped   int `json:"stopped"`
-	Attention int `json:"attention"`
+	External     int `json:"external"`
+	OriginalTabs int `json:"original_tabs,omitempty"`
+	Total        int `json:"total"`
+	Running      int `json:"running"`
+	Exited       int `json:"exited"`
+	Stopped      int `json:"stopped"`
+	Attention    int `json:"attention"`
 }
 
 // OverviewPreview describes observed output, never an inferred agent state.
@@ -53,26 +54,28 @@ const (
 // SessionSummary leaves arguments, watch definitions and transcripts on the
 // detail routes. LatestSeq lets an agent continue incremental output reads.
 type SessionSummary struct {
-	Source      native.Ref       `json:"source,omitzero"`
-	External    *native.Session  `json:"external,omitempty"`
-	ID          ID               `json:"id"`
-	Name        string           `json:"name"`
-	CWD         string           `json:"cwd"`
-	Command     string           `json:"command"`
-	Agent       string           `json:"agent,omitempty"`
-	State       OverviewState    `json:"state"`
-	ExitCode    *int             `json:"exit_code,omitempty"`
-	IdleSeconds *float64         `json:"idle_seconds"`
-	Attached    int              `json:"attached"`
-	LatestSeq   int64            `json:"latest_seq"`
-	Attention   int              `json:"attention"`
-	Preview     *OverviewPreview `json:"preview,omitempty"`
+	Local       *native.LocalProcess `json:"local_process,omitempty"`
+	Source      native.Ref           `json:"source,omitzero"`
+	External    *native.Session      `json:"external,omitempty"`
+	ID          ID                   `json:"id"`
+	Name        string               `json:"name"`
+	CWD         string               `json:"cwd"`
+	Command     string               `json:"command"`
+	Agent       string               `json:"agent,omitempty"`
+	State       OverviewState        `json:"state"`
+	ExitCode    *int                 `json:"exit_code,omitempty"`
+	IdleSeconds *float64             `json:"idle_seconds"`
+	Attached    int                  `json:"attached"`
+	LatestSeq   int64                `json:"latest_seq"`
+	Attention   int                  `json:"attention"`
+	Preview     *OverviewPreview     `json:"preview,omitempty"`
 }
 
 type Overview struct {
 	ActiveOnly         bool             `json:"active_only,omitempty"`
 	HistoryHidden      int              `json:"history_hidden,omitempty"`
 	DiscoveryIssues    []native.Issue   `json:"discovery_issues,omitempty"`
+	ProcessIssue       string           `json:"process_issue,omitempty"`
 	DiscoveryTruncated bool             `json:"discovery_truncated,omitempty"`
 	Counts             OverviewCounts   `json:"counts"`
 	Sessions           []SessionSummary `json:"sessions"`
@@ -113,8 +116,11 @@ func BuildOverview(infos []Info, options OverviewOptions) Overview {
 			continue
 		}
 		out.Counts.Total++
-		if info.external != nil {
+		if info.external != nil || info.local != nil {
 			out.Counts.External++
+		}
+		if info.local != nil {
+			out.Counts.OriginalTabs++
 		}
 		if len(info.Attention) > 0 {
 			out.Counts.Attention++
@@ -150,7 +156,7 @@ func BuildOverview(infos []Info, options OverviewOptions) Overview {
 			idle = &seconds
 		}
 		out.Sessions = append(out.Sessions, SessionSummary{
-			Source: info.Source, External: info.external,
+			Source: info.Source, External: info.external, Local: info.local,
 			ID: info.ID, Name: info.Name, CWD: info.CWD,
 			Command: filepath.Base(info.Command), Agent: info.Agent,
 			State: overviewState(info), ExitCode: info.ExitCode, IdleSeconds: idle,
@@ -177,7 +183,7 @@ func overviewMatches(info Info, query string, tags []string) bool {
 }
 
 func overviewState(info Info) OverviewState {
-	if info.external != nil {
+	if info.external != nil || info.local != nil {
 		return OverviewExternal
 	}
 	if info.Status == StatusRunning {
@@ -262,9 +268,27 @@ func BuildDiscoveredOverview(infos []Info, listing native.Listing, options Overv
 		}
 		merged = append(merged, Info{ID: ID("native:" + s.Ref.Key()), Name: name, CWD: s.CWD, Command: string(s.Ref.Provider), Agent: string(s.Ref.Provider), Status: status, CreatedAt: s.StartedAt, LatestSeq: -1, Pending: text, external: &s})
 	}
+	ownedProcesses := map[int]bool{}
+	for _, info := range infos {
+		if info.Status == StatusRunning && info.PID > 0 {
+			ownedProcesses[info.PID] = true
+		}
+	}
+	for _, process := range listing.Processes {
+		p := process
+		managed := ownedProcesses[p.PID]
+		for _, pid := range p.Ancestors {
+			managed = managed || ownedProcesses[pid]
+		}
+		if managed {
+			continue
+		}
+		merged = append(merged, Info{ID: ID(p.Key()), Name: p.Name(), CWD: p.CWD, Command: string(p.Provider), Agent: string(p.Provider), Status: StatusRunning, CreatedAt: p.StartedAt, LatestSeq: -1, Pending: p.Guidance(), local: &p})
+	}
 	out := BuildOverview(merged, options)
+	out.ProcessIssue = listing.ProcessIssue
+	out.DiscoveryTruncated = listing.Truncated || listing.ProcessesTruncated
 	out.DiscoveryIssues = listing.Issues
-	out.DiscoveryTruncated = listing.Truncated
 	return out
 }
 

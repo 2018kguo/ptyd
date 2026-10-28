@@ -169,7 +169,7 @@ func TestInstalledClaudeImportKeepsActiveWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attachment, err := m.Attach(imported.Terminal.ID, 120, 40, false)
+	attachment, err := m.Attach(imported.Terminal.ID, AttachOptions{Cols: 120, Rows: 40, Rendered: true})
 	if err != nil {
 		t.Fatal(err)
 	}

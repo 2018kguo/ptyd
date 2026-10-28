@@ -68,7 +68,8 @@ ptyd ui
 Use `j/k` to move, Enter or `i` to open, and quick `jk` to return.
 `/` searches; `h` shows saved and completed sessions. The picker starts with
 live sessions, grouped by open terminals, agents and those needing a handoff.
-Your terminal's window title shows the attached session and the `jk` hint.
+An attached view keeps its session name and `jk` hint in a bottom status row,
+even when the app clears the screen. The window title identifies it too.
 Press `?` for controls or `q` to leave; work keeps running.
 
 Or start a command in the background:
@@ -121,12 +122,22 @@ that agent's native attach API, with its exact conversation id. Quick `jk`
 returns to the picker and releases the view; the native worker keeps running.
 Your original tab stays open until you close it yourself. New views use your
 terminal's color settings, even when the daemon runs as a headless service.
-An intentional `NO_COLOR` setting is respected.
+An intentional `NO_COLOR` setting is respected. Ptyd also answers startup
+terminal queries before a viewer connects, so Codex can draw its shaded composer.
+The viewing terminal supplies its foreground/background colors when available.
 
-Codex sessions must be loaded in its shared local daemon. For a foreground
+Codex sessions must have a saved rollout and be loaded in its shared local daemon.
+A loaded thread without saved history is shown as “Not saved yet.” For a foreground
 Claude session, run `/bg` in its original tab and let Claude finish its own
 handoff, then refresh the picker. A stopped Claude conversation requires
 an explicit `ptyd import --resume` using the reference printed by `ptyd agents`.
+
+Original terminal processes missing from the native listings appear under
+**Original tabs**, with their terminal names. These rows explain how to proceed;
+they do not guess a conversation or restart its worker. Some standalone Codex
+processes cannot move live: keep that tab open, and start future sessions with
+`ptyd new -- codex`. A frontend that exits leaves its final screen visible until
+you return with `jk`, so startup errors remain readable.
 
 Ptyd rechecks native identity around view creation. It refuses incomplete or
 ambiguous listings and never resumes “the latest” conversation. Native CLIs
@@ -193,9 +204,13 @@ the policies, agent argument restrictions and checkpoint compatibility.
 - **Many sessions still mean many OS resources.** Each running session has
   a process, PTY, file descriptors and waiting threads. Output retention
   and editor screens also consume memory.
-- **Exact checkpoints and ANSI attachment differ.** Checkpoints preserve
-  emulator state; attached terminals inherit ANSI export limits. Phosphor
-  favors a small headless model and does not implement terminal graphics.
+- **Human views reserve one row.** The app uses the rest of the window;
+  ptyd draws the session name and return hint below it. These views render
+  through Phosphor. Use `ptyd attach --raw` for direct output passthrough,
+  including terminal features outside Phosphor's model.
+- **Exact state and ANSI exports differ.** Checkpoints and framed views
+  begin from an exact snapshot; raw attachments inherit ANSI export limits.
+  Phosphor favors a small headless model and does not implement terminal graphics.
 
 [Benchmarks](bench/README.md) explain the current measurements, their limits and how to rerun them.
 The emulator's small idle footprint is only one part of total daemon memory.

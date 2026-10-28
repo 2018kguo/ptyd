@@ -65,9 +65,12 @@ type Issue struct {
 	Message  string   `json:"message"`
 }
 type Listing struct {
-	Sessions  []Session `json:"sessions"`
-	Issues    []Issue   `json:"issues"`
-	Truncated bool      `json:"truncated"`
+	Sessions           []Session      `json:"sessions"`
+	Processes          []LocalProcess `json:"processes,omitempty"`
+	ProcessIssue       string         `json:"process_issue,omitempty"`
+	ProcessesTruncated bool           `json:"processes_truncated,omitempty"`
+	Issues             []Issue        `json:"issues"`
+	Truncated          bool           `json:"truncated"`
 }
 
 type Launch struct {

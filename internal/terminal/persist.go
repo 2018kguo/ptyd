@@ -20,20 +20,21 @@ import (
 // Path: <persist-dir>/<id>/meta.json (one dir per terminal). Deleting a
 // terminal through the API removes its directory.
 type persistedMeta struct {
-	Source  native.Ref        `json:"source,omitzero"`
-	ID      ID                `json:"id"`
-	Name    string            `json:"name"`
-	CWD     string            `json:"cwd"`
-	Command string            `json:"command"`
-	Args    []string          `json:"args,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
-	Tags    []string          `json:"tags,omitempty"`
-	Watches []WatchSpec       `json:"watches,omitempty"`
-	Cols    uint16            `json:"cols"`
-	Rows    uint16            `json:"rows"`
-	Restore RestorePolicy     `json:"restore,omitempty"`
-	Agent   string            `json:"agent,omitempty"`
-	PID     int               `json:"pid"`
+	TerminalColors *TerminalColors   `json:"terminal_colors,omitempty"`
+	Source         native.Ref        `json:"source,omitzero"`
+	ID             ID                `json:"id"`
+	Name           string            `json:"name"`
+	CWD            string            `json:"cwd"`
+	Command        string            `json:"command"`
+	Args           []string          `json:"args,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	Tags           []string          `json:"tags,omitempty"`
+	Watches        []WatchSpec       `json:"watches,omitempty"`
+	Cols           uint16            `json:"cols"`
+	Rows           uint16            `json:"rows"`
+	Restore        RestorePolicy     `json:"restore,omitempty"`
+	Agent          string            `json:"agent,omitempty"`
+	PID            int               `json:"pid"`
 	// ProcIdentity identifies the process running the terminal across
 	// pid reuse and reboots (see procIdentity), so a restore can tell its
 	// own orphan from an unrelated process.
@@ -45,8 +46,8 @@ type persistedMeta struct {
 
 func (meta persistedMeta) config() CreateConfig {
 	return CreateConfig{
-		source: meta.Source,
-		Name:   meta.Name, CWD: meta.CWD, Command: meta.Command, Args: meta.Args, Env: meta.Env,
+		source: meta.Source, TerminalColors: meta.TerminalColors,
+		Name: meta.Name, CWD: meta.CWD, Command: meta.Command, Args: meta.Args, Env: meta.Env,
 		Tags: meta.Tags, Watches: meta.Watches, Cols: meta.Cols, Rows: meta.Rows,
 		Restore: meta.Restore, Agent: meta.Agent,
 	}
