@@ -137,12 +137,20 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	var conn *websocket.Conn
-	for conn == nil && ctx.Err() == nil {
+	dial := func() (*websocket.Conn, error) {
 		tr := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 		}}
-		conn, _, err = websocket.Dial(ctx, "ws://localhost/rpc", &websocket.DialOptions{HTTPClient: &http.Client{Transport: tr}})
+		conn, response, err := websocket.Dial(ctx, "ws://localhost/rpc", &websocket.DialOptions{HTTPClient: &http.Client{Transport: tr}})
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+		tr.CloseIdleConnections()
+		return conn, err
+	}
+	var conn *websocket.Conn
+	for conn == nil && ctx.Err() == nil {
+		conn, err = dial()
 		if err != nil {
 			time.Sleep(30 * time.Millisecond)
 		}
@@ -325,9 +333,24 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 	if after.WorkerPID != before.WorkerPID || afterIdentity != identity || after.Status != "active" || requests.Load() != 1 {
 		t.Fatalf("worker/turn changed: before=%+v after=%+v requests=%d", before, after, requests.Load())
 	}
-	listing := discovery.Fresh(ctx)
-	if len(listing.Sessions) != 1 || listing.Sessions[0].Ref != ref {
-		t.Fatalf("frontend forked or started another conversation: %+v", listing)
+	// Reconnect only after the no-observer check. Read the raw loaded-id
+	// inventory, which also includes sources production discovery omits.
+	conn, err = dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	seq = 0
+	call("initialize", map[string]any{"clientInfo": map[string]string{"name": "codex_cli_rs", "version": "test"}}, nil)
+	if err = conn.Write(ctx, websocket.MessageText, []byte(`{"method":"initialized"}`)); err != nil {
+		t.Fatal(err)
+	}
+	var loaded struct {
+		Data []string `json:"data"`
+	}
+	call("thread/loaded/list", map[string]any{}, &loaded)
+	if len(loaded.Data) != 1 || loaded.Data[0] != ref.ID {
+		t.Fatalf("frontend forked or started another conversation: %v", loaded.Data)
 	}
 	finish()
 	t.Log("real Codex frontend rendered an active local stream; detach preserved the native process generation, conversation id and single model request")
