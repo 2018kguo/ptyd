@@ -1,9 +1,11 @@
 #!/bin/sh
 # Run the load-test scenarios and append one JSON line per scenario to
-# $1 (default bench/load.jsonl). See internal/loadtest for the settings.
+# $1 (default .bench/load.jsonl). See internal/loadtest for the settings.
 set -eu
 cd "$(dirname "$0")/.."
-out=$(cd "$(dirname "${1:-bench/load.jsonl}")" && pwd)/$(basename "${1:-bench/load.jsonl}")
+out=${1:-.bench/load.jsonl}
+mkdir -p "$(dirname "$out")"
+out=$(cd "$(dirname "$out")" && pwd)/$(basename "$out")
 bin=$(mktemp -d)
 trap 'rm -rf "$bin"' EXIT
 # Built with the daemon's PGO profile, as go build builds the daemon.

@@ -3,7 +3,7 @@
 # with its own cmd/ptyd/default.pgo, as go build would), then run the
 # agents and flat-out scenarios of bench/load.sh alternately ROUNDS times
 # (default 5), so a busy host affects both sides alike. Appends one JSON
-# line per run to OUT (default bench/load-ab.jsonl), labelled a:<scenario>
+# line per run to OUT (default .bench/load-ab.jsonl), labelled a:<scenario>
 # for REV and b:<scenario> for this tree, and prints a row per run.
 #
 #   bench/load-ab.sh HEAD~3
@@ -11,7 +11,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 rev=$1 rounds=${ROUNDS:-5}
-out=$(cd "$(dirname "${OUT:-bench/load-ab.jsonl}")" && pwd)/$(basename "${OUT:-bench/load-ab.jsonl}")
+out=${OUT:-.bench/load-ab.jsonl}
+mkdir -p "$(dirname "$out")"
+out=$(cd "$(dirname "$out")" && pwd)/$(basename "$out")
 tmp=$(mktemp -d)
 trap 'git worktree remove --force "$tmp/old" >/dev/null 2>&1; rm -rf "$tmp"' EXIT
 build() { # dir binary
@@ -39,7 +41,9 @@ run() { # label binary settings...
 	fi
 }
 for i in $(seq "$rounds"); do
-	for v in a b; do
+	order="a b"
+	if [ $((i % 2)) -eq 0 ]; then order="b a"; fi
+	for v in $order; do
 		run "$v:agents" "$tmp/$v.test" PTYD_LOAD_N=32 PTYD_LOAD_RATE=1048576
 		run "$v:flat-out" "$tmp/$v.test" PTYD_LOAD_N=8 PTYD_LOAD_RATE=0
 	done

@@ -173,7 +173,7 @@ the policies, agent argument restrictions and checkpoint compatibility.
   emulator state; attached terminals inherit ANSI export limits. Phosphor
   favors a small headless model and does not implement terminal graphics.
 
-[Benchmarks](bench/README.md) explain what was measured and how to rerun it.
+[Benchmarks](bench/README.md) explain the current measurements, their limits and how to rerun them.
 The emulator's small idle footprint is only one part of total daemon memory.
 
 ## Docs

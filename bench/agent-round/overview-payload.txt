@@ -1,8 +1,0 @@
-goos: darwin
-goarch: arm64
-pkg: github.com/2018kguo/ptyd/internal/terminal
-cpu: Apple M5 Pro
-BenchmarkOverviewJSON/FullList-18         	       1	    701542 ns/op	    374781 response-B	  482456 B/op	    2202 allocs/op
-BenchmarkOverviewJSON/Overview50-18       	       1	    241416 ns/op	     12695 response-B	   48864 B/op	     109 allocs/op
-PASS
-ok  	github.com/2018kguo/ptyd/internal/terminal	0.191s
