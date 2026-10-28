@@ -11,5 +11,18 @@
     "mac.pgo": "0ccf27d712db68e64b21b12f68a23ecd44958b2ab5fd54fb0719904add59a369",
     "linux.pgo": "2c13bb25e06aca0648ceaa220a165724d52deef46d713fa7d08bc1e07900e6a6"
   },
-  "merged_profile_sha256": "4591502b8ce36acfdd18492ec0a64e055d7c011ae8e8e9d5daa396bf89f0f141"
+  "merged_profile_sha256": "4591502b8ce36acfdd18492ec0a64e055d7c011ae8e8e9d5daa396bf89f0f141",
+  "published_phosphor": {
+    "Path": "github.com/2018kguo/phosphor",
+    "Version": "v0.4.1",
+    "Sum": "h1:PpbU1W8xFhRlHWQ+Q9kwngjSxFeCH7HhuY4L4XxtGVs=",
+    "GoModSum": "h1:1byNTXrlHQzoaBIWnkS9BLmTxg5DSresuJX0O3Kn+rI=",
+    "Origin": {
+      "VCS": "git",
+      "URL": "https://github.com/2018kguo/phosphor",
+      "Hash": "ecfe310cd6da699df77796d35a091423075b30b3",
+      "Ref": "refs/tags/v0.4.1"
+    }
+  },
+  "published_source_matches_profile_source": true
 }

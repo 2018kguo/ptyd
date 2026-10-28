@@ -1,5 +1,5 @@
-github.com/2018kguo/phosphor v0.4.0 h1:j1Mh3tmEsHNReVcBClRhoVD8GZSI8kD31x/ybIIlKqY=
-github.com/2018kguo/phosphor v0.4.0/go.mod h1:1byNTXrlHQzoaBIWnkS9BLmTxg5DSresuJX0O3Kn+rI=
+github.com/2018kguo/phosphor v0.4.1 h1:PpbU1W8xFhRlHWQ+Q9kwngjSxFeCH7HhuY4L4XxtGVs=
+github.com/2018kguo/phosphor v0.4.1/go.mod h1:1byNTXrlHQzoaBIWnkS9BLmTxg5DSresuJX0O3Kn+rI=
 github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
