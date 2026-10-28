@@ -56,5 +56,8 @@ Each witness holds a response active while a real native CLI renders new
 output in a ptyd view. Detach must leave the same process generation and
 conversation alive with one model request. The Codex witness also keeps an
 original native CLI open, verifies import leaves it untouched, and closes
-that owned test window before releasing the ptyd view. Native UI redraw is
+that owned test window before releasing the ptyd view. It disconnects the
+setup RPC client too, then checks the model stream stays active for 200 ms
+without a viewer or observer before querying native state again. This is a
+bounded disconnect check. Native UI redraw is
 not an exact capture of another terminal's past screen or partial output.
