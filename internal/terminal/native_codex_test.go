@@ -50,6 +50,8 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 	active := make(chan struct{})
 	showOutput := make(chan struct{})
 	release := make(chan struct{})
+	providerEnded := make(chan struct{})
+	var endedOnce sync.Once
 	var activeOnce sync.Once
 	var releaseOnce sync.Once
 	var requests atomic.Int32
@@ -61,6 +63,7 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 			http.Error(w, "fixture only accepts Responses requests", 404)
 			return
 		}
+		defer endedOnce.Do(func() { close(providerEnded) })
 		requests.Add(1)
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
@@ -295,11 +298,22 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 	if err != nil || oldAfter != oldIdentity {
 		t.Fatal("import interrupted the original native CLI")
 	}
+	// The setup RPC client must not accidentally keep the thread alive.
+	_ = conn.CloseNow()
 	if err = original.Close(old.ID); err != nil {
 		t.Fatal(err)
 	}
 	// Closing the original owned fixture tab hands viewing over to ptyd.
 	attachment.Close()
+	// Let native disconnect handling run with no frontend or observer, and
+	// catch provider cancellation before discovery opens another connection.
+	select {
+	case <-providerEnded:
+		t.Fatal("native response stopped when its last client disconnected")
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	case <-time.After(200 * time.Millisecond):
+	}
 	after, err := discovery.Lookup(ctx, ref)
 	if err != nil {
 		t.Fatal(err)
@@ -311,12 +325,9 @@ func TestInstalledCodexImportKeepsActiveWorker(t *testing.T) {
 	if after.WorkerPID != before.WorkerPID || afterIdentity != identity || after.Status != "active" || requests.Load() != 1 {
 		t.Fatalf("worker/turn changed: before=%+v after=%+v requests=%d", before, after, requests.Load())
 	}
-	var loaded struct {
-		Data []string `json:"data"`
-	}
-	call("thread/loaded/list", map[string]any{}, &loaded)
-	if len(loaded.Data) != 1 || loaded.Data[0] != ref.ID {
-		t.Fatalf("frontend forked or started another conversation: %v", loaded.Data)
+	listing := discovery.Fresh(ctx)
+	if len(listing.Sessions) != 1 || listing.Sessions[0].Ref != ref {
+		t.Fatalf("frontend forked or started another conversation: %+v", listing)
 	}
 	finish()
 	t.Log("real Codex frontend rendered an active local stream; detach preserved the native process generation, conversation id and single model request")
