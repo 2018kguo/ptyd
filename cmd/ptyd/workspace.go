@@ -74,6 +74,7 @@ type workspaceView struct {
 	motion                  bool
 	brandPhase              int
 	theme                   workspaceTheme
+	agentAccess             workspaceAgentAccess
 }
 
 func (v workspaceView) groupInfo() (terminal.GroupSummary, bool) {
@@ -384,6 +385,10 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	history := start != "" || (len(showHistory) > 0 && showHistory[0])
 	layouts := loadWorkspaceLayouts(c.Addr)
 	v := workspaceView{theme: workspaceThemeFor(colors), pins: layouts.pins, motion: os.Getenv("PTYD_REDUCED_MOTION") == "", notice: layouts.notice, history: history, group: start, selected: string(initial), color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
 	queries := make(chan workspaceQuery, 1)
 	updates := make(chan workspaceSnapshot, 1)
 	go refreshWorkspace(ctx, c, queries, updates)
@@ -442,30 +447,12 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			}
 		}()
 	}
-	createTerminal := func(command string) {
+	createTerminal := func(cfg terminal.CreateConfig) {
 		g, ok := v.groupInfo()
 		if !ok {
 			return
 		}
-		cfg := terminal.CreateConfig{GroupID: g.ID, CWD: g.CWD, Restore: terminal.RestoreAuto, TerminalColors: colors}
-		switch command {
-		case "codex", "claude":
-			cfg.Command, cfg.Name = command, command
-		case "shell":
-			cfg.Command = os.Getenv("SHELL")
-			if cfg.Command == "" {
-				cfg.Command = "/bin/sh"
-			}
-			cfg.Name = "shell"
-		default:
-			cfg.Command = os.Getenv("SHELL")
-			if cfg.Command == "" {
-				cfg.Command = "/bin/sh"
-			}
-			cfg.Args = []string{"-lc", command}
-			cfg.Name = clipStatus(command, 40)
-			cfg.Restore = terminal.RestoreNone
-		}
+		cfg.GroupID, cfg.CWD, cfg.TerminalColors = g.ID, g.CWD, colors
 		count := 1
 		for _, r := range v.rows {
 			if r.Name == cfg.Name || strings.HasPrefix(r.Name, cfg.Name+" ") {
@@ -575,15 +562,21 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		}
 		if v.mode == wsLaunch {
 			switch k.Rune {
+			case 'f':
+				if v.agentAccess == workspaceFullAccess {
+					v.agentAccess = workspaceCLISettings
+				} else {
+					v.agentAccess = workspaceFullAccess
+				}
 			case 'c':
 				v.mode = wsNormal
-				createTerminal("codex")
+				createTerminal(v.agentAccess.launch("codex"))
 			case 'a':
 				v.mode = wsNormal
-				createTerminal("claude")
+				createTerminal(v.agentAccess.launch("claude"))
 			case 's':
 				v.mode = wsNormal
-				createTerminal("shell")
+				createTerminal(terminal.CreateConfig{Command: shell, Name: "shell", Restore: terminal.RestoreAuto})
 			case 'r':
 				v.mode = wsRun
 				v.text = ""
@@ -659,7 +652,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 				})
 			case wsRun:
 				if text != "" {
-					createTerminal(text)
+					createTerminal(workspaceCustomLaunch(text, shell))
 				}
 			case wsRename:
 				if text == "" {
@@ -720,7 +713,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 					if v.group == "" {
 						v.notice = "Open a group before starting a terminal."
 					} else if arg != "" {
-						createTerminal(arg)
+						createTerminal(workspaceCustomLaunch(arg, shell))
 					} else {
 						v.mode = wsRun
 					}

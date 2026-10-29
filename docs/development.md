@@ -95,6 +95,10 @@ Dialog tests compare every cell outside their frames at narrow and wide sizes;
 long fields include wide Unicode text near the input limit. Footer checks keep
 Back, help and quit visible above the terminal's bottom edge.
 
+Launch-menu tests use fake Codex and Claude executables to capture their actual
+arguments with full access on and off. Restore tests verify that both agents
+keep those flags when resuming an exact conversation after a daemon restart.
+
 The README demo is reproducible with `vhs docs/demo.tape`. Its setup creates
 disposable local terminals, uses an ephemeral port, and removes its
 own processes and files on exit. It does not need an agent login or call a

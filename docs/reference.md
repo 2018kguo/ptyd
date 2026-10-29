@@ -268,7 +268,7 @@ the current conversation after navigation inside an agent.
 | `j/k`, arrows; `0/G` | Move; first/last item. |
 | Enter, `i` | Open a group or take keyboard control of a terminal. |
 | `v` | Pin/unpin a live terminal pane beside the group list; up to three pins per group. |
-| `n` | Create a group, or launch Codex (`c`), Claude (`a`), shell (`s`) or a custom command (`r`). |
+| `n` | Create a group, or launch Codex (`c`), Claude (`a`), shell (`s`) or a custom command (`r`). In the launch menu, `f` toggles agent access. |
 | `r` | Rename the selected group or terminal. |
 | `m` | Move a terminal to another unarchived group. |
 | `x` | Close/remove; requires typing `close` to confirm. |
@@ -306,6 +306,14 @@ Pins are local presentation settings, saved per daemon address under
 `$XDG_STATE_HOME/ptyd` (default `~/.local/state/ptyd`) in an owner-only `view-*.json`
 file. They persist across browser restarts. `●` means running, `◉` human control,
 `◇` saved, `✓` successful exit, `!` attention or failure, and `◆` pinned.
+
+Built-in Codex and Claude launches start with **Full (YOLO)** access. Press `f`
+in the launch menu to choose **CLI settings**, which adds no permission override.
+Codex full access uses `--dangerously-bypass-approvals-and-sandbox`; Claude uses
+`--dangerously-skip-permissions`. The choice applies to new built-in agent
+launches while this browser is open. A fresh browser starts with full access.
+Restored agents keep the flags they were launched with. Shells, custom commands,
+explicit CLI commands and HTTP creations use their supplied arguments.
 
 In the browser, a lone `j` moves immediately. Pasted text can edit prompts but cannot execute
 commands or move the selection. Custom commands run through the caller's shell

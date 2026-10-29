@@ -69,7 +69,7 @@ func workspaceKeys(v workspaceView, cols, y int, put func(int, int, string, stri
 	case wsHelp:
 		hints = []workspaceKeyHint{{"jk", "back"}, {"q", "close"}}
 	case wsLaunch:
-		hints = []workspaceKeyHint{{"c/a/s/r", "choose"}, {"jk", "back"}}
+		hints = []workspaceKeyHint{{"c/a/s/r", "choose"}, {"f", "access"}, {"jk", "back"}}
 	case wsMove:
 		hints = []workspaceKeyHint{{"j/k", "choose"}, {"Enter", "move"}, {"jk", "back"}}
 	case wsNewGroup:

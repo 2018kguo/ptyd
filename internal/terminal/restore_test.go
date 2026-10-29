@@ -87,7 +87,7 @@ func TestClaudeResumesLatestSessionAfterCrash(t *testing.T) {
 	cwd := t.TempDir()
 	m1 := NewManagerWithOptions(Options{PersistDir: dir})
 	info, err := m1.Create(CreateConfig{Name: "cl", Command: filepath.Join(bin, "claude"), CWD: cwd, Env: env,
-		Restore: RestoreAgent, Args: []string{"--model=fake"}})
+		Restore: RestoreAgent, Args: []string{"--model=fake", "--dangerously-skip-permissions"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestClaudeResumesLatestSessionAfterCrash(t *testing.T) {
 	if !strings.Contains(text, `reply to "hello two"`) {
 		t.Fatalf("old screen not kept above the resumed session:\n%s", text)
 	}
-	if inv := invocation(t, home, 2); !strings.Contains(inv, "--resume "+second) || !strings.Contains(inv, "--model=fake") {
+	if inv := invocation(t, home, 2); !strings.Contains(inv, "--resume "+second) || !strings.Contains(inv, "--model=fake") || !strings.Contains(inv, "--dangerously-skip-permissions") {
 		t.Fatalf("resumed with %q", inv)
 	}
 	assertNoPickerForms(t, home)
@@ -248,7 +248,7 @@ func TestCodexResumesLatestThread(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "p")
 	m1 := NewManagerWithOptions(Options{PersistDir: dir})
 	info, err := m1.Create(CreateConfig{Name: "cx", Command: filepath.Join(bin, "codex"), CWD: t.TempDir(), Env: env,
-		Restore: RestoreAgent, Args: []string{"--model=fake"}})
+		Restore: RestoreAgent, Args: []string{"--model=fake", "--dangerously-bypass-approvals-and-sandbox"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestCodexResumesLatestThread(t *testing.T) {
 	m2.RestoreGhosts()
 	waitScreen(t, m2, info.ID, `fake-codex resumed `+second)
 	inv := invocation(t, home, 2)
-	if !strings.HasPrefix(inv, "codex resume ") || !strings.HasSuffix(inv, "-- "+second) || !strings.Contains(inv, "--model=fake") {
+	if !strings.HasPrefix(inv, "codex resume ") || !strings.HasSuffix(inv, "-- "+second) || !strings.Contains(inv, "--model=fake") || !strings.Contains(inv, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Fatalf("resumed with %q", inv)
 	}
 	assertNoPickerForms(t, home)

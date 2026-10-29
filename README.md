@@ -27,7 +27,11 @@ ptyd
 ```
 
 The local daemon starts automatically. Press **n** to name a group, then **n** inside it to launch
-Codex, Claude, a shell or a custom command. Or start with an agent directly:
+Codex, Claude, a shell or a custom command. The built-in Codex and Claude
+choices use **full access (YOLO)** by default. Press **f** in the launch menu
+to use your CLI permission settings instead. The choice stays with that browser.
+
+Or start an agent with the command and flags you choose:
 
 ```sh
 ptyd new my-project -- codex
