@@ -40,9 +40,13 @@ The default daemon address is `127.0.0.1:4242`; `PTYD_ADDR` selects another.
 
 ## Find your way around
 
-Running `ptyd` opens your groups. Each group has a terminal list, observed
-statuses and a live text preview on wider windows. Finished screens stay
-available without being restarted. Older ungrouped terminals live in
+Running `ptyd` or `ptyd ls` opens your groups. Move with `j/k` to see a
+group's terminals and live screen preview before entering it. Previews keep
+application colors and backgrounds; smaller windows stack the preview below
+the list. Finished screens stay available without being restarted.
+
+Use `ptyd ls --plain` for a table that exits, or `--json` for structured output.
+Piped output stays plain text. Older ungrouped terminals live in
 **Inbox**, behind **h** when none are running.
 
 | Where | Keys |

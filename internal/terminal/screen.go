@@ -33,34 +33,38 @@ func screenOf(s *phosphor.Terminal, withScrollback bool) Screen {
 	return out
 }
 
-// Screen returns the terminal's current screen as text, optionally with
-// the scrollback above it.
-func (m *Manager) Screen(id ID, withScrollback bool) (Screen, error) {
+// readScreen serializes observation with PTY output without claiming a viewer.
+func (m *Manager) readScreen(id ID, read func(*phosphor.Terminal)) error {
 	t, err := m.get(id)
 	if err != nil {
 		if scr, ok := m.loadGhostScreen(id); ok {
-			return screenOf(scr, withScrollback), nil
+			read(scr)
+			return nil
 		}
-		return Screen{}, err
+		return err
 	}
 	t.scrMu.Lock()
 	defer t.scrMu.Unlock()
-	return screenOf(t.screen, withScrollback), nil
+	read(t.screen)
+	return nil
 }
 
-// ScreenANSI returns a byte sequence that repaints the terminal's current
-// screen (and, optionally, its scrollback) on a terminal of the same size.
-func (m *Manager) ScreenANSI(id ID, withScrollback bool) ([]byte, error) {
-	t, err := m.get(id)
-	if err != nil {
-		if scr, ok := m.loadGhostScreen(id); ok {
-			return scr.Repaint(withScrollback), nil
-		}
-		return nil, err
-	}
-	t.scrMu.Lock()
-	defer t.scrMu.Unlock()
-	return t.screen.Repaint(withScrollback), nil
+// Screen returns the terminal's current screen as text, optionally with history.
+func (m *Manager) Screen(id ID, withScrollback bool) (out Screen, err error) {
+	err = m.readScreen(id, func(s *phosphor.Terminal) { out = screenOf(s, withScrollback) })
+	return
+}
+
+// ScreenANSI returns a repaint for a terminal of the same size.
+func (m *Manager) ScreenANSI(id ID, withScrollback bool) (out []byte, err error) {
+	err = m.readScreen(id, func(s *phosphor.Terminal) { out = s.Repaint(withScrollback) })
+	return
+}
+
+// ScreenSnapshot reads exact cells, palettes and cluster modes without attaching.
+func (m *Manager) ScreenSnapshot(id ID) (out []byte, err error) {
+	err = m.readScreen(id, func(s *phosphor.Terminal) { out = s.Snapshot() })
+	return
 }
 
 // loadGhostScreen rebuilds a ghost's saved screen from disk.

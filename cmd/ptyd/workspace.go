@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/client"
 	"github.com/2018kguo/ptyd/internal/native"
 	"github.com/2018kguo/ptyd/internal/terminal"
@@ -43,12 +44,13 @@ type workspaceQuery struct {
 	Outside  bool
 }
 type workspaceSnapshot struct {
-	Query     workspaceQuery
-	Groups    []terminal.GroupSummary
-	Overview  terminal.Overview
-	Preview   terminal.Screen
-	PreviewID string
-	Err       error
+	Query      workspaceQuery
+	Groups     []terminal.GroupSummary
+	Overview   terminal.Overview
+	Preview    *phosphor.Terminal
+	PreviewErr error
+	PreviewID  string
+	Err        error
 }
 type workspaceView struct {
 	group                   terminal.GroupID
@@ -175,13 +177,37 @@ func refreshWorkspace(ctx context.Context, c client.API, queries <-chan workspac
 			req, cancel := context.WithTimeout(ctx, budget)
 			s := workspaceSnapshot{Query: q}
 			s.Groups, s.Err = c.Groups(req)
-			if s.Err == nil && q.Group != "" {
-				s.Overview, s.Err = c.Overview(req, terminal.OverviewOptions{GroupID: q.Group, Query: q.Search, Limit: terminal.MaxOverviewLimit, Discover: q.Outside, ActiveOnly: !q.History})
+			group := q.Group
+			home := group == ""
+			if home {
+				group = terminal.GroupID(q.Selected)
+			}
+			if s.Err == nil && group != "" {
+				options := terminal.OverviewOptions{GroupID: group, Limit: terminal.MaxOverviewLimit, Discover: q.Outside, ActiveOnly: !q.History}
+				if !home {
+					options.Query = q.Search
+				} else {
+					options.ActiveOnly = false
+				}
+				s.Overview, s.Err = c.Overview(req, options)
+				if home && s.Err != nil {
+					s.PreviewErr = s.Err
+					s.Err = nil
+				}
 				if s.Err == nil {
-					for _, r := range s.Overview.Sessions {
-						if string(r.ID) == q.Selected && r.External == nil && r.Local == nil {
-							s.PreviewID = q.Selected
-							_ = c.DoContext(req, "GET", "/terminals/"+q.Selected+"/screen", nil, &s.Preview)
+					rows := s.Overview.Sessions
+					if home {
+						for i, r := range rows {
+							if r.Attention > 0 || r.State == terminal.OverviewRunning {
+								rows = append([]terminal.SessionSummary{r}, rows[:i]...)
+								break
+							}
+						}
+					}
+					for _, r := range rows {
+						if (home || string(r.ID) == q.Selected) && r.External == nil && r.Local == nil {
+							s.PreviewID = string(r.ID)
+							s.Preview, s.PreviewErr = c.Preview(req, r.ID)
 							break
 						}
 					}
@@ -301,7 +327,7 @@ type workspaceOperation struct {
 	Err      error
 }
 
-func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, out *os.File) error {
+func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, out *os.File, showHistory ...bool) error {
 	if !term.IsTerminal(int(in.Fd())) || !term.IsTerminal(int(out.Fd())) {
 		return fmt.Errorf("attach needs an interactive terminal; use ptyd ls --json or ptyd status --json")
 	}
@@ -324,7 +350,8 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	}
 	defer func() { input.Close() }()
 	_, _ = io.WriteString(out, "\x1b[22;0t"+statusEnter)
-	v := workspaceView{history: start != "", group: start, selected: string(initial), color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
+	history := start != "" || (len(showHistory) > 0 && showHistory[0])
+	v := workspaceView{history: history, group: start, selected: string(initial), color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
 	queries := make(chan workspaceQuery, 1)
 	updates := make(chan workspaceSnapshot, 1)
 	go refreshWorkspace(ctx, c, queries, updates)

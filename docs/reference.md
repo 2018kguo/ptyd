@@ -9,7 +9,7 @@ control. Both use the same daemon and session ids.
 |---|---|
 | `ptyd`, `ptyd ui` | Open your groups; start a local daemon if needed. |
 | `ptyd new [-d] [--cwd directory] name [-- command args...]` | Create a group and enter it; `-d` prints its id. An optional command opens its first terminal. |
-| `ptyd ls [--json] [--all]` | List groups and counts; `--all` includes archived groups and saved-only Inbox. JSON always includes all groups. |
+| `ptyd ls [--json \| --plain] [--all]` | Live group browser on an interactive terminal; pipes and `--plain` print a table. `--all` starts with archived/saved groups visible. JSON always includes all groups. |
 | `ptyd attach [group]` | Enter a group's workspace, or choose a group. |
 | `ptyd rename group name` | Rename without changing its id. |
 | `ptyd archive [--undo] group` | Archive finished work or bring it back. Running terminals must stop first. |
@@ -63,7 +63,7 @@ are JSON. Errors are `{"error":"..."}`: 400 invalid input, 401 bad token,
 | `PATCH` | `T` | `{"name":"reviewer","group_id":"group-..."}`; either field can be omitted. |
 | `GET` | `T/output` | `?since=N&tail=N`; retained lines newer than `since`. |
 | `GET` | `T/stream` | `?since=N`; SSE `line` events, then `end` on exit. |
-| `GET` | `T/screen` | JSON window; `?scrollback=1` adds history, `?format=ansi` returns repaint bytes. |
+| `GET` | `T/screen` | JSON window; `?scrollback=1` adds history, `?format=ansi` returns repaint bytes; `?format=snapshot` returns an exact binary checkpoint. |
 | `GET` | `T/attach` | `?cols=&rows=&readonly=1&human=1`; upgraded interactive connection. |
 | `POST` | `T/write` | `{"data":"ls","submit":true}`; optional Enter after input. |
 | `POST` | `T/keys` | `{"keys":["ctrl+c","up","enter"]}`. |
@@ -107,6 +107,13 @@ conversations before applying the row limit. `active_only: true` confirms
 that the daemon applied it; `history_hidden` counts matching records omitted
 by this filter. Counts describe the remaining matches. The default API and
 `ptyd status --json` include history.
+
+The live group browser previews the selected group before opening it. Screen
+previews retain colors and backgrounds, update without taking control, and
+never resize the source PTY. Smaller windows stack the preview below the list.
+Previews and framed attachments read exact snapshots, including custom palettes
+and historical Unicode modes. Update the daemon along with the client. Oversized or unavailable previews show a reason while navigation
+remains available.
 
 The workspace shows all members of an opened group by default; `h` hides or
 shows finished members. The group list hides archived work and saved-only Inbox
@@ -187,6 +194,11 @@ Lines over 16 KiB split. Exited sessions retain output until deleted.
 
 Screen scrollback is a separate emulator budget: 2,000 logical lines /
 256 KiB. ANSI output targets a terminal of the same size.
+
+`format=snapshot` returns Phosphor's binary checkpoint, including custom
+palettes, both screens and retained history. Read it with a compatible
+Phosphor reader. This read neither attaches a viewer nor changes process
+geometry; JSON remains the default screen format for agents.
 
 ## Wait, watch and write
 

@@ -168,8 +168,9 @@ func runGroupAttach(args []string) int {
 	return failUI(workspace(c, id, "", os.Stdin, os.Stdout))
 }
 func runGroupList(args []string) int {
-	fs, addr := newFlags("ls", "[--json] [--all]", "List persistent groups. Attach a group with ptyd attach name.")
+	fs, addr := newFlags("ls", "[--json | --plain] [--all]", "Browse groups with live terminal previews. Pipes and --plain print a snapshot.")
 	asJSON := fs.Bool("json", false, "Return structured group counts and stable ids")
+	plain := fs.Bool("plain", false, "Print a table and exit instead of opening the live browser")
 	all := fs.Bool("all", false, "Include archived groups and saved Inbox terminals")
 	_ = fs.Parse(args)
 	if fs.NArg() != 0 {
@@ -181,6 +182,9 @@ func runGroupList(args []string) int {
 		return fail(err)
 	}
 	c = apiAt(*addr)
+	if !*asJSON && !*plain && term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) && os.Getenv("TERM") != "dumb" {
+		return failUI(workspace(c, "", "", os.Stdin, os.Stdout, *all))
+	}
 	rows, err := c.Groups(context.Background())
 	if err != nil {
 		return fail(err)

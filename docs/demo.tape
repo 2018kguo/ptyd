@@ -16,7 +16,13 @@ Sleep 2s
 Type "clear" Enter
 Show
 Type "ptyd ls" Enter
-Sleep 1200ms
+Sleep 1800ms
+Type "j"
+Sleep 1400ms
+Type "k"
+Sleep 1400ms
+Type "q"
+Sleep 600ms
 Type "ptyd attach website" Enter
 Sleep 1800ms
 Type ":b build" Enter
@@ -35,7 +41,7 @@ Type "g"
 Sleep 1200ms
 Type "q"
 Sleep 800ms
-Type "ptyd ls" Enter
+Type "ptyd ls --plain" Enter
 Sleep 1500ms
 
 Hide
