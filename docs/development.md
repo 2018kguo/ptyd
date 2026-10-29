@@ -90,6 +90,30 @@ restarts without claiming control or resizing them. Back-navigation tests cover
 prompts, attachments, repeated chords and late launch responses. Header animation
 checks compare every cell outside its reserved rectangle.
 
+Grid tests render eight panes in four columns and two rows, comparing mixed-mode
+Unicode and background colors across neighboring tiles. Narrow layouts keep the
+selected pane visible. Content-search tests cover visible text, retained history,
+soft wraps, wide-character spacers, literal spaces, Unicode case changes,
+in-place redraws, cancellation and incomplete inventories. Request concurrency
+is bounded directly. The real-PTY search check confirms the source process,
+geometry and input ownership stay unchanged.
+
+Mouse checks cover click selection, double-click attach, clickable actions,
+overlays, paste framing, pixel reports, resize fences and mouse-mode cleanup.
+Captain checks exercise UI/CLI changes, reopening, membership validation and
+concurrent preference writes without losing pins.
+Title tests exercise Codex and Claude together, custom-name precedence,
+spinner removal, changes while attached and refresh after returning to the
+group. Search bounds include a wide terminal with a large open history prefix.
+Keyboard tests split wheel reports immediately after Escape, let the key
+timeout expire, and verify the report still reaches the app in one piece on
+confirmed capable viewers. Legacy and encoded Escape, late query replies and
+literal paste have separate checks. The installed Codex witness repeats the
+delayed split and confirms the report stays out of its draft.
+Connection tests verify repeated four-worker searches reuse keep-alive sockets.
+An end-to-end check observes no browser reads during two refresh intervals
+while attached, then verifies reads resume after returning.
+
 Preview crop tests include footers and painted blank rows below the app cursor.
 Dialog tests compare every cell outside their frames at narrow and wide sizes;
 long fields include wide Unicode text near the input limit. Footer checks keep

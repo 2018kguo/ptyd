@@ -51,15 +51,18 @@ type Options struct {
 	Addr     string // host:port of the daemon
 	Token    string
 	ID       string
+	GroupID  terminal.GroupID
 	Human    bool
 	ReadOnly bool
 	Label    string
+	Caption  *SessionCaption
 	Hold     bool
 	Raw      bool // pass bytes directly; no reserved status row
 	rendered bool
 	// InitialInput precedes bytes read from the local terminal.
-	InitialInput []byte
-	ViewerColors *terminal.TerminalColors // known host theme; used only for status chrome
+	InitialInput   []byte
+	ViewerColors   *terminal.TerminalColors // known host theme; used only for status chrome
+	ViewerKeyboard *bool                    // nil probes actual host Kitty keyboard support
 }
 
 // AttachResult describes the handoff back to the caller. PendingInput contains
@@ -109,6 +112,16 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		}
 		defer func() { _ = term.Restore(int(in.Fd()), state) }()
 	}
+	viewerKeyboard := false
+	if framed && interactiveInput {
+		if opts.ViewerKeyboard != nil {
+			viewerKeyboard = *opts.ViewerKeyboard
+		} else {
+			var pending []byte
+			viewerKeyboard, pending = ProbeKeyboard(ctx, in, out)
+			opts.InitialInput = append(opts.InitialInput, pending...)
+		}
+	}
 	if isTerm {
 		// The prompt the user attached from is at the cursor.
 		_, _ = io.WriteString(out, "\x1b[J"+strings.Repeat("\n", max(rows-1, 0)))
@@ -127,6 +140,8 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		setWindowTitle(out, opts.Label)
 		if framed {
 			frame = newPane(out, opts.Label, cols, rows)
+			frame.identity, frame.groupID = opts.ID, string(opts.GroupID)
+			frame.caption = opts.Caption
 			frame.viewOnly = readOnly
 			if opts.ViewerColors != nil {
 				if palette, err := opts.ViewerColors.Palette(); err == nil {
@@ -203,6 +218,7 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 	if framed {
 		controls.mouseRows = appRows
 		controls.filterColorReplies = true
+		controls.filterKeyboardReplies = true
 	}
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
@@ -232,6 +248,41 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 			lastDraw = time.Now()
 		}
 		return err
+	}
+	updateInputModes := func() {
+		if frame != nil {
+			controls.mouseRows, controls.backFrom, controls.backTo = frame.backButton()
+			controls.disambiguateEscape = viewerKeyboard && frame.escapeDisambiguated()
+		}
+	}
+	processInput := func(p []byte, ok bool) bool {
+		if !ok {
+			_ = sendInput(controls.flushSequence())
+			result.Detached = true
+			return true
+		}
+		if !interactiveInput {
+			return sendInput(p) != nil
+		}
+		updateInputModes()
+		forward, detached, tail := controls.feed(p, time.Now())
+		if sendInput(forward) != nil {
+			return true
+		}
+		if detached {
+			result.Detached = true
+			result.PendingInput = append(bytes.Clone(tail), input.Remainder()...)
+			return true
+		}
+		timer.Stop()
+		if !controls.deadline.IsZero() {
+			timer.Reset(time.Until(controls.deadline))
+		}
+		sequenceTimer.Stop()
+		if len(controls.pending) > 0 {
+			sequenceTimer.Reset(sequenceWindow)
+		}
+		return false
 	}
 	for {
 		select {
@@ -287,39 +338,23 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 				return result, nil
 			}
 		case <-sequenceTimer.C:
-			if err := sendInput(controls.flushSequence()); err != nil {
-				return result, nil
-			}
-		case p, ok := <-input.Bytes:
-			if !ok {
-				_ = sendInput(controls.flushSequence())
-				result.Detached = true
-				return result, nil
-			}
-			if !interactiveInput {
-				if err := sendInput(p); err != nil {
+			// A render can delay this loop past the timeout while the rest of
+			// a report is already queued. Finish that input before expiring it.
+			select {
+			case p, ok := <-input.Bytes:
+				if processInput(p, ok) {
 					return result, nil
 				}
-				continue
+			default:
+				updateInputModes()
+				if sendInput(controls.flushSequence()) != nil {
+					return result, nil
+				}
 			}
-			forward, detached, tail := controls.feed(p, time.Now())
-			if err := sendInput(forward); err != nil {
+		case p, ok := <-input.Bytes:
+			if processInput(p, ok) {
 				return result, nil
 			}
-			if detached {
-				result.Detached = true
-				result.PendingInput = append(bytes.Clone(tail), input.Remainder()...)
-				return result, nil
-			}
-			timer.Stop()
-			if !controls.deadline.IsZero() {
-				timer.Reset(time.Until(controls.deadline))
-			}
-			sequenceTimer.Stop()
-			if len(controls.pending) > 0 {
-				sequenceTimer.Reset(sequenceWindow)
-			}
-
 		}
 	}
 }

@@ -108,6 +108,46 @@ COUNT=6 BENCHTIME=200ms OUT=.bench/fanout \
   bench/ab.sh "$BASELINE" ./internal/terminal '^BenchmarkAttachFanout/(K=1|K=8)$'
 ```
 
+## Workspace browsing
+
+The eight-pane browser keeps its read and rendering budgets separate:
+
+| Work | Bound or cost |
+|---|---|
+| Live previews | Eight panes, four concurrent reads; source geometry stays unchanged. |
+| Conversation titles | Reuse preview titles, then at most sixteen nearby records; four workers and a one-second budget. |
+| Content search | At most 500 candidates, four workers; linear in the visible cells and retained text read. |
+| Browser hidden behind an attachment | Preview, title and search polling stops. |
+| HTTP connections | A shared pool keeps up to eight idle connections per daemon, sixteen overall, for up to thirty seconds. |
+
+Pin and match lookups multiply by at most eight. The existing daemon overview
+still sorts registry matches in O(M log M), where M is the number of matches.
+The browser adds no growing quadratic scan.
+
+Reusing the canonical renderer's temporary row model and buffers reduced an
+eight-pane fixture from about **1.56 MB to 0.60 MB allocated per frame** (62%).
+The emitted frame stayed at 58,213 bytes. This measures temporary Go allocation,
+rather than retained session memory or RSS. Keeping four search connections
+alive also avoided the default transport's repeated connection creation between
+batches. Both changes are in the client and work with an already running daemon.
+
+The fixture uses eight dense, styled 160×48 screens in a 240×80 browser on an
+Apple M5 Pro. Raw samples, source hashes, baseline overlays and toolchain details
+are in the [workspace evidence bundle](https://github.com/2018kguo/ptyd/releases/download/v0.13.0/ptyd-workspace-evidence.tar.gz).
+Frame times measure Go work producing ANSI bytes, excluding terminal display
+and GPU latency. Session-count tests use small synthetic snapshots over local
+HTTP; they do not establish timings for hundreds of busy real agents. Large
+open-wrap searches report incomplete boundary coverage under the documented
+memory budget; their times are separate from searches with complete coverage.
+
+Reproduce the maintained fixtures:
+
+```sh
+go test ./cmd/ptyd -run '^$' -bench '^BenchmarkWorkspaceFrame$' -benchtime=250ms -count=3
+go test ./internal/client -run '^$' -bench '^BenchmarkContentSearchBytes$' -benchtime=250ms -count=3
+go test ./internal/client -run '^$' -bench '^BenchmarkContentSearchSessions$' -benchtime=5x -count=3
+```
+
 ## Run a comparison
 
 ```sh

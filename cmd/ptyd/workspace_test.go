@@ -520,8 +520,8 @@ func TestPreviewCanonicalRowsKeepHistoricalClusters(t *testing.T) {
 }
 
 func TestWorkspacePreviewFrameKeepsChromeAndSourceState(t *testing.T) {
-	const cols, rows, left = 120, 24, 40
-	rect := workspaceRect{left + 5, 8, cols - left - 10, rows - 15}
+	const cols, rows, left = 120, 24, 26
+	rect := workspaceRect{left + 4, 7, cols - left - 8, rows - 13}
 	cases := []string{
 		"\x1b[?2027h\x1b[1;3H🇧🇨\x1b[?2027l\x1b[1;1H🇦",
 		"\x1b[?2027lA❤️",
@@ -539,11 +539,11 @@ func TestWorkspacePreviewFrameKeepsChromeAndSourceState(t *testing.T) {
 		v := workspaceView{group: "work", selected: "preview", color: true,
 			groups:   []terminal.GroupSummary{{Group: terminal.Group{ID: "work", Name: "work"}, Running: 1, Terminals: 1}},
 			rows:     []terminal.SessionSummary{{ID: "preview", Name: "preview", State: terminal.OverviewRunning}},
-			snapshot: &workspaceSnapshot{Query: workspaceQuery{Group: "work"}, PreviewID: "preview", Preview: phosphor.New(80, 4)},
+			snapshot: &workspaceSnapshot{Query: workspaceQuery{Group: "work"}, Panes: []workspacePane{{Row: terminal.SessionSummary{ID: "preview", Name: "preview"}, Screen: phosphor.New(80, 4)}}},
 		}
 		chrome := phosphor.New(cols, rows)
 		chrome.Write([]byte(workspaceFrame(v, cols, rows)))
-		v.snapshot.Preview = source
+		v.snapshot.Panes[0].Screen = source
 		host := phosphor.New(cols, rows)
 		host.Write([]byte(workspaceFrame(v, cols, rows)))
 		sourcePalette, hostPalette := source.Palette(), host.Palette()
@@ -551,7 +551,7 @@ func TestWorkspacePreviewFrameKeepsChromeAndSourceState(t *testing.T) {
 			for x := 0; x < cols; x++ {
 				// The pane's crop caption depends on its screen contents too.
 				caption := y == rows-6 && x >= rect.x && x < rect.x+rect.w
-				if x >= rect.x && x < rect.x+rect.w && y >= rect.y && y < rect.y+4 {
+				if x >= rect.x && x < min(rect.x+rect.w, rect.x+80) && y >= rect.y && y < rect.y+4 {
 					actual, want := host.Cell(x, y), source.Cell(x-rect.x, y-rect.y)
 					if actual.Text() != want.Text() || actual.Width != want.Width || hostPalette.Resolve(actual.Style.Fg, false) != sourcePalette.Resolve(want.Style.Fg, false) || hostPalette.Resolve(actual.Style.Bg, true) != sourcePalette.Resolve(want.Style.Bg, true) {
 						t.Fatalf("%q at %d,%d: actual=%+v want=%+v", input, x, y, actual, want)

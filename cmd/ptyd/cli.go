@@ -35,6 +35,9 @@ Usage:
   ptyd status [--json] [--group group] [--discover]
                                   structured terminal overview for agents
   ptyd agents [--json]             discover agents in original terminals
+  ptyd search [--group group] text search screens and retained scrollback
+  ptyd captain [--group group] [terminal]
+                                  read or designate the group's captain
   ptyd serve [flags]              run the daemon in the foreground
   ptyd token                      print the local API token
 
@@ -52,11 +55,13 @@ func defaultAddr() string {
 
 // commands are the subcommands; anything else runs the daemon.
 var commands = map[string]func(args []string) int{
-	"new":    runGroupNew,
-	"ls":     runGroupList,
-	"status": runStatus,
-	"ui":     runUI,
-	"agents": runAgents,
+	"new":     runGroupNew,
+	"ls":      runGroupList,
+	"status":  runStatus,
+	"ui":      runUI,
+	"agents":  runAgents,
+	"search":  runSearch,
+	"captain": runCaptain,
 
 	"attach":  runGroupAttach,
 	"term":    runTerm,
@@ -201,13 +206,16 @@ func attach(parent context.Context, c client.API, t terminal.Info, opts client.O
 	ctx, stop := signal.NotifyContext(parent, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	opts.Addr, opts.Token, opts.ID = c.Addr, c.Token, string(t.ID)
-	opts.Label = t.Name
+	opts.GroupID = t.GroupID
+	layout := loadWorkspaceLayouts(c.Addr)
+	caption := client.SessionCaption{Name: t.Name, Provider: sessionProvider(terminal.SessionSummary{Agent: t.Agent, Source: t.Source, Command: t.Command}), Captain: layout.captains[t.GroupID] == t.ID}
 	if t.GroupID != "" {
 		var g terminal.Group
 		if err := c.Do("GET", "/groups/"+string(t.GroupID), nil, &g); err == nil {
-			opts.Label = g.Name + " / " + t.Name
+			caption.Group = g.Name
 		}
 	}
+	opts.Caption, opts.Label = &caption, caption.Label("")
 	result, err := client.Attach(ctx, opts, os.Stdin, os.Stdout, winch)
 	var pending []byte
 	if result.Detached && err == nil {

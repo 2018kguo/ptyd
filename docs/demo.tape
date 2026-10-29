@@ -2,9 +2,9 @@
 # Real ptyd groups and terminals; local fixtures, no model-provider calls.
 Output docs/demo.gif
 Set Shell bash
-Set FontSize 18
-Set Width 1400
-Set Height 800
+Set FontSize 16
+Set Width 1920
+Set Height 1000
 Set Padding 20
 Set TypingSpeed 65ms
 Set Framerate 15
@@ -21,6 +21,10 @@ Type "j"
 Sleep 1400ms
 Type "k"
 Sleep 1400ms
+Type "/Requests served" Enter
+Sleep 1500ms
+Type ":ls" Enter
+Sleep 900ms
 Type "q"
 Sleep 600ms
 Type "ptyd attach website" Enter
@@ -33,13 +37,9 @@ Type "f"
 Sleep 600ms
 Type@40ms "jk"
 Sleep 500ms
-Type "v"
-Sleep 900ms
-Type "j"
-Sleep 900ms
-Type "v"
+Type@100ms "vjvjvjvjvjvjvj"
 Sleep 2500ms
-Type "k"
+Type "0"
 Sleep 600ms
 Enter
 Sleep 1200ms

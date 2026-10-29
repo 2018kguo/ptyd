@@ -19,5 +19,16 @@
     },
     "rounds": 6,
     "manifest": "manifest.json"
+  },
+  "workspace_browsing": {
+    "url": "https://github.com/2018kguo/ptyd/releases/download/v0.13.0/ptyd-workspace-evidence.tar.gz",
+    "sha256": "6f5068b5f26acc4447350c191bfc103df779cc578fad16b82d5274cc831982d5",
+    "source_commit": "bdd21327f098e43606d1cbbd12c583b1b844949b",
+    "fixtures": {
+      "cmd/ptyd/workspace_bench_test.go": "8a73f2a1e86ab6f411cd32a7c75997a7e487e528b35fdc5bfbd1f059db0cefee",
+      "internal/client/search_bench_test.go": "987d9c63746a325f397e0c40042a015696fcf3cb3b29660a21f75ae17f5d3c61"
+    },
+    "pairs": 3,
+    "manifest": "workspace-evidence/manifest.json"
   }
 }

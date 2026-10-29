@@ -24,6 +24,8 @@ control. Both use the same daemon and session ids.
 | `ptyd term import [-d] [--group group] [-n name] [--resume] provider:UUID` | Open an exact native conversation. |
 | `ptyd status [--json] [--group group] [--discover] [--limit N] [--filter text] [--tag tags]` | Terminal overview for scripts and agents. |
 | `ptyd agents [--json]` | Discover native conversations and original tabs. |
+| `ptyd search [--group group] [--all] [--json] text` | Find literal text in screens and retained scrollback. |
+| `ptyd captain [--group group] [--json] [--clear \| terminal]` | Read, designate or clear a group's captain on this machine. |
 | `ptyd serve [flags]` | Run the daemon in the foreground; `ptyd serve -h` lists flags. |
 | `ptyd token` | Print the token for an HTTP client. |
 
@@ -77,6 +79,39 @@ are JSON. Errors are `{"error":"..."}`: 400 invalid input, 401 bad token,
 | `DELETE` | `T` | Terminate and forget; also deletes a stopped session. |
 | `GET` | `/search` | `?q=regex&within_seconds=N&limit=N&tag=a,b`; retained output of non-ghost sessions. |
 
+## Search terminal contents
+
+`ptyd search --group work --json 'build failed'` searches the current screen
+and retained scrollback without attaching or resizing. Text is literal and
+case-insensitive. Soft-wrapped rows form one logical line; hard line breaks
+stay separate. Session names, directories and commands remain searchable as a
+secondary match. The CLI searches active terminals by default; `--all` includes
+finished and saved terminals.
+
+The workspace's `/` uses the same search. At home it finds matching groups;
+inside a group it finds matching terminals. Enter keeps the filter, and opening
+a content-matched group keeps that search. `:ls` clears it. Matches identify
+`screen`, `scrollback` or `session` and show a short excerpt. A visible match
+is brought into the preview; a history match appears above the live screen.
+
+Search reads at most 500 candidate terminals with four concurrent snapshot
+requests. The workspace gives content reads two seconds per refresh; the CLI
+allows fifteen seconds overall. A snapshot is capped at 4 MiB and 256K cells.
+Failures, unreadable screens and capped inventories make the result incomplete.
+Reconstructing a screen/history wrap boundary requires a prefix up to 32 KiB,
+width up to 4,096 columns and checkpoint up to 128 KiB. Larger states keep their
+confirmed text matches and report an unchecked boundary when no match is found.
+The checkpoint bound is conservative: unrelated retained history can exceed it.
+JSON reports `matches`, `checked`, `candidates`, `issues` and `complete`;
+incomplete CLI searches exit with status 1 while preserving confirmed matches.
+Outside agents' original screens are unavailable until imported into ptyd.
+Search covers retained terminal content, rather than agent transcript files or
+history already evicted by its retention budget. Preview and search reads pause
+while the browser is hidden behind an attachment.
+
+The daemon's existing `GET /search` separately searches retained output lines
+with a regex. The CLI content search reads exact snapshots through `/screen`.
+
 ## Session overview
 
 `GET /overview` reads the daemon's existing session registry. Rows put
@@ -108,11 +143,12 @@ that the daemon applied it; `history_hidden` counts matching records omitted
 by this filter. Counts describe the remaining matches. The default API and
 `ptyd status --json` include history.
 
-The live group browser previews the selected group before opening it. Screen
+The live group browser previews up to eight terminals in the selected group before opening it. Screen
 previews retain colors and backgrounds, update without taking control, and
 never resize the source PTY. Smaller windows stack the preview below the list.
 Previews and framed attachments read exact snapshots, including custom palettes
-and historical Unicode modes. Update the daemon along with the client. Oversized or unavailable previews show a reason while navigation
+and historical Unicode modes. These features require the exact-snapshot protocol;
+updating the client can leave a compatible daemon running. Oversized or unavailable previews show a reason while navigation
 remains available.
 
 The workspace shows all members of an opened group by default; `h` hides or
@@ -242,6 +278,14 @@ Bracketed-paste frames pass through unchanged. Unframed pasted input is
 indistinguishable from typing and follows the same shortcut rule. Piped
 input passes through without local shortcuts.
 
+Framed views probe the viewing terminal's keyboard support once at startup.
+When both the viewer and app use disambiguated Escape, a partial mouse report
+stays framed even if its first Escape byte arrives separately. Genuine encoded
+Escape keys pass immediately. Other viewers keep the legacy Escape timeout.
+Queued input is processed before an expired prefix, so a delayed redraw cannot
+split a report that has already arrived. The protocol is described in the
+[Kitty keyboard specification](https://sw.kovidgoyal.net/kitty/keyboard-protocol/).
+
 Escape, double Escape, control keys and function keys belong to the attached
 program. Modified keys and key-repeat events do not activate `jk`; unmodified
 kitty and modifyOtherKeys encodings do. On detach, terminal modes reset and
@@ -283,7 +327,8 @@ the current conversation after navigation inside an agent.
 |---|---|
 | `j/k`, arrows; `0/G` | Move; first/last item. |
 | Enter, `i` | Open a group or take keyboard control of a terminal. |
-| `v` | Pin/unpin a live terminal pane beside the group list; up to three pins per group. |
+| `v` | Pin/unpin a live terminal pane beside the group list; up to seven pins per group. |
+| `c` | Designate the selected managed terminal as captain; press again on the captain to clear it. |
 | `n` | Create a group, or launch Codex (`c`), Claude (`a`), shell (`s`) or a custom command (`r`). In the launch menu, `f` toggles agent access. |
 | `r` | Rename the selected group or terminal. |
 | `m` | Move a terminal to another unarchived group. |
@@ -293,7 +338,7 @@ the current conversation after navigation inside an agent.
 | `h` | Show archived/saved-only groups; inside a group, toggle finished terminals. |
 | Quick `jk`, Escape | Go back one level; dismiss a menu or cancel a prompt first. |
 | `:groups` | Return directly to your groups. |
-| `/` | Search as you type; Enter keeps the filter, `jk` or Escape restores the previous filter. |
+| `/` | Search screens and retained scrollback as you type; Enter keeps the filter, `jk` or Escape restores the previous filter. |
 | `:b name`, `:open name` | Open by id, unique name, number or prefix within the shown rows; ambiguous names are refused. |
 | `:run command` | Run a custom command through your shell in the current group. |
 | `:new`, `:ls` | Open creation controls; clear search. |
@@ -301,9 +346,10 @@ the current conversation after navigation inside an agent.
 | `?` | Show controls; `jk`, Escape, `q` or `?` returns. |
 | `q`, `:q`, `:detach` | Leave the workspace; work keeps running. |
 
-Pinned panes keep refreshing while selection and search change. The selected
-terminal also gets a preview unless it is already pinned. Narrow windows stack
-panes below the list; if there is too little room, the heading reports how many
+Pinned panes keep refreshing while selection and search change. Pin up to seven;
+the selected terminal gets the eighth slot unless it is already pinned. Wide
+windows show four columns and two rows. Narrow windows use fewer columns and
+place previews below the list; if there is too little room, the heading reports how many
 are visible. Previews do not resize the source terminal, attach a viewer or take
 keyboard control. An occupied terminal can be pinned while its human keeps control.
 Enter opens the selected terminal when control is available.
@@ -318,10 +364,40 @@ Selection and dialog backgrounds follow the viewing terminal's light or dark
 colors. The shortcut bar leaves an empty bottom row, and long prompt fields
 keep their end and caret visible inside the dialog.
 
-Pins are local presentation settings, saved per daemon address under
+Click a row or pane to select it; double-click to open it. Click the bottom
+controls to run their displayed actions, including Back, search and launch.
+The wheel moves through the list when the pointer is over it. Attached programs
+keep their own mouse modes: `jk` always returns, and the attached Back hint is
+clickable when the app enables mouse reports in terminal-cell coordinates.
+Pixel-coordinate reports pass through unchanged.
+
+Colors identify groups and terminals consistently by id, including after a
+rename. Status icons and words retain their meaning. Light and dark terminals
+use different accent brightness; `NO_COLOR` removes color.
+
+Agent labels combine the provider and conversation title, for example
+`Codex · Investigate AOP save failure` or `Claude · Native Salesforce integration`.
+Generic names such as `codex 2` use the app's terminal title; a custom ptyd name
+takes precedence. Claude's rotating title glyph is omitted. Titles appear in
+the sidebar, preview headers and attached status bar, where they keep updating.
+The browser reuses preview metadata and reads at most sixteen nearby title
+records with four concurrent requests and a one-second budget. Each response
+is capped at 1 MiB. Failed reads keep the last known title or saved name.
+Display titles never authorize input,
+imports or conversation resume; exact terminal ids and native references do.
+
+Pins and captain designations are local workspace settings, saved per daemon address under
 `$XDG_STATE_HOME/ptyd` (default `~/.local/state/ptyd`) in an owner-only `view-*.json`
 file. They persist across browser restarts. `●` means running, `◉` human control,
-`◇` saved, `✓` successful exit, `!` attention or failure, and `◆` pinned.
+`◇` saved, `✓` successful exit, `!` attention or failure, `◆` pinned, and
+`★ Captain` the chosen coordinator. Each group has at most one captain.
+`ptyd captain --group work terminal-id` sets it; `--clear` removes it. With no
+terminal argument, `--json` returns `group_id`, `terminal_id`, `name`, `state`
+and `available`, with a reason when unset or unavailable. The designation stays
+tied to the terminal id. Moving or removing it requires choosing another; a
+relaunch that creates a new id also needs a new designation. Other clients on
+this machine see changes on their next workspace refresh. HTTP group metadata
+does not contain these local settings.
 
 Built-in Codex and Claude launches start with **Full (YOLO)** access. Press `f`
 in the launch menu to choose **CLI settings**, which adds no permission override.

@@ -7,8 +7,10 @@ same command execution as your local user.
 
 `ptyd`, `ptyd new` and `ptyd attach` start a missing local daemon automatically.
 Use `ptyd serve` to run it in the foreground, or install a service below.
-Detaching a workspace does not stop its daemon. Stop the daemon gracefully
-before upgrading, after checking for running work with `ptyd term ls`.
+Detaching a workspace does not stop its daemon. Replacing the client binary
+leaves an already running daemon and its terminals alive. For daemon changes,
+check for running work with `ptyd term ls`, then stop gracefully when that work
+can be restarted. Starting the new client does not upgrade a running daemon.
 
 ## Configure it
 
@@ -82,6 +84,13 @@ reuse that reference without fresh validation. [The import reference](reference.
 explains handoff, profile scope and incomplete discovery.
 
 ## Persistence and upgrades
+
+The browser saves pins and captain choices in an owner-only `view-*.json` file
+under the local state directory, separately for each daemon address. These
+preferences belong to the client machine. Existing pin layouts are read during
+upgrade. Older clients refuse a layout containing captain choices rather than
+overwriting it while saving pins. Group and terminal accent colors derive from
+their ids and need no stored setting.
 
 `groups.json` stores group names, directories and archive state. Each terminal's
 `meta.json` owns its group id. Older records without membership enter Inbox;
