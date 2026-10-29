@@ -30,10 +30,13 @@ type pane struct {
 	err          error
 	title        string
 	initialized  bool
+	painted      []paneRow
+	buffer       []byte
+	ready        chan struct{}
 }
 
 func newPane(out io.Writer, label string, cols, rows int) *pane {
-	p := &pane{out: out, label: label, cols: cols, rows: rows, changed: true}
+	p := &pane{out: out, label: label, cols: cols, rows: rows, changed: true, ready: make(chan struct{}, 1)}
 	p.screen = phosphor.New(max(cols, 1), max(rows-1, 1), phosphor.WithBell(func() { _, p.err = io.WriteString(out, "\a") }), phosphor.WithScrollbackOutput(historyOutput{p}))
 	return p
 }
@@ -54,7 +57,15 @@ func (p *pane) Write(b []byte) (int, error) {
 		}
 	})
 	p.changed = true
+	p.signal()
 	return len(b), p.err
+}
+
+func (p *pane) signal() {
+	select {
+	case p.ready <- struct{}{}:
+	default:
+	}
 }
 func (p *pane) resize(cols, rows int) {
 	p.mu.Lock()
@@ -62,6 +73,7 @@ func (p *pane) resize(cols, rows int) {
 	p.cols, p.rows = max(cols, 1), max(rows, 2)
 	p.haveModes = false
 	p.changed = true
+	p.signal()
 }
 func (p *pane) draw(force bool) error {
 	p.mu.Lock()
@@ -73,7 +85,7 @@ func (p *pane) draw(force bool) error {
 	if p.screen.Modes().SyncUpdate && !force {
 		return p.err
 	}
-	b := []byte("\x1b[?2026h\x1b[?25l\x1b[?6l\x1b[r\x1b[?7l\x1b[4l")
+	b := append(p.buffer[:0], "\x1b[?2026h\x1b[?25l\x1b[?6l\x1b[r\x1b[?7l\x1b[4l"...)
 	b = appendMode(b, 2027, p.screen.Modes().GraphemeClustering)
 	var historyAdded bool
 	b, historyAdded = p.appendHistory(b)
@@ -88,25 +100,21 @@ func (p *pane) draw(force bool) error {
 		view.Resize(p.cols, p.rows-1)
 		force = true
 	}
-	for y := 0; y < p.rows-1; y++ {
-		if !force && !view.RowDirty(y) {
-			continue
+	b = p.appendDamage(b, view, force)
+	if force {
+		b = fmt.Appendf(b, "\x1b[%d;1H\x1b[0m\x1b[7m", p.rows)
+		state := "attached"
+		if p.viewOnly {
+			state = "viewing"
 		}
-		b = fmt.Appendf(b, "\x1b[%d;1H", y+1)
-		b = view.AppendRowANSI(b, y)
+		if p.finished {
+			state = "finished"
+		}
+		text := paneLabel(p.label, state, p.cols)
+		b = append(b, text...)
+		b = append(b, strings.Repeat(" ", max(p.cols-displayWidth(text), 0))...)
+		b = append(b, "\x1b[0m"...)
 	}
-	b = fmt.Appendf(b, "\x1b[%d;1H\x1b[0m\x1b[7m", p.rows)
-	state := "attached"
-	if p.viewOnly {
-		state = "viewing"
-	}
-	if p.finished {
-		state = "finished"
-	}
-	text := paneLabel(p.label, state, p.cols)
-	b = append(b, text...)
-	b = append(b, strings.Repeat(" ", max(p.cols-displayWidth(text), 0))...)
-	b = append(b, "\x1b[0m"...)
 	modes := p.screen.Modes()
 	if !p.haveModes || modes != p.lastModes {
 		for _, m := range []struct {
@@ -152,6 +160,7 @@ func (p *pane) draw(force bool) error {
 	b = appendMode(b, 25, cur.Visible)
 	b = append(b, "\x1b[?2026l"...)
 	_, p.err = p.out.Write(b)
+	p.buffer = b
 	p.screen.ClearDirty()
 	p.changed = false
 	return p.err
@@ -214,6 +223,7 @@ func (p *pane) restore(data []byte) error {
 	}
 	p.changed = true
 	p.haveModes = false
+	p.signal()
 	if !p.initialized {
 		p.initialized = true
 		return p.screen.WriteScrollback(historyOutput{p})
@@ -289,4 +299,5 @@ func (p *pane) finish() {
 	p.finished = true
 	p.changed = true
 	p.haveModes = false // EOF must flush even an unfinished synchronized update.
+	p.signal()
 }
