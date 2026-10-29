@@ -9,7 +9,7 @@
 #   OUT=/tmp/ab bench/ab.sh <rev> './internal/terminal ./internal/api'
 set -eu
 cd "$(dirname "$0")/.."
-rev=$1 pkgs=$2 bench=${3:-.} count=${COUNT:-10}
+rev=$1 pkgs=$2 bench=${3:-.} count=${COUNT:-10} benchtime=${BENCHTIME:-1s}
 tmp=$(mktemp -d)
 trap 'git worktree remove --force "$tmp/old" >/dev/null 2>&1; rm -rf "$tmp"' EXIT
 git worktree add -q --detach "$tmp/old" "$rev"
@@ -27,7 +27,7 @@ for i in $(seq "$count"); do
 	for pkg in $pkgs; do
 		n=$(basename "$pkg")
 		for v in $order; do
-			if (cd "$pkg" && "$tmp/$v-$n.test" -test.run '^$' -test.bench "$bench" -test.benchmem -test.count 1 -test.timeout 60m) >"$tmp/run.log"; then
+			if (cd "$pkg" && "$tmp/$v-$n.test" -test.run '^$' -test.bench "$bench" -test.benchtime "$benchtime" -test.benchmem -test.count 1 -test.timeout 60m) >"$tmp/run.log"; then
 				sed '/^\[ptyd\]/d' "$tmp/run.log" >>"$tmp/$v.txt"
 			else
 				status=$?

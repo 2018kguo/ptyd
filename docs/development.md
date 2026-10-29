@@ -132,6 +132,13 @@ across detach. These checks cover different parts of the attachment path.
 Pane tests also cover clears, alternate screens, mixed Unicode modes, palette
 changes, retained history, narrow footers and mouse coordinates. Framed streams
 start and recover with exact snapshots rather than ANSI reconstruction.
+Scroll checks compare every rendered cell after moves in both directions,
+identical redraws, palette changes, screen switches, restore and resize. The
+client reuses unchanged rows and the footer, and scrolls matching rows within
+the app rectangle. Input responses paint without waiting for the background
+refresh budget; idle panes have no periodic paint timer. The maintained
+[attachment benchmarks](../bench/README.md#attached-scrolling) measure emitted
+bytes, CPU work and local input-to-paint latency separately.
 
 Native discovery tests cover loaded Codex threads without rollouts, original-tab
 observations without conversation authority, same-terminal deduplication and

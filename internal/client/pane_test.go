@@ -361,3 +361,104 @@ func TestFinishedPaneFlushesUnfinishedSynchronizedUpdate(t *testing.T) {
 		t.Fatalf("final error hidden: %q / %q", screen.Line(0), screen.Line(23))
 	}
 }
+
+func TestPaneScrollDamagePreservesRenderedState(t *testing.T) {
+	for _, width := range []int{40, 120} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			var wire bytes.Buffer
+			p := newPane(&wire, "group / transcript", width, 24)
+			host := phosphor.New(width, 24, phosphor.WithScrollback(200))
+			check := func() {
+				t.Helper()
+				if err := p.draw(false); err != nil {
+					t.Fatal(err)
+				}
+				host.Write(wire.Bytes())
+				app := p.screen
+				cols, rows := app.Size()
+				for y := 0; y < rows; y++ {
+					for x := 0; x < cols; x++ {
+						want, got := app.Cell(x, y), host.Cell(x, y)
+						for _, c := range []*phosphor.Cell{&want, &got} {
+							if c.Rune == 0 && c.Width != 0 {
+								c.Rune = ' '
+							}
+						}
+						// Program palette changes are emitted as RGB, so compare the
+						// displayed colors as well as attributes and cluster structure.
+						for _, pair := range []struct {
+							cell    *phosphor.Cell
+							palette phosphor.Palette
+							reverse bool
+						}{{&want, app.Palette(), app.Modes().ReverseVideo}, {&got, host.Palette(), host.Modes().ReverseVideo}} {
+							fg, bg := pair.palette.Resolve(pair.cell.Style.Fg, false), pair.palette.Resolve(pair.cell.Style.Bg, true)
+							if (pair.cell.Style.Attrs&phosphor.AttrInverse != 0) != pair.reverse {
+								fg, bg = bg, fg
+							}
+							pair.cell.Style.Attrs &^= phosphor.AttrInverse
+							pair.cell.Style.Fg = phosphor.RGBColor(fg.R, fg.G, fg.B)
+							pair.cell.Style.Bg = phosphor.RGBColor(bg.R, bg.G, bg.B)
+						}
+						if want != got {
+							t.Fatalf("cell %d,%d: got %+v want %+v", x, y, got, want)
+						}
+					}
+				}
+				if want, got := app.Cursor(), host.Cursor(); want.X != got.X || want.Y != got.Y || want.Visible != got.Visible {
+					t.Fatalf("cursor got %+v want %+v", got, want)
+				}
+				if !strings.Contains(host.Line(rows), "jk: back") {
+					t.Fatal("scroll damaged the footer")
+				}
+			}
+			paint := func(offset int) {
+				var b strings.Builder
+				b.WriteString("\x1b[?2026h")
+				for y := 0; y < 23; y++ {
+					id := y + offset
+					if y < 2 || y >= 20 {
+						id = y
+					}
+					fmt.Fprintf(&b, "\x1b[%d;1H\x1b[0m\x1b[48;2;%d;30;40m\x1b[2K\x1b[4:3;31m", y+1, 20+id%20)
+					if id%5 != 0 {
+						fmt.Fprintf(&b, "\x1b]8;id=row%d;https://example.com/%d\x1b\\line %03d \x1b[?2027h雪 👩‍💻 é\x1b[?2027l\x1b]8;;\x1b\\", id, id, id)
+					}
+				}
+				b.WriteString("\x1b[0m\x1b[22;5H\x1b[?2026l")
+				p.Write([]byte(b.String()))
+			}
+			up, down := false, false
+			for _, offset := range []int{0, 1, 2, 5, 21, 5, 2, 1, 0, 1, 2} {
+				paint(offset)
+				check()
+				up = up || strings.Contains(wire.String(), "S\x1b[r")
+				down = down || strings.Contains(wire.String(), "T\x1b[r")
+				wire.Reset()
+			}
+			if !up || !down {
+				t.Fatal("fixture did not exercise scroll moves in both directions")
+			}
+			paint(2)
+			check()
+			if strings.Contains(wire.String(), "line ") || strings.Contains(wire.String(), "jk: back") {
+				t.Fatal("identical redraw retransmitted unchanged rows or footer")
+			}
+			wire.Reset()
+			saved := p.screen.Snapshot()
+			for _, write := range []string{"\x1b]4;1;#aabbcc\x1b\\", "\x1b[?1049h\x1b[2Jalternate", "\x1b[?1049l", "\x1b[?5h", "\x1b[?5l"} {
+				p.Write([]byte(write))
+				check()
+				wire.Reset()
+			}
+			if err := p.restore(saved); err != nil {
+				t.Fatal(err)
+			}
+			check()
+			wire.Reset()
+			p.resize(width+4, 26)
+			p.screen.Resize(width+4, 25)
+			host.Resize(width+4, 26)
+			check()
+		})
+	}
+}

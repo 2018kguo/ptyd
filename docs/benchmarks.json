@@ -7,5 +7,14 @@
     "uncompressed_bytes": 843160,
     "manifest": "manifest.json",
     "current_results": "bench/native-mining"
+  },
+  "attachment_scrolling": {
+    "url": "https://github.com/2018kguo/ptyd/releases/download/v0.12.1/ptyd-attachment-benchmarks.tar.gz",
+    "sha256": "ec23352c28595bfe20fabc26e30222b6b5cdedea18f04658b10fd5ccd717d2e4",
+    "baseline_commit": "22af6fb358221be74a35df32a86aa7d5c7eb871c",
+    "source_commit": "712076b949ad955af56702fff2470004fed44304",
+    "fixture_sha256": "fcef3b1d7c563aeb2feb78e66221ac9cf0b2b3f0d22c9a46e29a344645bd2c97",
+    "rounds": 6,
+    "manifest": "manifest.json"
   }
 }

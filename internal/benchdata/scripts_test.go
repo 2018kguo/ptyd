@@ -28,7 +28,7 @@ func TestBenchmarkScriptsRejectFailedSamples(t *testing.T) {
 				cmd := exec.Command("sh", args...)
 				cmd.Env = append(os.Environ(), "PATH="+filepath.Join(dir, "tools")+":"+os.Getenv("PATH"),
 					"SCRIPT_TEST_DIR="+dir, "SCRIPT_TEST_FAILURE="+failure, "SCRIPT_TEST_NAME="+name,
-					"OUT="+out, "COUNT=2", "ROUNDS=2", "BENCH=Fixture", "PTYD_LOAD_PROFILE=")
+					"OUT="+out, "COUNT=2", "ROUNDS=2", "BENCH=Fixture", "BENCHTIME=100x", "PTYD_LOAD_PROFILE=")
 				output, err := cmd.CombinedOutput()
 				if failure != "" {
 					want := 42
@@ -166,6 +166,16 @@ test)
 #!/bin/sh
 set -eu
 label=$(basename "$0")
+case "$SCRIPT_TEST_NAME" in
+ run.sh|ab.sh)
+  found=0
+  while [ "$#" -gt 0 ]; do
+   if [ "$1" = -test.benchtime ]; then shift; [ "$1" = 100x ]; found=1; fi
+   shift
+  done
+  [ "$found" = 1 ]
+  ;;
+esac
 case "$SCRIPT_TEST_NAME" in load.sh|load-ab.sh) label=$PTYD_LOAD_LABEL;; esac
 printf '%s\n' "$label" >>"$SCRIPT_TEST_DIR/runs"
 printf 'BenchmarkFixture-1 1 10 ns/op\n'

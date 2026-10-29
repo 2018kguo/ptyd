@@ -114,6 +114,11 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 	var output io.Writer = out
 	var frame *pane
 	var frameTicks <-chan time.Time
+	var frameReady <-chan struct{}
+	frameTimer := time.NewTimer(time.Hour)
+	frameTimer.Stop()
+	defer frameTimer.Stop()
+	var lastDraw time.Time
 	var titles *titleWriter
 	if isTerm && opts.Label != "" {
 		_, _ = io.WriteString(out, titlePush)
@@ -123,9 +128,7 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 			frame.viewOnly = readOnly
 
 			output = frame
-			tick := time.NewTicker(time.Second / 60)
-			defer tick.Stop()
-			frameTicks = tick.C
+			frameReady = frame.ready
 		} else {
 			titles = &titleWriter{out: out}
 			output = titles
@@ -204,9 +207,20 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		if len(p) == 0 || readOnly {
 			return nil
 		}
-		return send(api.FrameInput, p)
+		if err := send(api.FrameInput, p); err != nil {
+			return err
+		}
+		// The next response to typing or scrolling should not wait behind
+		// the background-output paint budget.
+		lastDraw = time.Time{}
+		return nil
 	}
 	outputDone := (<-chan struct{})(copied)
+	drawFrame := func() error {
+		err := frame.draw(false)
+		lastDraw = time.Now()
+		return err
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -226,8 +240,24 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 			}
 			return result, nil
 		case <-frameTicks:
-			if err := frame.draw(false); err != nil {
+			frameTicks = nil
+			if err := drawFrame(); err != nil {
 				return result, err
+			}
+		case <-frameReady:
+			// Paint the first output after idle immediately. While busy, merge
+			// background output at 120 paints/second without polling an idle pane.
+			if wait := time.Second/120 - time.Since(lastDraw); wait > 0 {
+				if frameTicks == nil {
+					frameTimer.Reset(wait)
+					frameTicks = frameTimer.C
+				}
+			} else {
+				frameTimer.Stop()
+				frameTicks = nil
+				if err := drawFrame(); err != nil {
+					return result, err
+				}
 			}
 		case <-winch:
 			if c, r, e := term.GetSize(int(out.Fd())); e == nil {
