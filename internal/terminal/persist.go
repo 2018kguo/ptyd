@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"os"
@@ -20,6 +21,7 @@ import (
 // Path: <persist-dir>/<id>/meta.json (one dir per terminal). Deleting a
 // terminal through the API removes its directory.
 type persistedMeta struct {
+	GroupID        GroupID           `json:"group_id,omitempty"`
 	TerminalColors *TerminalColors   `json:"terminal_colors,omitempty"`
 	Source         native.Ref        `json:"source,omitzero"`
 	ID             ID                `json:"id"`
@@ -46,7 +48,7 @@ type persistedMeta struct {
 
 func (meta persistedMeta) config() CreateConfig {
 	return CreateConfig{
-		source: meta.Source, TerminalColors: meta.TerminalColors,
+		GroupID: meta.GroupID, source: meta.Source, TerminalColors: meta.TerminalColors,
 		Name: meta.Name, CWD: meta.CWD, Command: meta.Command, Args: meta.Args, Env: meta.Env,
 		Tags: meta.Tags, Watches: meta.Watches, Cols: meta.Cols, Rows: meta.Rows,
 		Restore: meta.Restore, Agent: meta.Agent,
@@ -130,6 +132,7 @@ func readExit(dir string) (persistedExit, bool) {
 // ghostInfo is the Info a ghost presents.
 func ghostInfo(meta persistedMeta, exit persistedExit) Info {
 	return Info{
+		GroupID:    GroupID(cmp.Or(string(meta.GroupID), string(DefaultGroup))),
 		Source:     meta.Source,
 		ID:         meta.ID,
 		Name:       meta.Name,

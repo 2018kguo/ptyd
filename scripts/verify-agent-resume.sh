@@ -49,7 +49,7 @@ start_daemon() {
   env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION \
     -u CLAUDE_CODE_EXECPATH -u CLAUDE_CODE_SESSION_ATTENDED -u CLAUDE_CODE_MESSAGING_SOCKET \
     -u CLAUDE_CODE_MESSAGING_TOKEN -u CLAUDE_PID -u CLAUDE_EFFORT PTYD_TOKEN="$token" \
-    "$ptyd" --bind 127.0.0.1:$port --persist-dir "$persist" >>"$log" 2>&1 &
+    "$ptyd" serve --bind 127.0.0.1:$port --persist-dir "$persist" >>"$log" 2>&1 &
   daemon_pid=$!
   for _ in $(seq 50); do curl -fs $api/healthz >/dev/null && return; sleep 0.1; done
   fail "daemon did not start"

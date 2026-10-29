@@ -278,7 +278,7 @@ func TestFind(t *testing.T) {
 		"term-11":      "term-11-cccc",
 		"db":           `"db" matches 2 terminals (term-10-bbbb, term-11-cccc); use the id`,
 		"term-1":       `"term-1" matches 4 terminals (term-1-aaaa, term-10-bbbb, term-11-cccc, term-12-dddd); use the id`,
-		"nope":         `no terminal "nope" (see ` + "`ptyd ls`)",
+		"nope":         `no terminal "nope" (see ` + "`ptyd term ls`)",
 		"term-12-dddd": "term-12-dddd",
 	} {
 		got, err := Find(list, target)
@@ -344,7 +344,7 @@ func TestSavedScreenStaysOpenUntilUserReturns(t *testing.T) {
 	u.mu.Lock()
 	title := u.screen.Title()
 	u.mu.Unlock()
-	if !strings.Contains(title, "ptyd · Saved window") || !strings.Contains(title, "jk: sessions") {
+	if !strings.Contains(title, "ptyd · Saved window") || !strings.Contains(title, "jk: return") {
 		t.Fatalf("missing attached indicator%q", title)
 	}
 	u.typeKeys(t, "jk")

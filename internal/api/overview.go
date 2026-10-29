@@ -19,7 +19,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 	tags := splitNonEmpty(q.Get("tag"), ",")
-	options := terminal.OverviewOptions{Limit: limit, Query: q.Get("q"), Tags: tags}
+	options := terminal.OverviewOptions{GroupID: terminal.GroupID(q.Get("group")), Limit: limit, Query: q.Get("q"), Tags: tags}
 	if raw := q.Get("active"); raw != "" {
 		enabled, err := strconv.ParseBool(raw)
 		if err != nil {
@@ -27,6 +27,12 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		options.ActiveOnly = enabled
+	}
+	if options.GroupID != "" {
+		if _, err := s.mgr.Group(options.GroupID); err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	view := s.mgr.Overview(options)
 	if raw := q.Get("discover"); raw != "" {

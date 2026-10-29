@@ -33,6 +33,8 @@ func TestMain(m *testing.M) {
 	// Daemons save their tokens here, and the CLI and d.do read them.
 	os.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
 	os.Unsetenv("PTYD_TOKEN")
+	os.Unsetenv("PTYD_GROUP_ID")
+	os.Unsetenv("PTYD_TERMINAL_ID")
 	if out, err := exec.Command("go", "build", "-o", ptydBin, ".").CombinedOutput(); err != nil {
 		panic(fmt.Sprintf("build: %v\n%s", err, out))
 	}

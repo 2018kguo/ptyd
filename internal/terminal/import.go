@@ -13,6 +13,7 @@ import (
 var ErrImportDeclined = errors.New("native import declined")
 
 type ImportRequest struct {
+	GroupID        GroupID             `json:"group_id,omitempty"`
 	TerminalColors *TerminalColors     `json:"terminal_colors,omitempty"`
 	Ref            native.Ref          `json:"ref"`
 	TerminalEnv    TerminalEnvironment `json:"terminal_env,omitempty"`
@@ -92,7 +93,7 @@ func (m *Manager) ImportAgent(ctx context.Context, lookup NativeLookup, req Impo
 	if err = ctx.Err(); err != nil {
 		return ImportResult{}, err
 	}
-	cfg := CreateConfig{TerminalColors: req.TerminalColors, Name: name, CWD: plan.CWD, Command: plan.Command, Args: plan.Args, Cols: req.Cols, Rows: req.Rows, Restore: RestoreNone, source: req.Ref}
+	cfg := CreateConfig{GroupID: req.GroupID, TerminalColors: req.TerminalColors, Name: name, CWD: plan.CWD, Command: plan.Command, Args: plan.Args, Cols: req.Cols, Rows: req.Rows, Restore: RestoreNone, source: req.Ref}
 	if err := req.TerminalEnv.Apply(&cfg); err != nil {
 		return ImportResult{}, fmt.Errorf("%w: %v", ErrImportDeclined, err)
 	}

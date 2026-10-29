@@ -19,6 +19,12 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 1 {
+		os.Exit(runUI(nil))
+	}
+	if os.Args[1] == "serve" {
+		os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
+	}
 	if len(os.Args) > 1 {
 		if run, ok := commands[os.Args[1]]; ok {
 			os.Exit(run(os.Args[2:]))
@@ -87,7 +93,7 @@ func main() {
 	// Bring back terminals whose restore policy asks for it.
 	mgr.RestoreGhosts()
 
-	// Started with `ptyd &`, the daemon outlives the shell and the
+	// Started with `ptyd serve &`, the daemon outlives the shell and the
 	// window it was started from (zsh sends background jobs SIGHUP).
 	signal.Ignore(syscall.SIGHUP)
 	sigCh := make(chan os.Signal, 1)

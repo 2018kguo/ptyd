@@ -1,227 +1,144 @@
 <h1 align="center">ptyd</h1>
-<p align="center">Terminals that agents can drive and people can take over.</p>
+<p align="center">A workspace for your agents. A terminal when you need one.</p>
 <p align="center">
-  <a href="#use-it">Get started</a> ·
-  <a href="#what-an-agent-gets">Why ptyd</a> ·
+  <a href="#get-started">Get started</a> ·
+  <a href="#work-with-agents">For agents</a> ·
   <a href="docs/reference.md">Reference</a> ·
   <a href="docs/operating.md">Operating ptyd</a>
 </p>
 
-An agent can leave a build running, return on its next turn and read what
-changed. It can answer a prompt in the same shell or inspect an editor's
-screen. You can attach to that session and type normally.
+Put a piece of work in a group. Start Codex, Claude Code, shells and commands
+inside it. Come back to see what is running, preview a terminal or take over
+the keyboard. Detach, close your laptop's terminal window, and return later.
+Work keeps running while the daemon and its processes stay alive.
 
-Ptyd owns the PTY and process, so they keep running when a tool call ends or
-a client disconnects. The CLI and local HTTP API control the same sessions.
-After a daemon restart, ptyd brings back the saved screen and can restart
-the command or resume a supported agent's conversation.
+Ptyd combines a terminal workspace for people with a local API for agents.
+Both use the same groups, terminals and output. An agent can launch work,
+wait for a result and read only what changed; you can enter that same
+terminal whenever you want.
 
-![Switching between running terminals with Vim-style controls](docs/demo.gif)
+![Entering a group, switching terminals and leaving work running](docs/demo.gif)
 
-## What an agent gets
-
-- **A session to return to.** Start a program once and address it by name
-  or id on later turns. A shell keeps its working directory and environment
-  while its process runs.
-- **Only the output it needs.** Numbered lines and a `since` cursor let a
-  caller read new output without feeding the whole transcript back into
-  context. Request a short tail or search retained output across sessions.
-- **Waiting with a result.** `wait` blocks for a regex match, including a
-  settled prompt without a newline, and reports a match, timeout, exit or
-  cancellation. Watches record named matches for later inspection.
-- **Input with terminal meaning.** Submit text followed by Enter, with
-  bracketed paste when the program enables it, or send named keys such as
-  `ctrl+c`, `up` and `enter`. The agent can answer a question or interrupt
-  a command in the same session.
-- **A screen for full-screen programs.** Read the window an editor or TUI
-  shows through `/screen`; use line output for builds and logs. The
-  [phosphor](https://github.com/2018kguo/phosphor) emulator tracks cells,
-  cursor movement and both screen buffers.
-- **Manual takeover.** Attach with the CLI, work in the same terminal, then
-  detach while the program keeps running.
-- **One overview for many sessions.** See watch matches, process status,
-  idle time and directories together. Use a live selector yourself or a
-  compact JSON snapshot in an agent tool.
-
-If you only need an interactive terminal multiplexer, tmux already does
-that well. Choose ptyd when programs also need to inspect and control the
-sessions through an API. If you only need an embedded emulator, use
-[phosphor](https://github.com/2018kguo/phosphor) directly.
-
-## Use it
+## Get started
 
 ```sh
 go install github.com/2018kguo/ptyd/cmd/ptyd@latest
-ptyd &
-ptyd new
+ptyd
 ```
 
-Linux and macOS; the build toolchain is declared in [go.mod](go.mod).
-The daemon listens on `127.0.0.1:4242`. Commands find its saved token automatically.
-
-Type **jk** quickly (j, then k) to detach. Open the session picker with:
+The local daemon starts automatically. Press **n** to name a group, then **n** inside it to launch
+Codex, Claude, a shell or a custom command. Or start with an agent directly:
 
 ```sh
-ptyd ui
+ptyd new my-project -- codex
+ptyd ls
+ptyd attach my-project
 ```
 
-Use `j/k` to move, Enter or `i` to open, and quick `jk` to return.
-`/` searches; `h` shows saved and completed sessions. The picker starts with
-live sessions, grouped by open terminals, agents and those needing a handoff.
-An attached view keeps its session name and `jk` hint in a bottom status row,
-even when the app clears the screen. The window title identifies it too.
-Press `?` for controls or `q` to leave; work keeps running.
+Linux and macOS. The build toolchain is declared in [go.mod](go.mod).
+The default daemon address is `127.0.0.1:4242`; `PTYD_ADDR` selects another.
 
-Or start a command in the background:
+## Find your way around
+
+Running `ptyd` opens your groups. Each group has a terminal list, observed
+statuses and a live text preview on wider windows. Finished screens stay
+available without being restarted. Older ungrouped terminals live in
+**Inbox**, behind **h** when none are running.
+
+| Where | Keys |
+|---|---|
+| Groups | `j/k` select · Enter open · `n` create · `h` history |
+| Inside a group | `j/k` select · Enter take control · `v` watch · `n` launch |
+| Inside a terminal | Quick `jk` returns to the group |
+| Workspace | `/` search · `?` help · `g` groups · `q` detach |
+
+An attached terminal keeps **group / terminal** and the return hint in its
+bottom row, including when an app clears the screen. The app keeps its colors,
+backgrounds and cursor. A read-only view says “viewing”; an ended one says
+“finished.” Only one human has keyboard control at a time. Agent input is refused
+while you have control; observation remains available.
+
+Rename with **r**, move a terminal with **m**, and close with **x**. Closing
+requires confirmation. **R** relaunches an ended terminal; opening its saved
+screen does not. Archive finished groups with **a** in the group list.
+
+## Work with agents
+
+Ask your agent to use ptyd and choose a group for the work. A managing agent
+is an ordinary terminal in that group: it can start workers, inspect output
+and wait for results. You can browse those same workers without requiring
+a handoff format or a task workflow.
 
 ```sh
-ptyd new -d -n build -- make test
-ptyd attach build
-ptyd kill build
+ptyd new -d research
+ptyd term new -d --group research -n tests -- make test
+ptyd status --json --group research
+ptyd attach research
 ```
 
-Names, ids, unique id prefixes and terminal numbers all work.
+Terminals receive their daemon address, terminal id and group context.
+Commands started inside one inherit its current group, including after a
+move. Use `--group` to choose another. Full terminal ids keep working across
+groups; names resolve within the chosen group.
 
-## See what needs attention
+The HTTP API keeps the operations useful to agents:
 
-```sh
-ptyd status                 # attention-first snapshot
-ptyd status --json          # structured overview for an agent
-ptyd status --watch         # live selector; Enter attaches
-```
+- **Incremental output:** numbered lines and a `since` cursor avoid rereading
+  the transcript. Tail or search retained output when needed.
+- **Waits and watches:** wait for a regex or settled prompt; record matches
+  for later attention without a polling loop.
+- **Terminal input:** submit text with bracketed paste and Enter, or send
+  named keys. Human keyboard control returns a clear conflict to automation.
+- **Screens:** inspect what an editor or terminal UI currently shows through
+  `/screen`, alongside text output for builds and logs.
+- **Groups:** create, rename, archive and inspect work through `/groups`;
+  use `group_id` when creating or moving terminals.
 
-`ptyd ui` opens the live view with native discovery enabled and history hidden.
-Completed work remains available with `h`; opening it shows its last screen
-until you return with `jk`. This does not restart the command. The selection
-follows its session id as rows reorder. Use `:b name` to attach to a shown
-session, `:bn`/`:bp` for the next/previous one, and `:ls` to clear the search.
-The controls follow Vim/Helix's modal pattern, including the documented
-[`jk` mapping](https://docs.helix-editor.com/remapping.html).
+Existing terminal ids and HTTP routes remain valid. Ungrouped API creations
+enter Inbox. The CLI puts individual-terminal operations under `ptyd term`;
+`new`, `ls` and `attach` operate on groups. See the [reference](docs/reference.md)
+for requests, JSON results and controls.
 
-Attention means a configured watch matched output. Running and idle time
-are process observations; they do not classify an agent's thoughts.
-The default overview covers sessions managed by this daemon. Add `--discover`
-to include native Codex and Claude sessions started in other tabs.
+## Bring existing agents along
 
-Agents can call `GET /overview` with a row limit, text filter and tags.
-Counts cover every matching session; `truncated` says when rows were omitted.
-Each row includes an output cursor and a short preview with its own
-truncation flag. [The reference](docs/reference.md#session-overview) explains
-the fields. The live interaction was informed by
-[AgentView](https://github.com/moritzWa/agentview).
+Open a group and press **a** to discover agents started outside ptyd.
+Enter imports a supported running conversation into that group. A stopped
+conversation requires explicit confirmation before resuming. Imported native
+workers keep their own owner; ptyd opens a frontend for them.
 
-## Bring existing agents into one pane
+Claude foreground sessions need `/bg` in their original tab before import.
+Codex needs saved history and a verified route through its shared local daemon.
+Some standalone original tabs cannot move live. Keep those open and start
+future agents inside a ptyd group. Discovery shows the reason when a session
+cannot be imported. [Import details](docs/reference.md#import-native-agent-sessions)
+explain identity checks and limits.
 
-```sh
-ptyd agents                         # native sessions and what can be imported
-ptyd ui                             # managed terminals and native agents together
-```
+## What persists
 
-Select an outside session and press Enter. Ptyd opens a terminal view using
-that agent's native attach API, with its exact conversation id. Quick `jk`
-returns to the picker and releases the view; the native worker keeps running.
-Your original tab stays open until you close it yourself. New views use your
-terminal's color settings, even when the daemon runs as a headless service.
-An intentional `NO_COLOR` setting is respected. Ptyd also answers startup
-terminal queries before a viewer connects, so Codex can draw its shaded composer.
-The viewing terminal supplies its foreground/background colors when available.
+Groups, membership and saved terminal screens survive daemon restarts.
+Detaching leaves processes running. Restarting the daemon starts new processes
+according to each terminal's restore policy; it does not preserve process RAM.
+Supported agents can resume an exact recorded conversation. Custom commands
+launched from the workspace are not automatically rerun.
 
-Codex sessions must have a saved rollout and be loaded in its shared local daemon.
-A loaded thread without saved history is shown as “Not saved yet.” For a foreground
-Claude session, run `/bg` in its original tab and let Claude finish its own
-handoff, then refresh the picker. A stopped Claude conversation requires
-an explicit `ptyd import --resume` using the reference printed by `ptyd agents`.
+The [operating guide](docs/operating.md) covers restore policies, backups,
+services and resource limits. Run `ptyd serve` for a foreground daemon.
 
-Original terminal processes missing from the native listings appear under
-**Original tabs**, with their terminal names. These rows explain how to proceed;
-they do not guess a conversation or restart its worker. Some standalone Codex
-processes cannot move live: keep that tab open, and start future sessions with
-`ptyd new -- codex`. A frontend that exits leaves its final screen visible until
-you return with `jk`, so startup errors remain readable.
+## Why ptyd
 
-Ptyd rechecks native identity around view creation. It refuses incomplete or
-ambiguous listings and never resumes “the latest” conversation. Native CLIs
-redraw their own history; the original tab's terminal scrollback is not
-transferred. See [import behavior and limits](docs/reference.md#import-native-agent-sessions).
+Choose ptyd when people and agents need to share persistent terminal work.
+The human workspace groups the work; output cursors, waits, watches and screen
+reads make that work accessible to programs. If you need an embedded emulator,
+use [Phosphor](https://github.com/2018kguo/phosphor) directly.
 
-## Drive a terminal from a script
+HTTP makes the same operations accessible from scripts and agent tools without
+an SDK. Attach uses a persistent stream. HTTP and JSON add overhead; ptyd does
+not claim a speed advantage over other control transports or support Unix
+sockets today. [Benchmarks](bench/README.md) explain what has been measured.
 
-The CLI and HTTP API control the same sessions. For example:
+Keep the daemon on loopback or use a private tunnel: its token grants command
+execution as your user. Human views reserve a status row and render through
+Phosphor; `ptyd term attach --raw` provides direct output for features outside
+that model, including terminal graphics.
 
-```sh
-ID=$(ptyd new -d -n demo -- sh)
-API=http://127.0.0.1:4242
-TOKEN=$(ptyd token)
-
-curl -sS -H "X-Ptyd-Token: $TOKEN" -X POST "$API/terminals/$ID/write" \
-  -d '{"data":"echo hello","submit":true}'
-curl -sS -H "X-Ptyd-Token: $TOKEN" -X POST "$API/terminals/$ID/wait" \
-  -d '{"pattern":"^hello$","timeout_seconds":5}'
-curl -sS -H "X-Ptyd-Token: $TOKEN" "$API/terminals/$ID/screen"
-ptyd attach "$ID"
-```
-
-Use `/output` for numbered text lines, `/stream` to follow them over SSE,
-and `/screen` for the window an editor or terminal UI currently shows.
-Watches record matches without a polling loop. The
-[API reference](docs/reference.md) has the routes and request formats;
-[`ptyd-ctl.sh`](scripts/ptyd-ctl.sh) wraps them for shell scripts.
-
-## Why HTTP
-
-HTTP makes the same operations available to shell scripts, test harnesses
-and agent tools without a ptyd SDK. The useful parts for agents are named
-sessions, output cursors, waits, watches and screen reads. A tool can expose
-those as small actions; the model does not need to construct curl commands.
-
-Use `wait`, watches or SSE to avoid polling, and `since` to read only new
-output. Interactive attach uses a persistent byte stream with input and
-resize frames. The [shell helper](scripts/ptyd-ctl.sh) wraps common calls.
-
-HTTP, JSON and local TCP add overhead. Ptyd does not currently support Unix
-sockets, and its benchmarks do not compare control transports. HTTP was
-chosen for integration, not a measured speed advantage.
-
-## What restoring means
-
-A restore keeps the saved screen and starts a new process. Normal commands
-can run again; **Claude Code and Codex** can resume the recorded conversation.
-If ptyd cannot identify that conversation safely, it leaves the terminal
-stopped with its last screen and a notice.
-
-`ptyd new` defaults to automatic restore; the HTTP create route defaults to
-no automatic restore. Choose explicitly with `--restore` or the API's
-`restore` field. [Operating ptyd](docs/operating.md#restore-policies) explains
-the policies, agent argument restrictions and checkpoint compatibility.
-
-## Tradeoffs to know
-
-- **The token grants command execution as your user.** Keep the daemon on
-  loopback and tunnel remote access. `/healthz` and `/metrics` are public.
-- **It preserves terminal state, not a process's RAM.** Commands may repeat
-  their startup work after a restore. Agent resume supports Claude Code
-  and Codex; other agents can be restarted as ordinary commands.
-- **Many sessions still mean many OS resources.** Each running session has
-  a process, PTY, file descriptors and waiting threads. Output retention
-  and editor screens also consume memory.
-- **Human views reserve one row.** The app uses the rest of the window;
-  ptyd draws the session name and return hint below it. These views render
-  through Phosphor. Use `ptyd attach --raw` for direct output passthrough,
-  including terminal features outside Phosphor's model.
-- **Exact state and ANSI exports differ.** Checkpoints and framed views
-  begin from an exact snapshot; raw attachments inherit ANSI export limits.
-  Phosphor favors a small headless model and does not implement terminal graphics.
-
-[Benchmarks](bench/README.md) explain the current measurements, their limits and how to rerun them.
-The emulator's small idle footprint is only one part of total daemon memory.
-
-## Documentation
-
-- [API and CLI reference](docs/reference.md): requests, output, keys and attach protocol
-- [Operating ptyd](docs/operating.md): restore, persistence, authentication, services and scale
-- [Benchmarks](bench/README.md): measurements, tradeoffs and reproduction
-- [Development](docs/development.md): tests, load profiles and live agent checks
-
-## License
-
-MIT.
+[Development and verification](docs/development.md) · [MIT license](LICENSE)

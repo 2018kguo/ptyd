@@ -16,6 +16,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>__HOME__/go/bin/ptyd</string>
+    <string>serve</string>
     <string>--bind</string>
     <string>127.0.0.1:4242</string>
   </array>

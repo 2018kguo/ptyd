@@ -16,7 +16,7 @@ import (
 )
 
 func runAgents(args []string) int {
-	fs, addr := newFlags("agents", "[--json]", "Discover existing Codex and Claude sessions without starting workers.\nUse ptyd ui for the combined picker.")
+	fs, addr := newFlags("agents", "[--json]", "Discover existing Codex and Claude sessions without starting workers.\nOpen a group and press a to see outside agents.")
 	asJSON := fs.Bool("json", false, "Print native sessions, import actions and discovery failures as JSON")
 	_ = fs.Parse(args)
 	if fs.NArg() != 0 {
@@ -59,7 +59,8 @@ func runAgents(args []string) int {
 	return 0
 }
 func runImport(args []string) int {
-	fs, addr := newFlags("import", "[-d] [-n name] [--resume] <codex:UUID|claude:UUID>", "Open a ptyd frontend for an exact existing agent conversation.\nClaude foreground sessions must first run /bg in their original tab.\nClosing this frontend does not stop its native daemon's worker.")
+	fs, addr := newFlags("term import", "[-d] [-n name] [--resume] <codex:UUID|claude:UUID>", "Open a ptyd frontend for an exact existing agent conversation.\nClaude foreground sessions must first run /bg in their original tab.\nClosing this frontend does not stop its native daemon's worker.")
+	group := fs.String("group", "", "Destination group (default: inherited group or Inbox)")
 	detached := fs.Bool("d", false, "Print the terminal id without attaching")
 	name := fs.String("n", "", "Name for the terminal")
 	resume := fs.Bool("resume", false, "Allow restarting a stopped Claude background conversation")
@@ -87,6 +88,11 @@ func runImport(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	c := apiAt(*addr)
+	g, err := groupContext(c, *group)
+	if err != nil {
+		return fail(err)
+	}
+	request.GroupID = g.ID
 	imported, err := c.ImportAgent(ctx, request)
 	if err != nil {
 		return fail(err)
@@ -95,6 +101,6 @@ func runImport(args []string) int {
 		fmt.Println(imported.Terminal.ID)
 		return 0
 	}
-	code, _ := attach(context.Background(), c, imported.Terminal, client.Options{})
+	code, _ := attach(context.Background(), c, imported.Terminal, client.Options{Human: true})
 	return code
 }

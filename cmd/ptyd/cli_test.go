@@ -134,6 +134,9 @@ func (w *window) waitExit() int {
 	if !w.screen.Cursor().Visible {
 		w.t.Fatal("cursor left hidden")
 	}
+	if !w.screen.Modes().Autowrap {
+		w.t.Fatal("line wrapping left disabled")
+	}
 	return w.cmd.ProcessState.ExitCode()
 }
 
@@ -150,19 +153,19 @@ func nonBlank(lines []string) []string {
 // The human CLI: new, ls, attach by name or number, kill, and its errors.
 func TestCLIManageTerminals(t *testing.T) {
 	d := startDaemon(t, freeAddr(t))
-	id, stderr, code := d.cli(nil, "new", "-d", "-n", "alpha", "--", "sh", "-c", "echo hi; exec cat")
+	id, stderr, code := d.cli(nil, "term", "new", "-d", "-n", "alpha", "--", "sh", "-c", "echo hi; exec cat")
 	id = strings.TrimSpace(id)
 	if code != 0 || !strings.HasPrefix(id, "term-") {
 		t.Fatalf("new -d: %q %q %d", id, stderr, code)
 	}
 	// Without -d but with stdout not a terminal, new prints the id too.
-	id2, _, _ := d.cli(nil, "new", "-n", "alpha", "--", "cat")
+	id2, _, _ := d.cli(nil, "term", "new", "-n", "alpha", "--", "cat")
 	id2 = strings.TrimSpace(id2)
 	if !strings.HasPrefix(id2, "term-2-") {
 		t.Fatalf("second new: %q", id2)
 	}
 
-	out, _, _ := d.cli(nil, "ls")
+	out, _, _ := d.cli(nil, "term", "ls")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 3 || !strings.HasPrefix(lines[0], "ID") ||
 		!strings.Contains(lines[1], id) || !strings.Contains(lines[1], "alpha") || !strings.Contains(lines[1], "running") ||
@@ -170,16 +173,16 @@ func TestCLIManageTerminals(t *testing.T) {
 		t.Fatalf("ls:\n%s", out)
 	}
 
-	if _, stderr, code := d.cli(nil, "kill", "alpha"); code != 1 || !strings.Contains(stderr, `"alpha" matches 2 terminals`) {
+	if _, stderr, code := d.cli(nil, "term", "kill", "alpha"); code != 1 || !strings.Contains(stderr, `"alpha" matches 2 terminals`) {
 		t.Fatalf("ambiguous name: %q %d", stderr, code)
 	}
-	if _, stderr, code := d.cli(nil, "attach", "nope"); code != 1 || !strings.Contains(stderr, `no terminal "nope"`) {
+	if _, stderr, code := d.cli(nil, "term", "attach", "nope"); code != 1 || !strings.Contains(stderr, `no terminal "nope"`) {
 		t.Fatalf("unknown terminal: %q %d", stderr, code)
 	}
-	if out, _, code := d.cli(nil, "kill", "2", id); code != 0 || !strings.Contains(out, "killed alpha ("+id2+")") || !strings.Contains(out, "killed alpha ("+id+")") {
+	if out, _, code := d.cli(nil, "term", "kill", "2", id); code != 0 || !strings.Contains(out, "killed alpha ("+id2+")") || !strings.Contains(out, "killed alpha ("+id+")") {
 		t.Fatalf("kill by number and id: %q %d", out, code)
 	}
-	if out, stderr, _ := d.cli(nil, "ls"); out != "" || !strings.Contains(stderr, "no terminals") {
+	if out, stderr, _ := d.cli(nil, "term", "ls"); out != "" || !strings.Contains(stderr, "no terminals") {
 		t.Fatalf("ls after kill: %q %q", out, stderr)
 	}
 	if _, _, code := d.cli(nil, "bogus"); code != 2 {
@@ -206,14 +209,14 @@ func TestCLITokenAndErrors(t *testing.T) {
 	if code := d.do("GET", "/terminals", nil, nil); code != 200 {
 		t.Fatalf("with the saved token: %d", code)
 	}
-	if _, stderr, code := d.cli([]string{"PTYD_TOKEN=wrong"}, "ls"); code != 1 || !strings.Contains(stderr, "refused the token from $PTYD_TOKEN") {
+	if _, stderr, code := d.cli([]string{"PTYD_TOKEN=wrong"}, "term", "ls"); code != 1 || !strings.Contains(stderr, "refused the token from $PTYD_TOKEN") {
 		t.Fatalf("wrong token: %q", stderr)
 	}
 	d.stop()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("token file left after a graceful stop: %v", err)
 	}
-	if _, stderr, code := d.cli(nil, "ls"); code != 1 || !strings.Contains(stderr, "ptyd is not running at "+d.addr) {
+	if _, stderr, code := d.cli(nil, "term", "ls"); code != 1 || !strings.Contains(stderr, "ptyd is not running at "+d.addr) {
 		t.Fatalf("daemon down: %q", stderr)
 	}
 
@@ -230,7 +233,7 @@ func TestCLITokenAndErrors(t *testing.T) {
 // back in cooked mode with modes reset.
 func TestCLIAttachDetachExit(t *testing.T) {
 	d := startDaemon(t, freeAddr(t))
-	w := d.open(60, 10, "new", "-n", "w", "--", "sh")
+	w := d.open(60, 10, "term", "new", "-n", "w", "--", "sh")
 	w.keys("PS1='$ '; printf '\\033[?1h\\033[?2004h\\033[?25l'; echo typed-$((40+2))\r")
 	w.waitText("typed-42")
 	w.keys("jk")
@@ -244,7 +247,7 @@ func TestCLIAttachDetachExit(t *testing.T) {
 		t.Fatalf("detached window not in the scrollback: %q", w.scrollback())
 	}
 
-	w = d.open(60, 10, "attach", "w")
+	w = d.open(60, 10, "term", "attach", "w")
 	w.waitText("typed-42")
 	w.keys("printf '\\033[?1049h\\033[?1000h'; exit 3\r")
 	if code := w.waitExit(); code != 3 {
@@ -263,10 +266,10 @@ func TestCLIDaemonKilledWhileAttached(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "persist")
 	addr := freeAddr(t)
 	d := startDaemon(t, addr, "--persist-dir", dir)
-	if _, stderr, code := d.cli(nil, "new", "-d", "-n", "old", "--restore", "none", "--", "sh", "-c", "echo old-window; exec cat"); code != 0 {
+	if _, stderr, code := d.cli(nil, "term", "new", "-d", "-n", "old", "--restore", "none", "--", "sh", "-c", "echo old-window; exec cat"); code != 0 {
 		t.Fatal(stderr)
 	}
-	w := d.open(80, 10, "new", "-n", "k", "--restore", "rerun", "--", "sh")
+	w := d.open(80, 10, "term", "new", "-n", "k", "--restore", "rerun", "--", "sh")
 	w.keys("echo before-crash-$((1+1))\r")
 	w.waitText("before-crash-2")
 	d.kill9()
@@ -276,23 +279,23 @@ func TestCLIDaemonKilledWhileAttached(t *testing.T) {
 	w.waitText("[lost the connection: ptyd at " + addr + " stopped]")
 
 	d = startDaemon(t, addr, "--persist-dir", dir)
-	w = d.open(60, 10, "attach", "k")
+	w = d.open(60, 10, "term", "attach", "k")
 	w.waitText("before-crash-2")
 	w.keys("echo after-$((1+1))\r")
 	w.waitText("after-2")
 	w.keys("jk")
 	w.waitExit()
 
-	w = d.open(60, 10, "attach", "old")
+	w = d.open(60, 10, "term", "attach", "old")
 	if code := w.waitExit(); code != 1 {
 		t.Fatalf("ghost attach exit code %d", code)
 	}
 	w.waitText("old-window")
 	w.waitText("is not running; this is its last window]")
-	w.waitText("[start it again: ptyd restore ")
+	w.waitText("[start it again: ptyd term restore ")
 
-	// ptyd restore brings the ghost back below its last window.
-	w = d.open(60, 10, "restore", "old")
+	// ptyd term restore brings the ghost back below its last window.
+	w = d.open(60, 10, "term", "restore", "old")
 	w.waitText("ptyd: restarted sh after a daemon restart")
 	w.keys("typed-after-restore\r")
 	w.waitText("typed-after-restore\ntyped-after-restore")
@@ -302,19 +305,19 @@ func TestCLIDaemonKilledWhileAttached(t *testing.T) {
 	}
 }
 
-// ptyd restore on a command that finished runs it again in its place.
+// ptyd term restore on a command that finished runs it again in its place.
 func TestCLIRestoreExited(t *testing.T) {
 	d := startDaemon(t, freeAddr(t), "--persist-dir=")
-	if _, stderr, code := d.cli(nil, "new", "-d", "-n", "job", "--", "sh", "-c", "exit 3"); code != 0 {
+	if _, stderr, code := d.cli(nil, "term", "new", "-d", "-n", "job", "--", "sh", "-c", "exit 3"); code != 0 {
 		t.Fatal(stderr)
 	}
-	for out := ""; !strings.Contains(out, "exited 3"); out, _, _ = d.cli(nil, "ls") {
+	for out := ""; !strings.Contains(out, "exited 3"); out, _, _ = d.cli(nil, "term", "ls") {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if _, stderr, code := d.cli(nil, "restore", "-d", "job"); code != 0 {
+	if _, stderr, code := d.cli(nil, "term", "restore", "-d", "job"); code != 0 {
 		t.Fatal(stderr)
 	}
-	out, _, _ := d.cli(nil, "ls")
+	out, _, _ := d.cli(nil, "term", "ls")
 	if strings.Count(out, " job ") != 1 {
 		t.Fatalf("want one job terminal, got:\n%s", out)
 	}

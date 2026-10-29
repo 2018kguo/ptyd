@@ -73,7 +73,11 @@ func (s *Server) Handler() http.Handler {
 // Listen binds the configured address. Separating this from Serve lets the
 // caller surface bind errors synchronously before logging "listening on …".
 func (s *Server) Listen() (net.Listener, error) {
-	return net.Listen("tcp", s.httpd.Addr)
+	ln, err := net.Listen("tcp", s.httpd.Addr)
+	if err == nil {
+		s.mgr.SetAddress(ln.Addr().String())
+	}
+	return ln, err
 }
 
 // Serve takes over an already-bound listener. Returns nil on graceful
@@ -96,6 +100,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
+	s.registerGroupRoutes(mux)
 	mux.HandleFunc("GET /overview", s.handleOverview)
 	mux.HandleFunc("GET /agents", s.handleAgents)
 	mux.HandleFunc("POST /agents/import", s.handleImport)
@@ -152,6 +157,20 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 // terminals carrying at least one of the tags.
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	terms := s.mgr.List()
+	if raw := r.URL.Query().Get("group"); raw != "" {
+		id := terminal.GroupID(raw)
+		if _, err := s.mgr.Group(id); err != nil {
+			writeErr(w, err)
+			return
+		}
+		out := terms[:0]
+		for _, t := range terms {
+			if t.GroupID == id {
+				out = append(out, t)
+			}
+		}
+		terms = out
+	}
 	if tags := splitNonEmpty(r.URL.Query().Get("tag"), ","); len(tags) > 0 {
 		out := terms[:0]
 		for _, t := range terms {
@@ -171,7 +190,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	info, err := s.mgr.Create(cfg)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "%v", err)
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, info)
@@ -692,10 +711,10 @@ func writeError(w http.ResponseWriter, status int, format string, args ...any) {
 func writeErr(w http.ResponseWriter, err error) {
 	status := http.StatusBadRequest
 	switch {
-	case errors.Is(err, terminal.ErrNotFound):
+	case errors.Is(err, terminal.ErrNotFound), errors.Is(err, terminal.ErrGroupNotFound):
 		status = http.StatusNotFound
 	case errors.Is(err, terminal.ErrGhostTerminal), errors.Is(err, terminal.ErrNotRunning),
-		errors.Is(err, terminal.ErrNotGhost), errors.Is(err, terminal.ErrRestoreDeclined):
+		errors.Is(err, terminal.ErrNotGhost), errors.Is(err, terminal.ErrRestoreDeclined), errors.Is(err, terminal.ErrGroupConflict), errors.Is(err, terminal.ErrHumanControl), errors.Is(err, terminal.ErrInputBusy):
 		status = http.StatusConflict
 	}
 	writeError(w, status, "%v", err)

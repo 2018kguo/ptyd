@@ -1,4 +1,4 @@
-// Package client implements `ptyd attach`, an interactive client for a
+// Package client implements `ptyd term attach`, an interactive client for a
 // terminal running in the daemon.
 package client
 
@@ -50,6 +50,7 @@ type Options struct {
 	Addr     string // host:port of the daemon
 	Token    string
 	ID       string
+	Human    bool
 	ReadOnly bool
 	Label    string
 	Hold     bool
@@ -119,6 +120,7 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		setWindowTitle(out, opts.Label)
 		if framed {
 			frame = newPane(out, opts.Label, cols, rows)
+			frame.viewOnly = readOnly
 
 			output = frame
 			tick := time.NewTicker(time.Second / 60)
@@ -294,6 +296,9 @@ func dial(ctx context.Context, opts Options, cols, rows int) (net.Conn, *bufio.R
 		return nil, nil, attachDisplay{}, c.connErr(err)
 	}
 	q := url.Values{}
+	if opts.Human && !opts.ReadOnly {
+		q.Set("human", "1")
+	}
 	q.Set("cols", fmt.Sprint(cols))
 	q.Set("rows", fmt.Sprint(rows))
 	if opts.ReadOnly {
@@ -327,7 +332,7 @@ func dial(ctx context.Context, opts Options, cols, rows int) (net.Conn, *bufio.R
 	if opts.rendered {
 		if resp.Header.Get("X-Ptyd-Rendered") != "1" {
 			conn.Close()
-			return nil, nil, attachDisplay{}, fmt.Errorf("daemon cannot provide a framed screen; restart the updated daemon or use ptyd attach --raw")
+			return nil, nil, attachDisplay{}, fmt.Errorf("daemon cannot provide a framed screen; restart the updated daemon or use ptyd term attach --raw")
 		}
 		display.rendered = true
 	}

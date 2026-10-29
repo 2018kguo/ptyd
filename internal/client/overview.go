@@ -15,6 +15,9 @@ var ErrOverviewCapabilities = errors.New("daemon does not support live-session f
 
 func (c API) Overview(ctx context.Context, options terminal.OverviewOptions) (terminal.Overview, error) {
 	q := url.Values{}
+	if options.GroupID != "" {
+		q.Set("group", string(options.GroupID))
+	}
 	if options.ActiveOnly {
 		q.Set("active", "true")
 	}

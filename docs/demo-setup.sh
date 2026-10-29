@@ -9,7 +9,7 @@ unset PTYD_ADDR NO_COLOR CLICOLOR CLICOLOR_FORCE FORCE_COLOR
 export TERM=xterm-256color COLORTERM=truecolor
 
 go build -o "$ptyd_demo_root/ptyd" ./cmd/ptyd || { rm -rf -- "$ptyd_demo_root"; exit 1; }
-ptyd --bind 127.0.0.1:0 --persist-dir "$ptyd_demo_root/sessions" >"$ptyd_demo_root/daemon.log" 2>&1 &
+ptyd serve --bind 127.0.0.1:0 --persist-dir "$ptyd_demo_root/sessions" >"$ptyd_demo_root/daemon.log" 2>&1 &
 ptyd_demo_pid=$!
 ptyd_demo_cleanup() {
   # Only this still-running shell job can own the recorded PID.
@@ -33,8 +33,9 @@ if [[ -z "${PTYD_ADDR:-}" ]]; then
   exit 1
 fi
 cd /tmp
-ptyd new -d -n build -- sh -c 'printf "\033]2;build\007\033[32mBuild complete. 12 tests passed.\033[0m\n"; exec cat' >/dev/null
-ptyd new -d -n logs -- sh -c 'printf "\033]2;logs\007\033[36mService ready. Listening for requests.\033[0m\n"; exec cat' >/dev/null
-ptyd new -d -n shell -- sh -c 'printf "A persistent shell is ready.\n"; exec cat' >/dev/null
-ptyd new -d -n yesterday -- sh -c 'printf "All checks passed.\n"' >/dev/null
+ptyd new -d --cwd /tmp website >/dev/null
+ptyd new -d --cwd /tmp research >/dev/null
+ptyd term new -d --group website -n build -- sh -c 'printf "\033[32mBuild complete. 12 tests passed.\033[0m\n"; exec cat' >/dev/null
+ptyd term new -d --group website -n logs -- sh -c 'printf "\033[36mService ready. Listening for requests.\033[0m\n"; exec cat' >/dev/null
+ptyd term new -d --group research -n notes -- sh -c 'printf "A persistent research shell is ready.\n"; exec cat' >/dev/null
 export PS1='$ '

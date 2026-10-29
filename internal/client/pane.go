@@ -21,6 +21,7 @@ type pane struct {
 	out          io.Writer
 	label        string
 	finished     bool
+	viewOnly     bool
 	cols, rows   int
 	changed      bool
 	lastModes    phosphor.Modes
@@ -96,6 +97,9 @@ func (p *pane) draw(force bool) error {
 	}
 	b = fmt.Appendf(b, "\x1b[%d;1H\x1b[0m\x1b[7m", p.rows)
 	state := "attached"
+	if p.viewOnly {
+		state = "viewing"
+	}
 	if p.finished {
 		state = "finished"
 	}
@@ -173,7 +177,7 @@ func paneLabel(label, state string, cols int) string {
 			clean.WriteRune(r)
 		}
 	}
-	hint := "jk: sessions"
+	hint := "jk: return"
 	prefix := " ptyd · " + state + " · "
 	if cols < displayWidth(prefix)+displayWidth(hint)+6 {
 		return clipPane("ptyd · "+hint, cols)

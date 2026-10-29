@@ -12,8 +12,8 @@ go test -race ./...
 CLI tests start real PTYs and exercise daemon crashes. When testing in
 Docker, use `--init` so orphaned test children are reaped.
 
-- `cmd/ptyd`: CLI, attach behavior and end-to-end tests.
-- `internal/terminal`: session lifecycle, retained output, watches and persistence.
+- `cmd/ptyd`: group workspace, CLI, attach behavior and real-PTY end-to-end tests.
+- `internal/terminal`: groups, session lifecycle, retained output, watches and persistence.
 - `internal/api`, `internal/client`: HTTP server and client.
 - `internal/native`: read-only Codex/Claude discovery and exact import references.
 - [bench/](../bench/README.md): maintained measurement tools, scope and archived evidence.
@@ -40,11 +40,12 @@ fake-agent tests alone. Emulator changes belong in
 Ordinary tests use fake native CLIs, a Unix WebSocket fixture and real local
 PTYs. They cover exact identity, partial discovery, concurrent imports,
 process-generation changes, foreground handoff refusal, persistence, native
-worker survival after detach and picker cancellation/typeahead. Input tests
+worker survival after detach and workspace cancellation/typeahead. Input tests
 check `jk` across read boundaries, key events, literal-input timeouts, paste
-frames and terminal control sequences. Picker tests exercise Vim commands
-and the real PTY handoff. History tests keep completed records available
-without displacing live work. Short-window tests render the selected row
+frames and terminal control sequences. Workspace tests exercise create, launch, preview, watch, human control,
+detach and reattach in real PTYs. Group tests cover inheritance after moves,
+legacy migration, archives, deletion retries and concurrent lifecycle changes. History tests keep completed records available inside groups and saved
+Inbox records behind the history toggle. Short-window tests render the selected row
 and controls; incomplete discovery must not claim that no sessions exist.
 Color checks cover a headless daemon, explicit viewer preferences, truecolor
 repaint and title rewriting across every input split.
@@ -96,6 +97,6 @@ start and recover with exact snapshots rather than ANSI reconstruction.
 
 Native discovery tests cover loaded Codex threads without rollouts, original-tab
 observations without conversation authority, same-terminal deduplication and
-managed child exclusion. Picker tests retain a failed frontend screen through
+managed child exclusion. Attachment tests retain a failed frontend screen through
 ordinary keystrokes until `jk`. Process metadata parser tests include embedded
 whitespace and stop before environment fields.

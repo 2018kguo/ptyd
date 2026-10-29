@@ -32,7 +32,7 @@ func (p LocalProcess) Guidance() string {
 	if p.Provider == Claude {
 		return "Run /bg in the original Claude tab, let the handoff finish, then refresh. This running process is missing from Claude's native session list."
 	}
-	return "Keep using the original Codex tab; this process has no verified live attach route. Start future sessions with ptyd new -- codex."
+	return "Keep using the original Codex tab; this process has no verified live attach route. Start future sessions with ptyd new work -- codex."
 }
 
 // Only the command family and helper names are examined; argv is never kept.

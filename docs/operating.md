@@ -3,6 +3,13 @@
 Keep the daemon reachable only by clients you trust. Its token allows the
 same command execution as your local user.
 
+## Start and stop
+
+`ptyd`, `ptyd new` and `ptyd attach` start a missing local daemon automatically.
+Use `ptyd serve` to run it in the foreground, or install a service below.
+Detaching a workspace does not stop its daemon. Stop the daemon gracefully
+before upgrading, after checking for running work with `ptyd term ls`.
+
 ## Configure it
 
 | Flag | Environment | Default |
@@ -35,11 +42,11 @@ imported view to apply a corrected profile. This leaves the native worker alive.
 | `none` | Show the saved screen as a stopped session (a ghost). HTTP create default. |
 | `rerun` | Start the command again below its saved screen, under the same id. |
 | `agent` | Resume the recorded Claude Code or Codex conversation; leave a ghost with a notice if verification fails. |
-| `auto` | Agent resume for claude/codex, rerun for other commands, none when persistence is off. `ptyd new` default. |
+| `auto` | Agent resume for claude/codex, rerun for other commands, none when persistence is off. CLI terminal-creation default. |
 
 Only sessions that were running when the daemon stopped restore automatically.
 Programs that exited and restores that were declined stay stopped. Use
-`ptyd restore` or `/restore` to try again; `/restart` creates a new terminal
+`ptyd term restore` or `/restore` to try again; `/restart` creates a new terminal
 and agent session. A restore starts a new process and preserves the window,
 not the previous process's memory. A process group left by the old run must
 be stopped and verified before another starts.
@@ -63,17 +70,24 @@ transcript viewer.
 An imported Codex or Claude view is a client of the agent's existing local
 daemon. That daemon owns the worker and conversation. Detaching, deleting the
 view or shutting down ptyd closes the frontend, while native work continues.
-Unclaimed views expire after one minute. They use no automatic restore
-policy; discover and import again after restarting ptyd.
+Views in named groups remain after detach. Inbox imports stay temporary:
+unclaimed views expire after one minute and last detach closes them. Imported
+views use no automatic restore policy; relaunch in the workspace or discover
+and import again after restarting ptyd. Native workers remain untouched.
 
-Use `ptyd ui` for the combined picker. It hides saved history until `h` and
-shows an existing imported window under Open terminals. A source
-reference records which conversation was selected at launch, and does not
-track later navigation inside the native CLI. Generic restart/restore cannot
+Open a group and press `a` for outside agents. A source reference records
+which conversation was selected at launch; it does not track later navigation
+inside the native CLI. Generic restart/restore cannot
 reuse that reference without fresh validation. [The import reference](reference.md#import-native-agent-sessions)
 explains handoff, profile scope and incomplete discovery.
 
 ## Persistence and upgrades
+
+`groups.json` stores group names, directories and archive state. Each terminal's
+`meta.json` owns its group id. Older records without membership enter Inbox;
+the migration does not restart them. Named groups remain after their last
+terminal is removed. Malformed group metadata blocks group changes with a
+recovery error instead of overwriting it.
 
 Each terminal directory contains `meta.json`, `screen.ckpt`, bounded
 `tail.<gen>` files, optional `exit.json`, and agent session metadata. Files
