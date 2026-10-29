@@ -45,6 +45,10 @@ Enter
 Sleep 1200ms
 Type "work keeps running" Enter
 Sleep 1200ms
+Type "exit" Enter
+Sleep 1500ms
+Type "R"
+Sleep 1200ms
 Type@40ms "jk"
 Sleep 1200ms
 Type@40ms "jk"

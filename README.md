@@ -62,6 +62,7 @@ Piped output stays plain text. Older ungrouped terminals live in
 |---|---|
 | Groups | `j/k` select · Enter open · `n` create · `h` history |
 | Inside a group | `j/k` select · Enter take control · `v` pin/unpin pane · `n` launch |
+| Finished terminal | `R` launch again · Enter view history |
 | Anywhere | Quick `jk` goes back: terminal → group → groups → shell |
 | Workspace | `/` search · `?` help · `q` quit |
 
@@ -77,9 +78,12 @@ backgrounds and cursor. A read-only view says “viewing”; an ended one says
 “finished.” Only one human has keyboard control at a time. Agent input is refused
 while you have control; observation remains available.
 
+When an attached program exits, you return to its group with the finished
+terminal selected. Press **R** to launch it again, or Enter to read its last
+screen. History views stay open until **jk**.
+
 Rename with **r**, move a terminal with **m**, and close with **x**. Closing
-requires confirmation. **R** relaunches an ended terminal; opening its saved
-screen does not. Archive finished groups with **a** in the group list.
+requires confirmation. Archive finished groups with **a** in the group list.
 
 ## Work with agents
 

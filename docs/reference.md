@@ -245,11 +245,17 @@ input passes through without local shortcuts.
 Escape, double Escape, control keys and function keys belong to the attached
 program. Modified keys and key-repeat events do not activate `jk`; unmodified
 kitty and modifyOtherKeys encodings do. On detach, terminal modes reset and
-the attached window moves into local scrollback. Connection loss exits the
-client with code 1; a normal program exit uses its exit code. Stopped sessions
-attach read-only and return immediately from the standalone command. In the
-workspace, saved screens and newly exited frontends stay open until `jk`. Further
-keystrokes stay local after output ends; the footer changes to “finished.”
+the attached window moves into local scrollback. Standalone attachments exit
+with code 1 on connection loss or the program's code on a normal exit. Stopped
+sessions attach read-only and return immediately from the standalone command.
+
+In the workspace, a running program's exit returns to its group automatically.
+The finished terminal stays selected, with `R` to relaunch and Enter to view
+history. A filter or hidden-history setting is cleared so the record stays
+visible. Queued input for the ended program is discarded. Explicit history
+views stay read-only until `jk`; their footer says “finished.” A dropped
+connection returns to the group with a reconnect message if the process is
+still running.
 
 Human TTY attachments reserve the bottom row for the session name and
 `jk: back`. The app receives one fewer PTY row and cannot draw over this

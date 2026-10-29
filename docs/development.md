@@ -98,6 +98,19 @@ Back, help and quit visible above the terminal's bottom edge.
 Launch-menu tests use fake Codex and Claude executables to capture their actual
 arguments with full access on and off. Restore tests verify that both agents
 keep those flags when resuming an exact conversation after a daemon restart.
+To run the same launch checks against an installed executable:
+
+```sh
+PTYD_TEST_BIN="$(command -v ptyd)" go test ./cmd/ptyd \
+  -run '^TestWorkspace(AgentLaunch|CustomAgent|ProgramExit|ExitDiscards)'
+```
+
+The checks start private daemons and fake agents; they use no existing sessions
+or real model providers. Without `PTYD_TEST_BIN`, the suite builds its own binary.
+
+Exit checks cover successful and failed programs returning to the group,
+read-only history, relaunching, and queued input during the return. Finished
+records remain actionable even after filters or group changes.
 
 The README demo is reproducible with `vhs docs/demo.tape`. Its setup creates
 disposable local terminals, uses an ephemeral port, and removes its
@@ -122,6 +135,6 @@ start and recover with exact snapshots rather than ANSI reconstruction.
 
 Native discovery tests cover loaded Codex threads without rollouts, original-tab
 observations without conversation authority, same-terminal deduplication and
-managed child exclusion. Attachment tests retain a failed frontend screen through
-ordinary keystrokes until `jk`. Process metadata parser tests include embedded
-whitespace and stop before environment fields.
+managed child exclusion. Finished screens remain available as read-only history
+after the workspace returns from an exited frontend. Process metadata parser
+tests include embedded whitespace and stop before environment fields.

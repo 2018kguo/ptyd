@@ -48,6 +48,7 @@ func TestWorkspaceAgentLaunchAccess(t *testing.T) {
 		}
 		w.waitText(label)
 		w.keys(tc.key)
+		w.waitText("jk: back")
 		w.waitText("FAKE-" + tc.command + "-READY")
 		raw, err := os.ReadFile(record)
 		if err != nil {
@@ -136,6 +137,7 @@ func TestWorkspaceCustomAgentCommandsKeepTheirArguments(t *testing.T) {
 			} else {
 				w.keys(":run " + command + "\r")
 			}
+			w.waitText("jk: back")
 			w.waitText("SHELL-" + command + "-READY")
 			raw, err := os.ReadFile(record)
 			if err != nil {

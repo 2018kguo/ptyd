@@ -102,6 +102,35 @@ func (v *workspaceView) back() bool {
 	return true
 }
 
+func (v *workspaceView) showEnded(info terminal.Info) {
+	// Keep the completed terminal selected and actionable, even if the old
+	// view hid finished records or filtered out a newly launched agent.
+	if info.GroupID != "" && info.GroupID != v.group {
+		v.enterGroup(info.GroupID)
+	}
+	v.history, v.query = true, ""
+	v.selected = string(info.ID)
+	row := terminal.BuildOverview([]terminal.Info{info}, terminal.OverviewOptions{Limit: 1}).Sessions[0]
+	found := false
+	for i := range v.rows {
+		if v.rows[i].ID == info.ID {
+			v.rows[i] = row
+			found = true
+			break
+		}
+	}
+	if !found {
+		v.rows = append(v.rows, row)
+	}
+	state := "finished"
+	if info.ExitCode == nil {
+		state = "stopped"
+	} else if *info.ExitCode != 0 {
+		state = fmt.Sprintf("exited (code %d)", *info.ExitCode)
+	}
+	v.notice = fmt.Sprintf("%s %s. R relaunches · Enter opens history.", sessionName(row), state)
+}
+
 func fetchWorkspaceScreens(ctx context.Context, c client.API, s *workspaceSnapshot) {
 	var wg sync.WaitGroup
 	if s.PreviewID != "" {
