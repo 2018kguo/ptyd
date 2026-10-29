@@ -15,8 +15,8 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 	if cols < 40 || rows < 16 {
 		return "\x1b[?2026h\x1b[H\x1b[2J\x1b[0m" + clipStatus("ptyd · enlarge to 40×16", cols) + "\r\n" + clipStatus("q detaches · work keeps running", cols) + "\x1b[?2026l"
 	}
-	var out strings.Builder
-	out.WriteString("\x1b[?2026h\x1b[?25l\x1b[?7l\x1b[0m\x1b[H\x1b[2J")
+	var out, preview strings.Builder
+	const start = "\x1b[?2026h\x1b[?25l\x1b[?7l\x1b[0m\x1b[H\x1b[2J"
 	put := func(x, y int, text, style string) {
 		if x < 0 || y < 0 || x >= cols || y >= rows {
 			return
@@ -48,7 +48,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		}
 	}
 	if v.group == "" {
-		workspaceHome(&out, v, cols, rows, put, line)
+		workspaceHome(&preview, v, cols, rows, put, line)
 	} else {
 		g, ok := v.groupInfo()
 		if ok {
@@ -126,8 +126,8 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			if selected {
 				put(left+3, 6, sessionName(row)+" · "+sessionApp(row), "1")
 				if v.snapshot != nil && v.snapshot.PreviewID == string(row.ID) && v.snapshot.Preview != nil {
-					workspacePaintPreview(&out, v.snapshot.Preview, workspaceRect{left + 3, 8, max(cols-left-6, 1), max(rows-16, 1)}, v.color)
-				} else if v.snapshot != nil && v.snapshot.PreviewErr != nil {
+					workspacePreviewLayer(&preview, v.snapshot.Preview, workspaceRect{left + 3, 8, max(cols-left-6, 1), max(rows-16, 1)}, v.color, cols)
+				} else if v.snapshot != nil && v.snapshot.PreviewID == string(row.ID) && v.snapshot.PreviewErr != nil {
 					put(left+3, 9, "Preview unavailable: "+v.snapshot.PreviewErr.Error(), "33")
 				} else if row.Local != nil {
 					put(left+3, 9, "Use its original terminal.", "33")
@@ -146,7 +146,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			y := 7 + available
 			put(2, y, " LIVE PREVIEW · read only ", "2")
 			if v.snapshot != nil && v.snapshot.PreviewID == v.selected && v.snapshot.Preview != nil {
-				workspacePaintPreview(&out, v.snapshot.Preview, workspaceRect{3, y + 2, cols - 6, max(rows-y-8, 1)}, v.color)
+				workspacePreviewLayer(&preview, v.snapshot.Preview, workspaceRect{3, y + 2, cols - 6, max(rows-y-8, 1)}, v.color, cols)
 			}
 		}
 		if row, ok := v.row(); ok {
@@ -274,7 +274,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[?25h", rows, min(3+textWidth(prefix+v.text), cols))
 	}
 	out.WriteString("\x1b[0m\x1b[?7h\x1b[?2026l")
-	return out.String()
+	return start + preview.String() + out.String()
 }
 func workspaceTerminalState(r terminal.SessionSummary) string {
 	if r.External != nil || r.Local != nil {

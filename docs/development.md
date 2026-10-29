@@ -76,8 +76,8 @@ not an exact capture of another terminal's past screen or partial output.
 
 Browser tests run `ls` in real wide and narrow PTYs, observe output changes
 without input, switch groups, and delete a selected group during refresh. They
-verify colored Unicode cells stay inside the preview rectangle, app control
-sequences do not escape into the browser, and previewing leaves source size,
+verify colored Unicode cells stay inside the preview rectangle, mixed Unicode modes, narrowed edge glyphs, custom palettes and underline colors
+survive; app control sequences do not escape into the browser, and previewing leaves source size,
 process identity and human control unchanged. Piped, JSON and `--plain` output
 remain snapshots.
 

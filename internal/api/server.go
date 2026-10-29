@@ -289,7 +289,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 
 // handleScreen returns the current screen: JSON text by default, or with
 // ?format=ansi the bytes that repaint it on a terminal of the same size.
-// ?scrollback=1 includes the scrollback above the screen.
+// ?format=snapshot reads the exact checkpoint. ?scrollback=1 adds history
+// to text and ANSI exports.
 func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 	id := terminal.ID(r.PathValue("id"))
 	withScrollback := r.URL.Query().Get("scrollback") == "1"
@@ -309,8 +310,16 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = w.Write(b)
+	case "snapshot":
+		b, err := s.mgr.ScreenSnapshot(id)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(b)
 	default:
-		writeError(w, http.StatusBadRequest, "format must be text or ansi")
+		writeError(w, http.StatusBadRequest, "format must be text, ansi or snapshot")
 	}
 }
 

@@ -63,7 +63,7 @@ are JSON. Errors are `{"error":"..."}`: 400 invalid input, 401 bad token,
 | `PATCH` | `T` | `{"name":"reviewer","group_id":"group-..."}`; either field can be omitted. |
 | `GET` | `T/output` | `?since=N&tail=N`; retained lines newer than `since`. |
 | `GET` | `T/stream` | `?since=N`; SSE `line` events, then `end` on exit. |
-| `GET` | `T/screen` | JSON window; `?scrollback=1` adds history, `?format=ansi` returns repaint bytes. |
+| `GET` | `T/screen` | JSON window; `?scrollback=1` adds history, `?format=ansi` returns repaint bytes; `?format=snapshot` returns an exact binary checkpoint. |
 | `GET` | `T/attach` | `?cols=&rows=&readonly=1&human=1`; upgraded interactive connection. |
 | `POST` | `T/write` | `{"data":"ls","submit":true}`; optional Enter after input. |
 | `POST` | `T/keys` | `{"keys":["ctrl+c","up","enter"]}`. |
@@ -111,8 +111,8 @@ by this filter. Counts describe the remaining matches. The default API and
 The live group browser previews the selected group before opening it. Screen
 previews retain colors and backgrounds, update without taking control, and
 never resize the source PTY. Smaller windows stack the preview below the list.
-Previews use the existing ANSI screen export; framed attachments use exact
-snapshots. Oversized or unavailable previews show a reason while navigation
+Previews and framed attachments read exact snapshots, including custom palettes
+and historical Unicode modes. Update the daemon along with the client. Oversized or unavailable previews show a reason while navigation
 remains available.
 
 The workspace shows all members of an opened group by default; `h` hides or
@@ -194,6 +194,11 @@ Lines over 16 KiB split. Exited sessions retain output until deleted.
 
 Screen scrollback is a separate emulator budget: 2,000 logical lines /
 256 KiB. ANSI output targets a terminal of the same size.
+
+`format=snapshot` returns Phosphor's binary checkpoint, including custom
+palettes, both screens and retained history. Read it with a compatible
+Phosphor reader. This read neither attaches a viewer nor changes process
+geometry; JSON remains the default screen format for agents.
 
 ## Wait, watch and write
 

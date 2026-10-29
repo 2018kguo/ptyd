@@ -426,8 +426,8 @@ func TestPreviewCellsStayInsideTheirRectangle(t *testing.T) {
 	host := phosphor.New(40, 16)
 	host.Write([]byte("\x1b[1;1HCHROME\x1b[8;25HNEIGHBOR"))
 	var output strings.Builder
-	workspacePaintPreview(&output, source, workspaceRect{10, 5, 8, 3}, true)
-	host.Write([]byte(output.String()))
+	workspacePreviewLayer(&output, source, workspaceRect{10, 5, 8, 3}, true, 40)
+	host.Write([]byte(output.String() + "\x1b[1;1HCHROME\x1b[8;25HNEIGHBOR"))
 	if !strings.Contains(host.Line(0), "CHROME") || !strings.Contains(host.Line(7), "NEIGHBOR") {
 		t.Fatal("preview overwrote neighboring UI")
 	}
@@ -446,8 +446,72 @@ func TestPreviewCellsStayInsideTheirRectangle(t *testing.T) {
 		t.Fatal("rendering mutated source geometry")
 	}
 	output.Reset()
-	workspacePaintPreview(&output, source, workspaceRect{1, 1, 12, 3}, false)
+	workspacePreviewLayer(&output, source, workspaceRect{1, 1, 12, 3}, false, 40)
 	if strings.Contains(output.String(), "48;2;") || strings.Contains(output.String(), "38;5;") {
 		t.Fatal("NO_COLOR preview emitted color")
+	}
+}
+
+func TestPreviewMixedClustersAndNarrowedEdges(t *testing.T) {
+	for _, text := range []string{"\x1b[?2027h👩‍💻\x1b[?2027l", "\x1b[?2027hA☔︎"} {
+		source := phosphor.New(8, 1)
+		source.Write([]byte(text))
+		host := phosphor.New(24, 3)
+		host.Write([]byte("\x1b[2;13HNEIGHBOR"))
+		var output strings.Builder
+		workspacePreviewLayer(&output, source, workspaceRect{10, 1, 2, 1}, true, 24)
+		host.Write([]byte(output.String() + "\x1b[2;13HNEIGHBOR"))
+		if host.Cell(12, 1).Rune != 'N' {
+			t.Fatalf("cluster damaged neighboring chrome: %q", host.Line(1))
+		}
+		if strings.Contains(text, "👩") && host.Cell(10, 1).Text() != source.Cell(0, 0).Text() {
+			t.Fatalf("mixed modes lost cluster: %q", host.Cell(10, 1).Text())
+		}
+	}
+	source := phosphor.New(20, 4)
+	source.Write([]byte("AT_CURSOR"))
+	var output strings.Builder
+	workspacePreviewLayer(&output, source, workspaceRect{0, 0, 12, 1}, true, 20)
+	host := phosphor.New(20, 3)
+	host.Write([]byte(output.String()))
+	if !strings.Contains(host.Line(0), "AT_CURSOR") {
+		t.Fatal("one-row viewport omitted cursor row")
+	}
+	source = phosphor.New(20, 1)
+	source.Write([]byte("\x1b[4m\x1b[58;2;12;34;56mX"))
+	output.Reset()
+	workspacePreviewLayer(&output, source, workspaceRect{0, 0, 12, 1}, true, 20)
+	host = phosphor.New(20, 3)
+	host.Write([]byte(output.String()))
+	if host.Cell(0, 0).Style.UnderlineColor != phosphor.RGBColor(12, 34, 56) {
+		t.Fatal("preview lost underline color")
+	}
+}
+
+func TestPreviewCanonicalRowsKeepHistoricalClusters(t *testing.T) {
+	cases := []string{
+		"\x1b[?2027h\x1b[1;3H🇧🇨\x1b[?2027l\x1b[1;1H🇦",
+		"\x1b[?2027lA❤️",
+		"\x1b[?2027hA☔︎",
+		"\x1b[?2027h👩‍💻\x1b[?2027lX",
+	}
+	for _, text := range cases {
+		source := phosphor.New(8, 1)
+		source.Write([]byte(text))
+		host := phosphor.New(24, 3)
+		var output strings.Builder
+		workspacePreviewLayer(&output, source, workspaceRect{10, 1, 8, 1}, true, 24)
+		// The browser composes whole rows, then restores its chrome over that layer.
+		output.WriteString("\x1b[2;19HNEIGHBOR")
+		host.Write([]byte(output.String()))
+		for x := 0; x < 8; x++ {
+			got, want := host.Cell(10+x, 1), source.Cell(x, 0)
+			if got.Text() != want.Text() || got.Width != want.Width {
+				t.Fatalf("%q at %d: got %+v want %+v", text, x, got, want)
+			}
+		}
+		if host.Cell(18, 1).Rune != 'N' {
+			t.Fatal("preview damaged chrome")
+		}
 	}
 }

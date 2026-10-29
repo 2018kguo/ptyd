@@ -5,80 +5,41 @@ import (
 	"strings"
 
 	"github.com/2018kguo/phosphor"
+	"github.com/2018kguo/ptyd/internal/client"
 	"github.com/2018kguo/ptyd/internal/terminal"
 )
 
 type workspaceRect struct{ x, y, w, h int }
 
-// Only model cells are painted into this rectangle. The source export's cursor,
-// palette, title, clipboard and terminal modes never escape into the workspace.
-func workspacePaintPreview(out *strings.Builder, view *phosphor.Terminal, r workspaceRect, color bool) {
+// Preview rows are staged off-screen with Phosphor's canonical renderer.
+// Chrome is painted after this layer, so clusters never erase neighboring UI.
+func workspacePreviewLayer(out *strings.Builder, view *phosphor.Terminal, r workspaceRect, color bool, hostCols int) {
 	cols, rows := view.Size()
-	first := min(max(view.Cursor().Y-r.h+2, 0), max(rows-r.h, 0))
-	palette := view.Palette()
-	if view.Modes().GraphemeClustering {
-		out.WriteString("\x1b[?2027h")
-	} else {
-		out.WriteString("\x1b[?2027l")
-	}
+	first := min(max(view.Cursor().Y-r.h+1, 0), max(rows-r.h, 0))
 	for y := 0; y < r.h && first+y < rows; y++ {
-		fmt.Fprintf(out, "\x1b[%d;%dH\x1b[0m", r.y+y+1, r.x+1)
-		var previous phosphor.Style
-		for x := 0; x < r.w; x++ {
-			cell := view.Cell(x, first+y)
-			width := max(cell.Width, 1)
-			if x >= cols || x+width > r.w {
-				cell = phosphor.Cell{}
-				width = 1
-			}
-			style := cell.Style
-			if view.Modes().ReverseVideo {
-				style.Attrs ^= phosphor.AttrInverse
-			}
-			if color && (x == 0 || style != previous) {
-				workspacePreviewStyle(out, style, palette)
-				previous = style
-			}
-			if cell.Rune == 0 || style.Attrs&phosphor.AttrHidden != 0 {
-				out.WriteString(strings.Repeat(" ", width))
-			} else {
-				out.WriteString(cell.Text())
-			}
-			x += width - 1
+		row := phosphor.New(cols, 1, phosphor.WithScrollback(0))
+		row.Write(view.AppendRowANSI(nil, first+y))
+		// Clip stored cells before changing width; this preserves cluster
+		// histories rather than asking a terminal to reconstruct each cell.
+		if r.w < cols {
+			row.Write([]byte(fmt.Sprintf("\x1b[0m\x1b[1;%dH\x1b[K", r.w+1)))
 		}
-	}
-	out.WriteString("\x1b[0m\x1b[?2027l\x1b[?7l")
-}
-func workspacePreviewStyle(out *strings.Builder, s phosphor.Style, palette phosphor.Palette) {
-	out.WriteString("\x1b[0")
-	for _, a := range []struct {
-		attr phosphor.Attr
-		code int
-	}{
-		{phosphor.AttrBold, 1}, {phosphor.AttrFaint, 2}, {phosphor.AttrItalic, 3},
-		{phosphor.AttrInverse, 7}, {phosphor.AttrStrikethrough, 9}, {phosphor.AttrOverline, 53},
-	} {
-		if s.Attrs&a.attr != 0 {
-			fmt.Fprintf(out, ";%d", a.code)
+		row.Write([]byte("\x1b[1;1H"))
+		row.Resize(r.x+r.w, 1)
+		if r.x > 0 {
+			row.Write([]byte(fmt.Sprintf("\x1b[0m\x1b[1;1H\x1b[%d@", r.x)))
 		}
-	}
-	if s.Underline != phosphor.UnderlineNone {
-		fmt.Fprintf(out, ";4:%d", s.Underline)
-	}
-	base := phosphor.DefaultPalette()
-	for i, c := range []phosphor.Color{s.Fg, s.Bg} {
-		code := 38 + i*10
-		if c.Kind() == phosphor.ColorIndexed && palette.Colors[c.Index()] == base.Colors[c.Index()] {
-			fmt.Fprintf(out, ";%d;5;%d", code, c.Index())
-			continue
+		// Grow to the host width in workspaceFrame before serializing this
+		// staged row. The entire row is emitted from column one.
+		row.Resize(hostCols, 1)
+		data := row.AppendRowANSI(nil, 0)
+		if !color {
+			data = client.WithoutANSIColors(data)
 		}
-		if c.Kind() == phosphor.ColorDefault && palette.Resolve(c, i == 1) == base.Resolve(c, i == 1) {
-			continue
-		}
-		rgb := palette.Resolve(c, i == 1)
-		fmt.Fprintf(out, ";%d;2;%d;%d;%d", code, rgb.R, rgb.G, rgb.B)
+		fmt.Fprintf(out, "\x1b[%d;1H", r.y+y+1)
+		out.Write(data)
 	}
-	out.WriteString("m")
+	out.WriteString("\x1b[0m\x1b[0\"q\x1b]8;;\x1b\\\x1b[?2027l\x1b[?7l")
 }
 
 func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put func(int, int, string, string), line func(int)) {
@@ -202,7 +163,7 @@ func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put fu
 	y += 2
 	h -= 2
 	if v.snapshot.Preview != nil {
-		workspacePaintPreview(out, v.snapshot.Preview, workspaceRect{x, y, w, max(h, 1)}, v.color)
+		workspacePreviewLayer(out, v.snapshot.Preview, workspaceRect{x, y, w, max(h, 1)}, v.color, cols)
 	} else if v.snapshot.PreviewErr != nil {
 		put(x, y, "Preview unavailable: "+v.snapshot.PreviewErr.Error(), "33")
 	} else {

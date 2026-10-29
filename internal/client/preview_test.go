@@ -2,7 +2,7 @@ package client
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,21 +37,37 @@ func TestPreviewReadsExistingExportsWithoutAttaching(t *testing.T) {
 		t.Fatal("preview changed live terminal ownership or geometry")
 	}
 }
-func TestPreviewRejectsExcessiveScreenBeforeReadingExport(t *testing.T) {
-	var exports atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("format") == "ansi" {
-			exports.Add(1)
-			return
-		}
-		fmt.Fprint(w, `{"cols":65535,"rows":65535}`)
-	}))
+func TestPreviewBoundsDecodedSnapshot(t *testing.T) {
+	var requests atomic.Int32
+	large := phosphor.New(1024, 257).Snapshot()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); _, _ = w.Write(large) }))
 	defer srv.Close()
 	c := API{Addr: strings.TrimPrefix(srv.URL, "http://")}
-	if _, err := c.Preview(context.Background(), "term-large"); err == nil || !strings.Contains(err.Error(), "too large") {
+	if _, err := c.Preview(context.Background(), "term-large"); !errors.Is(err, phosphor.ErrSnapshotLimit) {
 		t.Fatal(err)
 	}
-	if exports.Load() != 0 {
-		t.Fatal("oversized preview still requested export")
+	if requests.Load() != 1 {
+		t.Fatal("preview did not use a single snapshot read")
+	}
+}
+
+func TestPreviewRetainsProgramPaletteAndClusterModes(t *testing.T) {
+	mgr, addr := startDaemon(t)
+	info, err := mgr.Create(terminal.CreateConfig{Name: "palette", Command: "sh", Args: []string{"-c", "printf '\\033]4;1;rgb:12/34/56\\007\\033[31mX\\033[0m\\033[?2027h👩‍💻\\033[?2027l'; exec cat"}, Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "palette fixture", func() bool { s, _ := mgr.Screen(info.ID, false); return strings.Contains(s.Lines[0], "👩") })
+	view, err := (API{Addr: addr, Token: "tok"}).Preview(context.Background(), info.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	palette := view.Palette()
+	cell := view.Cell(0, 0)
+	if got := palette.Resolve(cell.Style.Fg, false); got != (phosphor.RGB{R: 18, G: 52, B: 86}) {
+		t.Fatalf("program palette changed: %+v", got)
+	}
+	if view.Cell(1, 0).Text() != "👩‍💻" || view.Modes().GraphemeClustering {
+		t.Fatal("snapshot lost historical cluster modes")
 	}
 }
