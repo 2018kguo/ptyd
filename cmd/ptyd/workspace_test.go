@@ -521,7 +521,7 @@ func TestPreviewCanonicalRowsKeepHistoricalClusters(t *testing.T) {
 
 func TestWorkspacePreviewFrameKeepsChromeAndSourceState(t *testing.T) {
 	const cols, rows, left = 120, 24, 40
-	rect := workspaceRect{left + 3, 8, cols - left - 6, rows - 16}
+	rect := workspaceRect{left + 5, 8, cols - left - 10, rows - 15}
 	cases := []string{
 		"\x1b[?2027h\x1b[1;3H🇧🇨\x1b[?2027l\x1b[1;1H🇦",
 		"\x1b[?2027lA❤️",
@@ -539,7 +539,7 @@ func TestWorkspacePreviewFrameKeepsChromeAndSourceState(t *testing.T) {
 		v := workspaceView{group: "work", selected: "preview", color: true,
 			groups:   []terminal.GroupSummary{{Group: terminal.Group{ID: "work", Name: "work"}, Running: 1, Terminals: 1}},
 			rows:     []terminal.SessionSummary{{ID: "preview", Name: "preview", State: terminal.OverviewRunning}},
-			snapshot: &workspaceSnapshot{Query: workspaceQuery{Group: "work"}, PreviewID: "preview"},
+			snapshot: &workspaceSnapshot{Query: workspaceQuery{Group: "work"}, PreviewID: "preview", Preview: phosphor.New(80, 4)},
 		}
 		chrome := phosphor.New(cols, rows)
 		chrome.Write([]byte(workspaceFrame(v, cols, rows)))
@@ -549,12 +549,14 @@ func TestWorkspacePreviewFrameKeepsChromeAndSourceState(t *testing.T) {
 		sourcePalette, hostPalette := source.Palette(), host.Palette()
 		for y := 0; y < rows; y++ {
 			for x := 0; x < cols; x++ {
+				// The pane's crop caption depends on its screen contents too.
+				caption := y == rows-6 && x >= rect.x && x < rect.x+rect.w
 				if x >= rect.x && x < rect.x+rect.w && y >= rect.y && y < rect.y+4 {
 					actual, want := host.Cell(x, y), source.Cell(x-rect.x, y-rect.y)
 					if actual.Text() != want.Text() || actual.Width != want.Width || hostPalette.Resolve(actual.Style.Fg, false) != sourcePalette.Resolve(want.Style.Fg, false) || hostPalette.Resolve(actual.Style.Bg, true) != sourcePalette.Resolve(want.Style.Bg, true) {
 						t.Fatalf("%q at %d,%d: actual=%+v want=%+v", input, x, y, actual, want)
 					}
-				} else if !(x >= rect.x && x < rect.x+rect.w && y >= rect.y && y < rect.y+rect.h) {
+				} else if !caption && !(x >= rect.x && x < rect.x+rect.w && y >= rect.y && y < rect.y+rect.h) {
 					if host.Cell(x, y) != chrome.Cell(x, y) {
 						t.Fatalf("%q changed chrome at %d,%d", input, x, y)
 					}
@@ -564,5 +566,58 @@ func TestWorkspacePreviewFrameKeepsChromeAndSourceState(t *testing.T) {
 		if string(source.Snapshot()) != string(before) {
 			t.Fatal("rendering changed source terminal state")
 		}
+	}
+}
+
+func TestPreviewKeepsAppRowsBelowCursor(t *testing.T) {
+	for _, content := range []string{
+		"\x1b[30;1HAPP FOOTER",
+		"\x1b[30;1H\x1b[48;2;40;42;54m\x1b[K\x1b[0m",
+		"\x1b[30;1H\x1b[7m" + strings.Repeat(" ", 80) + "\x1b[0m",
+	} {
+		source := phosphor.New(80, 30)
+		source.Write([]byte("\x1b[1;1HEARLIER OUTPUT" + content + "\x1b[27;3HPROMPT\x1b[27;3H"))
+		before := source.Snapshot()
+		var output strings.Builder
+		first := workspacePreviewLayer(&output, source, workspaceRect{2, 2, 50, 8}, true, 60)
+		if first != 22 {
+			t.Fatalf("app footer below cursor clipped: first=%d", first)
+		}
+		host := phosphor.New(60, 12)
+		host.Write([]byte(output.String()))
+		for x := 0; x < 50; x++ {
+			got, want := host.Cell(x+2, 9), source.Cell(x, 29)
+			if got.Text() != want.Text() || got.Style != want.Style {
+				t.Fatalf("footer at %d: got=%+v want=%+v", x, got, want)
+			}
+		}
+		if string(source.Snapshot()) != string(before) {
+			t.Fatal("preview changed source state")
+		}
+	}
+	sparse := phosphor.New(80, 60)
+	sparse.Write([]byte("BUILD-READY\r\n$ "))
+	if first := workspacePreviewStart(sparse, 8); first != 0 {
+		t.Fatal("sparse shell scrolled into blank space")
+	}
+}
+
+func TestPreviewCropHintsMatchPaintedContent(t *testing.T) {
+	source := phosphor.New(20, 4)
+	source.Write([]byte("short\x1b[3;12HOFFSCREEN"))
+	area := workspaceRect{1, 1, 10, 1}
+	if hidden := workspacePreviewRight(source, area, 0); hidden != 0 {
+		t.Fatal("blank columns or an offscreen row were reported as cropped content")
+	}
+	source.Write([]byte("\x1b[1;10H雪"))
+	if hidden := workspacePreviewRight(source, area, 0); hidden != 1 {
+		t.Fatalf("split wide glyph was omitted without a crop hint: %d", hidden)
+	}
+	var output strings.Builder
+	workspacePreviewLayer(&output, source, area, true, 24)
+	host := phosphor.New(24, 3)
+	host.Write([]byte(output.String()))
+	if strings.Contains(host.Line(1), "雪") {
+		t.Fatal("split wide glyph escaped the preview edge")
 	}
 }

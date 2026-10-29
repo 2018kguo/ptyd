@@ -86,6 +86,11 @@ restarts without claiming control or resizing them. Back-navigation tests cover
 prompts, attachments, repeated chords and late launch responses. Header animation
 checks compare every cell outside its reserved rectangle.
 
+Preview crop tests include footers and painted blank rows below the app cursor.
+Dialog tests compare every cell outside their frames at narrow and wide sizes;
+long fields include wide Unicode text near the input limit. Footer checks keep
+Back, help and quit visible above the terminal's bottom edge.
+
 The README demo is reproducible with `vhs docs/demo.tape`. Its setup creates
 disposable local terminals, uses an ephemeral port, and removes its
 own processes and files on exit. It does not need an agent login or call a

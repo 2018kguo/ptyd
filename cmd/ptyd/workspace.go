@@ -73,6 +73,7 @@ type workspaceView struct {
 	searchBefore            string
 	motion                  bool
 	brandPhase              int
+	theme                   workspaceTheme
 }
 
 func (v workspaceView) groupInfo() (terminal.GroupSummary, bool) {
@@ -382,7 +383,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	_, _ = io.WriteString(out, "\x1b[22;0t"+statusEnter)
 	history := start != "" || (len(showHistory) > 0 && showHistory[0])
 	layouts := loadWorkspaceLayouts(c.Addr)
-	v := workspaceView{pins: layouts.pins, motion: os.Getenv("PTYD_REDUCED_MOTION") == "", notice: layouts.notice, history: history, group: start, selected: string(initial), color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
+	v := workspaceView{theme: workspaceThemeFor(colors), pins: layouts.pins, motion: os.Getenv("PTYD_REDUCED_MOTION") == "", notice: layouts.notice, history: history, group: start, selected: string(initial), color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
 	queries := make(chan workspaceQuery, 1)
 	updates := make(chan workspaceSnapshot, 1)
 	go refreshWorkspace(ctx, c, queries, updates)

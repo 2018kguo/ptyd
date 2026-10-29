@@ -13,9 +13,12 @@ type workspaceRect struct{ x, y, w, h int }
 
 // Preview rows are staged off-screen with Phosphor's canonical renderer.
 // Chrome is painted after this layer, so clusters never erase neighboring UI.
-func workspacePreviewLayer(out *strings.Builder, view *phosphor.Terminal, r workspaceRect, color bool, hostCols int) {
+func workspacePreviewLayer(out *strings.Builder, view *phosphor.Terminal, r workspaceRect, color bool, hostCols int) int {
+	if r.w < 1 || r.h < 1 {
+		return 0
+	}
 	cols, rows := view.Size()
-	first := min(max(view.Cursor().Y-r.h+1, 0), max(rows-r.h, 0))
+	first := workspacePreviewStart(view, r.h)
 	for y := 0; y < r.h && first+y < rows; y++ {
 		row := phosphor.New(cols, 1, phosphor.WithScrollback(0))
 		row.Write(view.AppendRowANSI(nil, first+y))
@@ -40,6 +43,44 @@ func workspacePreviewLayer(out *strings.Builder, view *phosphor.Terminal, r work
 		out.Write(data)
 	}
 	out.WriteString("\x1b[0m\x1b[0\"q\x1b]8;;\x1b\\\x1b[?2027l\x1b[?7l")
+	return first
+}
+
+// Full-screen apps draw footers and input-box backgrounds below the cursor.
+// Keep their last painted row in view, while sparse shells stay near the top.
+func workspacePreviewStart(view *phosphor.Terminal, height int) int {
+	cols, rows := view.Size()
+	if height >= rows {
+		return 0
+	}
+	last := view.Cursor().Y
+scan:
+	for y := rows - 1; y > last; y-- {
+		for x := 0; x < cols; x++ {
+			c := view.Cell(x, y)
+			if workspacePaintedCell(c) {
+				last = y
+				break scan
+			}
+		}
+	}
+	return min(max(last-max(height, 1)+1, 0), max(rows-max(height, 1), 0))
+}
+
+func workspacePaintedCell(c phosphor.Cell) bool {
+	return c.Width == 0 || (c.Rune != 0 && c.Rune != ' ') || c.Combining != "" || c.Style.Bg != phosphor.DefaultColor || c.Style.Underline != phosphor.UnderlineNone || c.Style.Attrs&(phosphor.AttrInverse|phosphor.AttrStrikethrough|phosphor.AttrOverline) != 0
+}
+
+func workspacePreviewRight(view *phosphor.Terminal, r workspaceRect, first int) int {
+	cols, rows := view.Size()
+	for x := cols - 1; x >= r.w; x-- {
+		for y := first; y < min(first+r.h, rows); y++ {
+			if workspacePaintedCell(view.Cell(x, y)) {
+				return x - r.w + 1
+			}
+		}
+	}
+	return 0
 }
 
 func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put func(int, int, string, string), line func(int)) {
@@ -62,7 +103,14 @@ func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put fu
 	} else {
 		put(2, 3, summary, "36")
 	}
+	left := cols
+	if cols >= 96 {
+		left = min(max(cols/3, 30), 42)
+	}
 	line(4)
+	if left < cols {
+		workspaceBox(workspaceRect{1, 4, left, rows - 9}, "2", put)
+	}
 	put(2, 4, " GROUPS ", "1;36")
 	if v.snapshot == nil && v.err == nil {
 		put(4, 6, "Finding your groups…", "36")
@@ -80,11 +128,7 @@ func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put fu
 		}
 		return
 	}
-	left := cols
-	if cols >= 96 {
-		left = min(max(cols/3, 30), 42)
-	}
-	available := max((rows-11)/2, 1)
+	available := max((rows-12)/2, 1)
 	if left == cols {
 		available = min(len(gs), min(available, max((rows-22)/2, 1)))
 	}
@@ -94,7 +138,7 @@ func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put fu
 		y := 6 + (i-start)*2
 		mark, style := "  ", "1"
 		if string(g.ID) == v.selected {
-			mark, style = "› ", "1;7"
+			mark, style = "› ", v.theme.selected()
 		}
 		name := g.Name
 		if g.Archived {
@@ -117,12 +161,8 @@ func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put fu
 	}
 	selected := gs[min(v.index(), len(gs)-1)]
 	put(2, rows-4, friendlyCWD(selected.CWD), "2")
-	put(2, rows-3, "Enter opens · jk back · r rename · a archive · x remove", "2")
 	x, y, w, h := left+3, 6, cols-left-6, rows-12
 	if left < cols {
-		for yy := 5; yy < rows-5; yy++ {
-			put(left, yy, "│", "2")
-		}
 		put(left+2, 4, " WORKSPACE PREVIEW ", "1;36")
 	} else {
 		x, y, w = 3, 7+available*2, cols-6
@@ -156,14 +196,16 @@ func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put fu
 	}
 	y += shown + 1
 	h -= shown + 1
-	if h < 2 {
+	if h < 3 {
 		return
 	}
-	put(x, y, "LIVE PREVIEW · read only", "2")
-	y += 2
-	h -= 2
-	if v.snapshot.Preview != nil {
-		workspacePreviewLayer(out, v.snapshot.Preview, workspaceRect{x, y, w, max(h, 1)}, v.color, cols)
+	if v.snapshot.PreviewID != "" {
+		for _, row := range v.snapshot.Overview.Sessions {
+			if string(row.ID) == v.snapshot.PreviewID {
+				workspacePreviewPane(out, v, workspacePinnedPreview{Row: row, Screen: v.snapshot.Preview, Err: v.snapshot.PreviewErr}, workspaceRect{x, y, w, h}, cols, put)
+				break
+			}
+		}
 	} else if v.snapshot.PreviewErr != nil {
 		put(x, y, "Preview unavailable: "+v.snapshot.PreviewErr.Error(), "33")
 	} else {
