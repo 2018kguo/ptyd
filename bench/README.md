@@ -126,8 +126,10 @@ The browser adds no growing quadratic scan.
 
 Reusing the canonical renderer's temporary row model and buffers reduced an
 eight-pane fixture from about **1.56 MB to 0.60 MB allocated per frame** (62%).
-The emitted frame stayed at 58,213 bytes. This measures temporary Go allocation,
-rather than retained session memory or RSS. Keeping four search connections
+The allocation figures describe temporary Go storage per frame, excluding
+retained session memory and RSS. That recorded comparison emitted 58,213 bytes
+per frame; pane boundary cleanup adds control bytes in current builds.
+Keeping four search connections
 alive also avoided the default transport's repeated connection creation between
 batches. Both changes are in the client and work with an already running daemon.
 

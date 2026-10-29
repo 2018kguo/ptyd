@@ -9,6 +9,7 @@ import (
 // OffsetRowANSI translates absolute horizontal positions in AppendRowANSI's
 // output. Callers paint tiles from left to right: the canonical renderer's
 // temporary inserts can touch the still-unpainted space to their right.
+// Clear that space in default style before painting the next tile or chrome.
 // This accepts rendered rows, never arbitrary program output.
 func OffsetRowANSI(data []byte, columns int) []byte {
 	var scan sequenceReader

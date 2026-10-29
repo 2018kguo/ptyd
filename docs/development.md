@@ -97,6 +97,9 @@ soft wraps, wide-character spacers, literal spaces, Unicode case changes,
 in-place redraws, cancellation and incomplete inventories. Request concurrency
 is bounded directly. The real-PTY search check confirms the source process,
 geometry and input ownership stay unchanged.
+Background checks also compare every cell outside pane borders across one-to-eight
+pane layouts, including gutters and empty slots in incomplete grids. Colored
+erased rows must stay inside the source pane with color enabled or disabled.
 
 Mouse checks cover click selection, double-click attach, clickable actions,
 overlays, paste framing, pixel reports, resize fences and mouse-mode cleanup.

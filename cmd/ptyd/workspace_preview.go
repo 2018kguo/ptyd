@@ -43,6 +43,11 @@ func workspacePreviewLayer(out *strings.Builder, view *phosphor.Terminal, r work
 		}
 		fmt.Fprintf(out, "\x1b[%d;%dH", r.y+y+1, r.x+1)
 		out.Write(data)
+		// Row inserts fill the host's physical right edge with the active
+		// background. Clear that unpainted tail before later tiles and chrome.
+		if right := r.x + min(r.w, hostCols-r.x); right < hostCols {
+			fmt.Fprintf(out, "\x1b[0m\x1b[%dG\x1b[K", right+1)
+		}
 	}
 	out.WriteString("\x1b[0m\x1b[0\"q\x1b]8;;\x1b\\\x1b[?2027l\x1b[?7l")
 	return first
