@@ -315,7 +315,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		if raw != nil {
 			_ = term.Restore(int(in.Fd()), raw)
 		}
-		_, _ = io.WriteString(out, "\x18"+"\x1b[?2026l\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l\x1b[23;0t")
+		_, _ = io.WriteString(out, "\x18"+"\x1b[?2026l\x1b[?2004l\x1b[?7h\x1b[0m\x1b[?25h\x1b[?1049l\x1b[23;0t")
 	}()
 	colors, pending := client.ProbeColors(ctx, in, out)
 	input, err := client.NewInput(ctx, in, pending)

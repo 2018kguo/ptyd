@@ -309,7 +309,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		put(2, rows-1, prefix+v.text, "1;7")
 		fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[?25h", rows, min(3+textWidth(prefix+v.text), cols))
 	}
-	out.WriteString("\x1b[0m\x1b[?2026l")
+	out.WriteString("\x1b[0m\x1b[?7h\x1b[?2026l")
 	return out.String()
 }
 func workspaceTerminalState(r terminal.SessionSummary) string {

@@ -134,6 +134,9 @@ func (w *window) waitExit() int {
 	if !w.screen.Cursor().Visible {
 		w.t.Fatal("cursor left hidden")
 	}
+	if !w.screen.Modes().Autowrap {
+		w.t.Fatal("line wrapping left disabled")
+	}
 	return w.cmd.ProcessState.ExitCode()
 }
 
