@@ -12,6 +12,10 @@ go test -race ./...
 CLI tests start real PTYs and exercise daemon crashes. When testing in
 Docker, use `--init` so orphaned test children are reaped.
 
+Output coalescing checks control timer expiry and queue wakeups directly.
+They verify which event releases output without depending on millisecond
+scheduling deadlines on a shared runner.
+
 - `cmd/ptyd`: group workspace, CLI, attach behavior and real-PTY end-to-end tests.
 - `internal/terminal`: groups, session lifecycle, retained output, watches and persistence.
 - `internal/api`, `internal/client`: HTTP server and client.
@@ -85,6 +89,11 @@ Pin tests follow multiple live terminals across selection changes and browser
 restarts without claiming control or resizing them. Back-navigation tests cover
 prompts, attachments, repeated chords and late launch responses. Header animation
 checks compare every cell outside its reserved rectangle.
+
+Preview crop tests include footers and painted blank rows below the app cursor.
+Dialog tests compare every cell outside their frames at narrow and wide sizes;
+long fields include wide Unicode text near the input limit. Footer checks keep
+Back, help and quit visible above the terminal's bottom edge.
 
 The README demo is reproducible with `vhs docs/demo.tape`. Its setup creates
 disposable local terminals, uses an ephemeral port, and removes its

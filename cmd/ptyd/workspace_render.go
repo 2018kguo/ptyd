@@ -35,19 +35,13 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		heading = g.Name
 	}
 	put(2, 1, "ptyd", "1;36")
-	put(8, 1, "/  "+heading, "1")
+	headingWidth := cols - workspaceBrandReserve(cols) - 10
+	if cols >= 96 {
+		headingWidth = min(headingWidth, cols/2-10)
+	}
+	put(8, 1, clipStatus("/  "+heading, headingWidth), "1")
 	title := "ptyd · " + heading
 	fmt.Fprintf(&out, "\x1b]2;%s\x1b\\", displayText(title, 160))
-	footer := "j/k preview   Enter open   n new group   / search   jk back   ? help   q quit"
-	if v.group != "" {
-		footer = "j/k select   Enter open   v pin pane   n new   jk back   ? help   q quit"
-	}
-	if cols < 96 {
-		footer = "j/k  Enter  n new  jk back  ?  q quit"
-		if v.group != "" {
-			footer = "j/k  Enter  v pin  jk back  ?  q quit"
-		}
-	}
 	if v.group == "" {
 		workspaceHome(&preview, v, cols, rows, put, line)
 	} else {
@@ -58,7 +52,11 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			if g.Attention > 0 {
 				summary += fmt.Sprintf("  ·  %d need attention", g.Attention)
 			}
-			put(max(cols-textWidth(summary)-workspaceBrandReserve(cols)-3, 2), 1, summary, "36")
+			if cols >= 96 {
+				put(max(cols-textWidth(summary)-workspaceBrandReserve(cols)-3, cols/2), 1, clipStatus(summary, cols/2-workspaceBrandReserve(cols)-3), "36")
+			} else {
+				put(2, 3, clipStatus(summary, cols-4), "36")
+			}
 		}
 		if ok && g.Archived {
 			put(2, 3, "Archived · return to groups and press a to unarchive.", "33")
@@ -71,13 +69,17 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			left = min(max(cols/3, 30), 44)
 		}
 		line(4)
+		if left < cols {
+			workspaceBox(workspaceRect{1, 4, left, rows - 9}, "2", put)
+		}
 		put(2, 4, " TERMINALS ", "1;36")
 		if left < cols {
-			put(left+2, 4, workspaceWatchHeading(v, workspaceRect{left + 3, 6, cols - left - 6, rows - 12}), "2")
+			put(left+2, 4, workspaceWatchHeading(v, workspaceRect{left + 3, 6, cols - left - 6, rows - 11}), "1;36")
 		}
-		available := max(rows-10, 1)
+		// Rows start at 6 and end above the box's bottom edge at rows-6.
+		available := max(rows-12, 1)
 		if left == cols {
-			available = max((rows-13)/2, 1)
+			available = min(max(len(v.rows), 1), max((rows-13)/2, 1))
 		}
 		start := max(v.index()-available+1, 0)
 		for i := start; i < len(v.rows) && i < start+available; i++ {
@@ -86,7 +88,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			style := ""
 			mark := "  "
 			if string(r.ID) == v.selected {
-				style = "1;7"
+				style = v.theme.selected()
 				mark = "› "
 			}
 			status := workspaceTerminalIcon(r) + " " + workspaceTerminalState(r)
@@ -94,8 +96,9 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			if slices.Contains(v.watched(), r.ID) {
 				name = "◆ " + name
 			}
-			nameWidth := max(left-16, 5)
-			put(2, y, mark+statusCell(name, max(left-5, 1)), style)
+			statusWidth := min(textWidth(status), max(left/2-4, 7))
+			nameWidth := max(left-statusWidth-7, 5)
+			put(2, y, statusCell("", max(left-2, 1)), style)
 			put(2, y, mark+statusCell(name, nameWidth), style)
 			if style == "" {
 				if r.Attention > 0 {
@@ -106,7 +109,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 					style = "2"
 				}
 			}
-			put(max(left-10, 2), y, status, style)
+			put(left-statusWidth-1, y, clipStatus(status, statusWidth), style)
 		}
 		if len(v.rows) == 0 && v.snapshot != nil {
 			heading := "This group is ready."
@@ -117,29 +120,33 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			} else if !v.history && v.snapshot.Overview.HistoryHidden > 0 {
 				heading = "Press h to see finished terminals."
 			}
-			put(3, 7, heading, "1")
-			put(3, 9, "n  Start an agent or shell", "36")
-			put(3, 11, "a  Bring an existing agent here", "2")
-			put(3, 13, "Or ask an agent to use this group.", "2")
+			leftPut := func(y int, text, style string) {
+				if y < rows-5 {
+					put(3, y, clipStatus(text, left-6), style)
+				}
+			}
+			leftPut(7, heading, "1")
+			leftPut(9, "n  Start an agent or shell", "36")
+			leftPut(11, "a  Bring an existing agent here", "2")
+			leftPut(13, "Or ask an agent to use this group.", "2")
 		}
 		if left < cols {
-			for y := 5; y < rows-5; y++ {
-				put(left, y, "│", "2")
-			}
-			workspaceWatchPanel(&preview, v, workspaceRect{left + 3, 6, max(cols-left-6, 1), max(rows-12, 1)}, cols, put)
+			workspaceWatchPanel(&preview, v, workspaceRect{left + 3, 6, max(cols-left-6, 1), max(rows-11, 1)}, cols, put)
 		}
 		if left == cols {
 			y := 7 + available
-			area := workspaceRect{3, y + 1, cols - 6, max(rows-y-6, 1)}
-			put(2, y, workspaceWatchHeading(v, area), "2")
+			area := workspaceRect{2, y, cols - 4, max(rows-y-5, 1)}
+			if n := len(v.watchPanes()); n > 1 {
+				label := fmt.Sprintf(" %d/%d panes ", min(n, workspacePaneLimit(area.h)), n)
+				put(cols-textWidth(label)-2, 4, label, "2")
+			}
 			workspaceWatchPanel(&preview, v, area, cols, put)
 		}
 		if row, ok := v.row(); ok {
 			detail := sessionName(row) + " · " + sessionApp(row) + " · " + workspaceTerminalState(row)
-			put(2, rows-4, detail, "1")
-			hint := "Enter takes control · v pin/unpin pane · r rename · m move · x close"
+			hint := detail
 			if row.State != terminal.OverviewRunning && row.External == nil {
-				hint = "Enter opens saved screen · v pin pane · R relaunch · x remove"
+				hint = detail + " · R relaunches"
 			}
 			if row.HumanControl {
 				hint = "Another human has control · v pins its live pane"
@@ -151,7 +158,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			} else if row.External != nil && row.External.Action != "attach" {
 				hint = row.External.Reason
 			}
-			put(2, rows-3, hint, "2")
+			put(2, rows-4, clipStatus(hint, cols-4), "2")
 		}
 	}
 	if v.query != "" {
@@ -178,15 +185,26 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		}
 	}
 	if notice != "" {
-		put(2, max(rows-5, 3), notice, "33")
+		style := "33"
+		if notice == "Returned to your workspace." {
+			style = "2"
+		}
+		put(2, max(rows-5, 3), clipStatus(notice, cols-4), style)
 	}
-	line(rows - 2)
-	put(2, rows-1, footer, "2")
+	line(rows - 3)
+	workspaceKeys(v, cols, rows-2, put)
 	if v.mode != wsNormal && v.mode != wsSearch && v.mode != wsCommand {
 		x, y := max((cols-min(cols-4, 70))/2, 1), max((rows-14)/2, 2)
 		width := max(min(cols-4, 70), 1)
 		for i := 0; i < 12 && y+i < rows-2; i++ {
-			put(x, y+i, strings.Repeat(" ", width), "7")
+			put(x, y+i, strings.Repeat(" ", width), v.theme.onSurface(""))
+		}
+		workspaceBox(workspaceRect{x, y, width, 12}, "36", put)
+		pagePut := put
+		put := func(px, py int, text, style string) {
+			if px > x && px < x+width-1 && py > y && py < y+11 {
+				pagePut(px, py, clipStatus(text, x+width-1-px), v.theme.onSurface(style))
+			}
 		}
 		label, hint := "", ""
 		switch v.mode {
@@ -202,18 +220,18 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		case wsResume:
 			label = "Resume this stopped conversation?"
 			hint = "Type resume, then Enter. jk / Esc goes back."
-			put(x+2, y+4, "Starts its agent again in this group.", "7")
+			put(x+2, y+4, "Starts its agent again in this group.", "")
 		case wsConfirm:
 			label = "Close and remove this work?"
 			hint = "Type close, then Enter. jk / Esc goes back."
-			put(x+2, y+4, clipStatus(workspaceTarget(v), width-4), "1;7")
-			put(x+2, y+5, "This stops managed programs and removes saved screens.", "7")
+			put(x+2, y+4, clipStatus(workspaceTarget(v), width-4), "1")
+			put(x+2, y+5, "This stops managed programs and removes saved screens.", "")
 		case wsLaunch:
 			label = "Start a terminal"
-			put(x+3, y+3, "c   Codex", "1;7")
-			put(x+3, y+5, "a   Claude", "1;7")
-			put(x+3, y+7, "s   Shell", "1;7")
-			put(x+3, y+9, "r   Custom command", "1;7")
+			put(x+3, y+3, "c   Codex", "1")
+			put(x+3, y+5, "a   Claude", "1")
+			put(x+3, y+7, "s   Shell", "1")
+			put(x+3, y+9, "r   Custom command", "1")
 			hint = "Choose a letter · jk / Esc goes back"
 		case wsMove:
 			label = "Move to another group"
@@ -229,34 +247,43 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 				if i == v.aux {
 					mark = "› "
 				}
-				put(x+3, y+3+i-first, clipStatus(mark+available[i].Name, width-6), "1;7")
+				style := ""
+				if i == v.aux {
+					style = v.theme.selected()
+				}
+				put(x+3, y+3+i-first, clipStatus(mark+available[i].Name, width-6), style)
 			}
 			if len(available) == 0 {
-				put(x+3, y+4, "Create another group first.", "7")
+				put(x+3, y+4, "Create another group first.", "")
 			}
 			hint = "j/k choose · Enter moves it · jk / Esc goes back"
 		case wsHelp:
 			label = "Your workspace"
-			help := []string{"j/k  Move          Enter  Open / take control", "jk   Back one level     v  Pin / unpin live pane", "n    New           r      Rename", "m    Move terminal x      Close / remove", "jk   Back anywhere h      Show saved / archived work", "a    Outside agents / archive a group", "/    Search        :      Command", "q    Quit browser; work keeps running"}
+			help := []string{"j/k  Move       Enter  Open", "jk   Back       v      Pin / unpin", "n    New        r      Rename", "m    Move       x      Close / remove", "h    Finished / archived work", "a    Outside agents / archive", "/    Search     :      Command", "q    Quit; work keeps running"}
 			for i, text := range help {
-				put(x+2, y+2+i, text, "7")
+				put(x+2, y+2+i, text, "")
 			}
 			hint = "jk, Esc, q or ? returns"
 		}
-		put(x+2, y+1, label, "1;7")
-		put(x+2, y+10, clipStatus(hint, width-4), "7")
+		put(x+2, y+1, label, "1;36")
+		put(x+2, y+10, clipStatus(hint, width-4), "2")
 		if v.mode == wsNewGroup || v.mode == wsRun || v.mode == wsRename || v.mode == wsConfirm || v.mode == wsResume {
-			put(x+2, y+7, "› "+v.text, "1;7")
-			fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[?25h", y+8, min(x+4+textWidth(v.text), cols))
+			text := workspaceInputTail(v.text, width-7)
+			put(x+2, y+7, "› "+text, "1")
+			fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[?25h", y+8, x+5+textWidth(text))
 		}
 	} else if v.mode == wsSearch || v.mode == wsCommand {
 		prefix := "/ "
+		hint := "Enter applies the filter · jk cancels"
 		if v.mode == wsCommand {
 			prefix = ": "
+			hint = "Enter runs the command · jk cancels"
 		}
-		put(1, rows-1, strings.Repeat(" ", max(cols-2, 0)), "7")
-		put(2, rows-1, prefix+v.text, "1;7")
-		fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[?25h", rows, min(3+textWidth(prefix+v.text), cols))
+		put(2, rows-4, clipStatus(hint, cols-4), "2")
+		text := workspaceInputTail(v.text, cols-7)
+		put(1, rows-2, strings.Repeat(" ", max(cols-2, 0)), v.theme.onSurface(""))
+		put(2, rows-2, prefix+text, v.theme.onSurface("1"))
+		fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[?25h", rows-1, 3+textWidth(prefix+text))
 	}
 	out.WriteString("\x1b[0m\x1b[?7h\x1b[?2026l")
 	out.WriteString(workspaceBrand(cols, rows, v.brandPhase, v.color))

@@ -54,7 +54,7 @@ func (v *workspaceView) togglePin(id terminal.ID) {
 		v.pins = map[terminal.GroupID][]terminal.ID{}
 	}
 	v.pins[v.group] = append(v.pins[v.group], id)
-	v.notice = "Pane pinned. Select another terminal to watch both."
+	v.notice = "Pane pinned."
 }
 func (v *workspaceView) enterGroup(id terminal.GroupID) {
 	if v.group == "" {

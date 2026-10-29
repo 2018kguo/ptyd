@@ -46,7 +46,9 @@ press **v** to pin a terminal beside the list. Pin up to three to follow several
 agents at once while moving between them. Pins survive leaving and reopening
 the browser. Previews keep
 application colors and backgrounds; smaller windows stack the preview below
-the list. Finished screens stay available without being restarted.
+the list. Previews keep application footers and input boxes in view. Pane edges
+show when rows above or columns to the right are hidden; Enter opens the terminal.
+Finished screens stay available without being restarted.
 
 Use `ptyd ls --plain` for a table that exits, or `--json` for structured output.
 Piped output stays plain text. Older ungrouped terminals live in

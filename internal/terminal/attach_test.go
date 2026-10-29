@@ -119,52 +119,107 @@ func TestTypingClientGetsItsSize(t *testing.T) {
 	}
 }
 
-// Bulk output to a busy client is sent at most once per Coalesce, in one
-// piece; a keystroke's echo is not held back, and a quiet client gives
-// back a large buffer.
+// Done is evaluated after Read arms its timer. This gives the test a barrier
+// before it expires the timer or pushes output, without scheduler deadlines.
+type attachmentReadBarrier struct {
+	context.Context
+	waiting chan struct{}
+}
+
+func (c *attachmentReadBarrier) Done() <-chan struct{} {
+	select {
+	case c.waiting <- struct{}{}:
+	default:
+	}
+	return c.Context.Done()
+}
+
+// Bulk output waits for the coalescing timer, echoes skip it, a full queue
+// wakes it early, and an idle client releases its large buffer.
 func TestAttachCoalescesBulkOutput(t *testing.T) {
 	a := &attacher{wake: make(chan struct{}, 1)}
 	at := &Attachment{a: a}
-	ctx := context.Background()
+	t.Cleanup(func() {
+		if at.timer != nil {
+			at.timer.Stop()
+		}
+	})
 	bulk := bytes.Repeat([]byte("x"), 300<<10)
-
-	a.push(bulk)
-	start := time.Now()
-	if b, _ := at.Read(ctx); len(b) != len(bulk) || time.Since(start) > Coalesce*3/4 {
-		t.Fatalf("first output after a quiet spell: %d bytes after %v", len(b), time.Since(start))
+	ready, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelReady()
+	// Quiet output and echoes must never arm the coalescing timer.
+	a.push(bulk[:2048])
+	if b, err := at.Read(ready); len(b) != 2048 || err != nil || at.timer != nil {
+		t.Fatalf("first output after a quiet spell was held: %d bytes, %v", len(b), err)
 	}
+	// Keep the coalescing deadline far ahead so scheduling cannot expire it.
+	at.sent = time.Now().Add(time.Hour)
 	a.push([]byte("e"))
-	if b, _ := at.Read(ctx); string(b) != "e" || time.Since(start) > Coalesce*3/4 {
-		t.Fatalf("echo held back: %q after %v", b, time.Since(start))
+	if b, err := at.Read(ready); string(b) != "e" || err != nil || at.timer != nil {
+		t.Fatalf("echo was held: %q, %v", b, err)
 	}
-	sent := time.Now()
+	at.sent = time.Now().Add(time.Hour)
+	a.push(bulk)
+	if b, err := at.Read(ready); len(b) != len(bulk) || err != nil || at.timer != nil {
+		t.Fatalf("already full queue was held: %d bytes, %v", len(b), err)
+	}
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	startRead := func() (*attachmentReadBarrier, <-chan readResult, context.CancelFunc) {
+		parent, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		finished := make(chan struct{})
+		t.Cleanup(func() { cancel(); <-finished })
+		ctx := &attachmentReadBarrier{Context: parent, waiting: make(chan struct{}, 1)}
+		done := make(chan readResult, 1)
+		go func() {
+			defer close(finished)
+			b, err := at.Read(ctx)
+			done <- readResult{b, err}
+		}()
+		return ctx, done, cancel
+	}
+	wait := func(ctx *attachmentReadBarrier, done <-chan readResult) {
+		t.Helper()
+		select {
+		case <-ctx.waiting:
+		case result := <-done:
+			t.Fatalf("read returned before waiting: %d bytes, %v", len(result.data), result.err)
+		case <-ctx.Context.Done():
+			t.Fatal("read did not reach its wait")
+		}
+	}
+	at.sent = time.Now().Add(time.Hour)
 	a.push(bulk[:2048])
-	go func() {
-		time.Sleep(Coalesce / 4)
-		a.push(bulk[:2048])
-	}()
-	b, _ := at.Read(ctx)
-	if len(b) != 4096 || time.Since(sent) < Coalesce*3/4 {
-		t.Fatalf("bulk output: %d bytes after %v, want 4096 after about %v", len(b), time.Since(sent), Coalesce)
-	}
-
-	// Held output that reaches holdMax is sent at once, so holding never
-	// overflows the queue.
-	sent = time.Now()
+	ctx, done, _ := startRead()
+	wait(ctx, done)
 	a.push(bulk[:2048])
-	go func() {
-		time.Sleep(Coalesce / 8)
-		a.push(bulk)
-	}()
-	if b, _ := at.Read(ctx); len(b) != 2048+len(bulk) || time.Since(sent) > Coalesce*3/4 {
-		t.Fatalf("held output past holdMax: %d bytes after %v", len(b), time.Since(sent))
+	at.timer.Reset(0)
+	if result := <-done; result.err != nil || len(result.data) != 4096 {
+		t.Fatalf("timer did not release coalesced output: %d bytes, %v", len(result.data), result.err)
 	}
-
-	// Quiet: after a second the large buffer is released.
-	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-	defer cancel()
-	if _, err := at.Read(ctx); err == nil {
-		t.Fatal("read without output")
+	// Reaching holdMax must wake the reader without the timer expiring.
+	at.sent = time.Now().Add(time.Hour)
+	a.push(bulk[:2048])
+	ctx, done, _ = startRead()
+	wait(ctx, done)
+	a.push(bulk)
+	if result := <-done; result.err != nil || len(result.data) != 2048+len(bulk) {
+		t.Fatalf("full queue did not release held output: %d bytes, %v", len(result.data), result.err)
+	}
+	if !at.timer.Stop() {
+		t.Fatal("full queue waited for its timer")
+	}
+	// Expire the idle timer, then wait until Read has released the buffer
+	// and entered its next wait before canceling it.
+	ctx, done, cancel := startRead()
+	wait(ctx, done)
+	at.timer.Reset(0)
+	wait(ctx, done)
+	cancel()
+	if result := <-done; !errors.Is(result.err, context.Canceled) {
+		t.Fatalf("idle read did not wait for cancellation: %v", result.err)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()

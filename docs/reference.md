@@ -292,6 +292,16 @@ are visible. Previews do not resize the source terminal, attach a viewer or take
 keyboard control. An occupied terminal can be pinned while its human keeps control.
 Enter opens the selected terminal when control is available.
 
+Previews follow the last painted row, including app footers and input-box
+backgrounds below the cursor. When the source is larger than its pane, the bottom
+edge reports rows above the preview or painted columns hidden to the right.
+Empty space outside the pane does not count as hidden content. Previews crop
+the existing screen; opening a terminal gives the app the attached window's size.
+
+Selection and dialog backgrounds follow the viewing terminal's light or dark
+colors. The shortcut bar leaves an empty bottom row, and long prompt fields
+keep their end and caret visible inside the dialog.
+
 Pins are local presentation settings, saved per daemon address under
 `$XDG_STATE_HOME/ptyd` (default `~/.local/state/ptyd`) in an owner-only `view-*.json`
 file. They persist across browser restarts. `●` means running, `◉` human control,

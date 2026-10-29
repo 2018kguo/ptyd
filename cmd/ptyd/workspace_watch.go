@@ -23,7 +23,7 @@ func workspaceWatchPanel(out *strings.Builder, v workspaceView, r workspaceRect,
 		}
 		return
 	}
-	visible := min(len(panes), max(r.h/3, 1))
+	visible := min(len(panes), workspacePaneLimit(r.h))
 	if visible < len(panes) {
 		focused := -1
 		for i, p := range panes {
@@ -37,37 +37,60 @@ func workspaceWatchPanel(out *strings.Builder, v workspaceView, r workspaceRect,
 			panes = panes[:visible]
 		}
 	}
-	height := max(r.h/visible, 1)
 	for i, p := range panes {
-		y := r.y + i*height
-		focused := string(p.Row.ID) == v.selected
-		pinned := slices.Contains(v.watched(), p.Row.ID)
-		style := "2"
-		if focused {
-			style = "1;36"
-		} else if pinned {
-			style = "36"
-		}
-		if len(panes) > 1 {
-			put(r.x, y, strings.Repeat("─", max(r.w, 1)), "2")
-		}
-		put(r.x, y, clipStatus(workspacePaneLabel(p, pinned, focused), r.w), style)
-		h := height - 2
-		if h < 1 {
-			continue
-		}
-		if p.Screen != nil {
-			workspacePreviewLayer(out, p.Screen, workspaceRect{r.x, y + 2, r.w, h}, v.color, cols)
-		} else if p.Err != nil {
-			put(r.x, y+2, clipStatus("Preview unavailable: "+p.Err.Error(), r.w), "33")
-		} else {
-			put(r.x, y+2, "Loading live pane…", "2")
-		}
+		y := r.y + i*(r.h+1)/visible
+		height := (i+1)*(r.h+1)/visible - i*(r.h+1)/visible - 1
+		workspacePreviewPane(out, v, p, workspaceRect{r.x, y, r.w, height}, cols, put)
 	}
 }
+
+func workspacePaneLimit(height int) int { return max((height+1)/5, 1) }
+func workspacePreviewPane(out *strings.Builder, v workspaceView, p workspacePinnedPreview, box workspaceRect, cols int, put func(int, int, string, string)) {
+	focused := string(p.Row.ID) == v.selected
+	pinned := slices.Contains(v.watched(), p.Row.ID)
+	style := "2"
+	if focused {
+		style = "36"
+	}
+	workspaceBox(box, style, put)
+	put(box.x+2, box.y, clipStatus(" "+workspacePaneLabel(p, pinned, focused)+" ", box.w-4), "1;"+style)
+	padding := 1
+	if box.h >= 7 {
+		padding = 2
+	}
+	body := workspaceRect{box.x + 2, box.y + padding, box.w - 4, box.h - 2*padding}
+	if body.h < 1 {
+		return
+	}
+	first := 0
+	if p.Screen != nil {
+		first = workspacePreviewLayer(out, p.Screen, body, v.color, cols)
+	} else if p.Err != nil {
+		put(body.x, body.y, clipStatus("Preview unavailable: "+p.Err.Error(), body.w), "33")
+	} else {
+		put(body.x, body.y, clipStatus("Loading live pane…", body.w), "2")
+	}
+	label := "Live"
+	if p.Row.State != terminal.OverviewRunning {
+		label = "Saved screen"
+	}
+	if pinned {
+		label += " · ◆ pinned"
+	}
+	if p.Screen != nil {
+		if first > 0 {
+			label += fmt.Sprintf(" · ↑ %d rows above", first)
+		}
+		if hidden := workspacePreviewRight(p.Screen, body, first); hidden > 0 {
+			label += fmt.Sprintf(" · → %d cols hidden", hidden)
+		}
+	}
+	put(box.x+2, box.y+box.h-1, clipStatus(" "+label+" ", box.w-4), "2")
+}
+
 func workspaceWatchHeading(v workspaceView, r workspaceRect) string {
 	n := len(v.watchPanes())
-	visible := min(n, max(r.h/3, 1))
+	visible := min(n, workspacePaneLimit(r.h))
 	if n > visible {
 		return fmt.Sprintf(" WATCH PANES · %d/%d visible ", visible, n)
 	}

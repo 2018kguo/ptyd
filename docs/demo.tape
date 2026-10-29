@@ -25,6 +25,10 @@ Type "q"
 Sleep 600ms
 Type "ptyd attach website" Enter
 Sleep 1800ms
+Type "n"
+Sleep 900ms
+Type@40ms "jk"
+Sleep 500ms
 Type "v"
 Sleep 900ms
 Type "j"
