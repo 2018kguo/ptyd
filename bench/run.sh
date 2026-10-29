@@ -10,6 +10,7 @@ set -eu
 cd "$(dirname "$0")/.."
 COUNT=${COUNT:-10}
 BENCH=${BENCH:-.}
+BENCHTIME=${BENCHTIME:-1s}
 bin=$(mktemp -d)
 trap 'rm -rf "$bin"' EXIT
 # The emulator's own benchmarks live with it, in github.com/2018kguo/phosphor.
@@ -19,7 +20,7 @@ for p in $pkgs; do
 done
 for p in $pkgs; do
 	if (cd "$p" && "$bin/$(basename "$p").test" -test.run '^$' -test.bench "$BENCH" \
-		-test.benchmem -test.count "$COUNT" -test.timeout 60m) >"$bin/run.log"; then
+		-test.benchtime "$BENCHTIME" -test.benchmem -test.count "$COUNT" -test.timeout 60m) >"$bin/run.log"; then
 		sed '/^\[ptyd\]/d' "$bin/run.log"
 	else
 		status=$?

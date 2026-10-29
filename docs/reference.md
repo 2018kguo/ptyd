@@ -263,7 +263,11 @@ indicator by clearing, scrolling or switching screens. The client draws cells
 and preserves the app's cursor, keyboard modes, colors and links. Mouse events
 for the status row do not reach the app. The window/tab title identifies the
 view too. App title updates retain the ptyd prefix and hint;
-the previous title is restored on return. `ptyd term attach --raw` forwards terminal
+the previous title is restored on return. Matching transcript rows move within
+the app rectangle instead of repainting the whole screen. Keyboard and wheel
+responses can paint immediately; background output batches at up to 120 paints
+per second, and idle views do not poll for redraws.
+`ptyd term attach --raw` forwards terminal
 output directly without reserving a row; piped output remains raw too. The title is a view label; it does not verify
 the current conversation after navigation inside an agent.
 
