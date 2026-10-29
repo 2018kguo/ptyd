@@ -12,6 +12,10 @@ go test -race ./...
 CLI tests start real PTYs and exercise daemon crashes. When testing in
 Docker, use `--init` so orphaned test children are reaped.
 
+Output coalescing checks control timer expiry and queue wakeups directly.
+They verify which event releases output without depending on millisecond
+scheduling deadlines on a shared runner.
+
 - `cmd/ptyd`: group workspace, CLI, attach behavior and real-PTY end-to-end tests.
 - `internal/terminal`: groups, session lifecycle, retained output, watches and persistence.
 - `internal/api`, `internal/client`: HTTP server and client.
