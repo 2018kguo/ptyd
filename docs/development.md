@@ -42,7 +42,7 @@ PTYs. They cover exact identity, partial discovery, concurrent imports,
 process-generation changes, foreground handoff refusal, persistence, native
 worker survival after detach and workspace cancellation/typeahead. Input tests
 check `jk` across read boundaries, key events, literal-input timeouts, paste
-frames and terminal control sequences. Workspace tests exercise create, launch, preview, watch, human control,
+frames and terminal control sequences. Workspace tests exercise create, launch, live panes, human control,
 detach and reattach in real PTYs. Group tests cover inheritance after moves,
 legacy migration, archives, deletion retries and concurrent lifecycle changes. History tests keep completed records available inside groups and saved
 Inbox records behind the history toggle. Short-window tests render the selected row
@@ -80,6 +80,11 @@ verify colored Unicode cells stay inside the preview rectangle, mixed Unicode mo
 survive; app control sequences do not escape into the browser, and previewing leaves source size,
 process identity and human control unchanged. Piped, JSON and `--plain` output
 remain snapshots.
+
+Pin tests follow multiple live terminals across selection changes and browser
+restarts without claiming control or resizing them. Back-navigation tests cover
+prompts, attachments, repeated chords and late launch responses. Header animation
+checks compare every cell outside its reserved rectangle.
 
 The README demo is reproducible with `vhs docs/demo.tape`. Its setup creates
 disposable local terminals, uses an ephemeral port, and removes its

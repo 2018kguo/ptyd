@@ -233,9 +233,10 @@ write can submit a command twice.
 
 ## Attach
 
-Type `j` then `k` within 200 ms to return from a terminal. Inside a workspace,
-this returns to its group. Standalone `term attach`, `term new` and `term import`
-return to your shell. A lone `j` waits up to 200 ms for `k`;
+Type `j` then `k` within 200 ms to go back one level: terminal → group →
+groups → shell. In menus and prompts it dismisses the current overlay.
+Standalone `term attach`, `term new` and `term import` return to your shell.
+Inside an attached program, a lone `j` waits up to 200 ms for `k`;
 to send literal `jk`, pause between the letters or use bracketed paste.
 Bracketed-paste frames pass through unchanged. Unframed pasted input is
 indistinguishable from typing and follows the same shortcut rule. Piped
@@ -251,7 +252,7 @@ workspace, saved screens and newly exited frontends stay open until `jk`. Furthe
 keystrokes stay local after output ends; the footer changes to “finished.”
 
 Human TTY attachments reserve the bottom row for the session name and
-`jk: return`. The app receives one fewer PTY row and cannot draw over this
+`jk: back`. The app receives one fewer PTY row and cannot draw over this
 indicator by clearing, scrolling or switching screens. The client draws cells
 and preserves the app's cursor, keyboard modes, colors and links. Mouse events
 for the status row do not reach the app. The window/tab title identifies the
@@ -266,7 +267,7 @@ the current conversation after navigation inside an agent.
 |---|---|
 | `j/k`, arrows; `0/G` | Move; first/last item. |
 | Enter, `i` | Open a group or take keyboard control of a terminal. |
-| `v` | Watch a terminal read-only. An occupied human view also opens read-only. |
+| `v` | Pin/unpin a live terminal pane beside the group list; up to three pins per group. |
 | `n` | Create a group, or launch Codex (`c`), Claude (`a`), shell (`s`) or a custom command (`r`). |
 | `r` | Rename the selected group or terminal. |
 | `m` | Move a terminal to another unarchived group. |
@@ -274,15 +275,29 @@ the current conversation after navigation inside an agent.
 | `R` | Relaunch an ended terminal; imported views undergo fresh native validation. |
 | `a` | Archive/unarchive a group, or toggle outside-agent discovery inside a group. |
 | `h` | Show archived/saved-only groups; inside a group, toggle finished terminals. |
-| `g`, `:groups` | Return to your groups. |
-| `/` | Search as you type; Enter or Escape leaves the search field. |
+| Quick `jk`, Escape | Go back one level; dismiss a menu or cancel a prompt first. |
+| `:groups` | Return directly to your groups. |
+| `/` | Search as you type; Enter keeps the filter, `jk` or Escape restores the previous filter. |
 | `:b name`, `:open name` | Open by id, unique name, number or prefix within the shown rows; ambiguous names are refused. |
 | `:run command` | Run a custom command through your shell in the current group. |
 | `:new`, `:ls` | Open creation controls; clear search. |
-| `?` | Show controls; `q`, `?` or Escape returns. |
+| `:motion` | Toggle the decorative header animation. `PTYD_REDUCED_MOTION=1` starts with it off. |
+| `?` | Show controls; `jk`, Escape, `q` or `?` returns. |
 | `q`, `:q`, `:detach` | Leave the workspace; work keeps running. |
 
-Escape cancels a prompt. Pasted text can edit prompts but cannot execute
+Pinned panes keep refreshing while selection and search change. The selected
+terminal also gets a preview unless it is already pinned. Narrow windows stack
+panes below the list; if there is too little room, the heading reports how many
+are visible. Previews do not resize the source terminal, attach a viewer or take
+keyboard control. An occupied terminal can be pinned while its human keeps control.
+Enter opens the selected terminal when control is available.
+
+Pins are local presentation settings, saved per daemon address under
+`$XDG_STATE_HOME/ptyd` (default `~/.local/state/ptyd`) in an owner-only `view-*.json`
+file. They persist across browser restarts. `●` means running, `◉` human control,
+`◇` saved, `✓` successful exit, `!` attention or failure, and `◆` pinned.
+
+In the browser, a lone `j` moves immediately. Pasted text can edit prompts but cannot execute
 commands or move the selection. Custom commands run through the caller's shell
 with `-lc`; they use restore `none`. Built-in agent and shell launches use
 restore `auto`. Native stopped conversations require typing `resume` before

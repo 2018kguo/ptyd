@@ -58,14 +58,17 @@ func TestWorkspaceCreateLaunchDetachAndReattach(t *testing.T) {
 	}
 	pid, id := terms[0].PID, terms[0].ID
 	w.keys("v")
-	w.waitText("viewing")
-	w.keys("printf SHOULD_NOT_BE_SENT\r")
-	w.keys("jk")
-	w.waitText("Returned to your workspace.")
+	w.waitText("Pane pinned.")
+	w.waitText("WATCH PANES")
 	var screen terminal.Screen
 	d.do("GET", "/terminals/"+string(id)+"/screen", nil, &screen)
-	if strings.Contains(strings.Join(screen.Lines, "\n"), "SHOULD_NOT_BE_SENT") {
-		t.Fatal("watcher typed into terminal")
+	if screen.Cols != 120 || screen.Rows != 27 {
+		t.Fatal("pinning resized the source")
+	}
+	var watching terminal.Info
+	d.do("GET", "/terminals/"+string(id), nil, &watching)
+	if watching.Attached != 0 || watching.HumanControl {
+		t.Fatal("pinning claimed the terminal")
 	}
 	w.keys("q")
 	if code := w.waitExit(); code != 0 {
@@ -536,7 +539,7 @@ func TestWorkspacePreviewFrameKeepsChromeAndSourceState(t *testing.T) {
 		v := workspaceView{group: "work", selected: "preview", color: true,
 			groups:   []terminal.GroupSummary{{Group: terminal.Group{ID: "work", Name: "work"}, Running: 1, Terminals: 1}},
 			rows:     []terminal.SessionSummary{{ID: "preview", Name: "preview", State: terminal.OverviewRunning}},
-			snapshot: &workspaceSnapshot{PreviewID: "preview"},
+			snapshot: &workspaceSnapshot{Query: workspaceQuery{Group: "work"}, PreviewID: "preview"},
 		}
 		chrome := phosphor.New(cols, rows)
 		chrome.Write([]byte(workspaceFrame(v, cols, rows)))

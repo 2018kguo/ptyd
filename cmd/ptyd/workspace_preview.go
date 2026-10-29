@@ -52,13 +52,13 @@ func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put fu
 			saved = g.Terminals
 		}
 	}
-	put(2, 2, "Choose a group. Preview its work before opening it.", "2")
+	put(2, 2, clipStatus("Choose a group. Preview its work before opening it.", cols-workspaceBrandReserve(cols)-4), "2")
 	summary := fmt.Sprintf("%s · %d running", workspaceCount(len(gs), "group"), running)
 	if attention > 0 {
 		summary += fmt.Sprintf(" · %d attention", attention)
 	}
 	if cols >= 96 {
-		put(max(cols-textWidth(summary)-3, 30), 1, summary, "36")
+		put(max(cols-textWidth(summary)-workspaceBrandReserve(cols)-3, 30), 1, summary, "36")
 	} else {
 		put(2, 3, summary, "36")
 	}
@@ -100,7 +100,7 @@ func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put fu
 		if g.Archived {
 			name += " · archived"
 		}
-		put(2, y, statusCell(mark+name, max(left-5, 1)), style)
+		put(2, y, statusCell(mark+workspaceGroupIcon(g)+" "+name, max(left-5, 1)), style)
 		detail := fmt.Sprintf("%d running · %s", g.Running, workspaceCount(g.Terminals, "terminal"))
 		state := "2"
 		if g.Running > 0 {
@@ -117,7 +117,7 @@ func workspaceHome(out *strings.Builder, v workspaceView, cols, rows int, put fu
 	}
 	selected := gs[min(v.index(), len(gs)-1)]
 	put(2, rows-4, friendlyCWD(selected.CWD), "2")
-	put(2, rows-3, "Enter opens this group · r rename · a archive · x remove", "2")
+	put(2, rows-3, "Enter opens · jk back · r rename · a archive · x remove", "2")
 	x, y, w, h := left+3, 6, cols-left-6, rows-12
 	if left < cols {
 		for yy := 5; yy < rows-5; yy++ {

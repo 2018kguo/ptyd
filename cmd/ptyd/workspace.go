@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -42,6 +43,7 @@ type workspaceQuery struct {
 	Search   string
 	History  bool
 	Outside  bool
+	Watches  []terminal.ID
 }
 type workspaceSnapshot struct {
 	Query      workspaceQuery
@@ -50,6 +52,7 @@ type workspaceSnapshot struct {
 	Preview    *phosphor.Terminal
 	PreviewErr error
 	PreviewID  string
+	Pinned     []workspacePinnedPreview
 	Err        error
 }
 type workspaceView struct {
@@ -65,6 +68,11 @@ type workspaceView struct {
 	target                  string
 	aux                     int
 	busy                    bool
+	home                    workspaceHomeState
+	pins                    map[terminal.GroupID][]terminal.ID
+	searchBefore            string
+	motion                  bool
+	brandPhase              int
 }
 
 func (v workspaceView) groupInfo() (terminal.GroupSummary, bool) {
@@ -124,7 +132,7 @@ func (v workspaceView) row() (terminal.SessionSummary, bool) {
 	return terminal.SessionSummary{}, false
 }
 func (v *workspaceView) refresh(s workspaceSnapshot) {
-	if s.Query.Group != v.group || s.Query.Search != v.query || s.Query.History != v.history || s.Query.Outside != v.outside {
+	if !s.Query.matches(*v) {
 		return
 	}
 	if s.Err != nil {
@@ -134,6 +142,11 @@ func (v *workspaceView) refresh(s workspaceSnapshot) {
 	v.err = nil
 	v.groups = s.Groups
 	v.snapshot = &s
+	for _, p := range s.Pinned {
+		if p.Removed {
+			v.unpin(p.Row.ID)
+		}
+	}
 	if v.group != "" {
 		v.rows = s.Overview.Sessions
 	}
@@ -149,10 +162,10 @@ func (v *workspaceView) refresh(s workspaceSnapshot) {
 	}
 }
 func (q workspaceQuery) matches(v workspaceView) bool {
-	return q.Group == v.group && q.Search == v.query && q.History == v.history && q.Outside == v.outside
+	return q.Group == v.group && q.Search == v.query && q.History == v.history && q.Outside == v.outside && slices.Equal(q.Watches, v.watched())
 }
 func queueWorkspace(ch chan workspaceQuery, v workspaceView) {
-	q := workspaceQuery{Group: v.group, Selected: v.selected, Search: v.query, History: v.history, Outside: v.outside}
+	q := workspaceQuery{Group: v.group, Selected: v.selected, Search: v.query, History: v.history, Outside: v.outside, Watches: append([]terminal.ID(nil), v.watched()...)}
 	select {
 	case <-ch:
 	default:
@@ -207,11 +220,14 @@ func refreshWorkspace(ctx context.Context, c client.API, queries <-chan workspac
 					for _, r := range rows {
 						if (home || string(r.ID) == q.Selected) && r.External == nil && r.Local == nil {
 							s.PreviewID = string(r.ID)
-							s.Preview, s.PreviewErr = c.Preview(req, r.ID)
+							// Screens are fetched together below.
 							break
 						}
 					}
 				}
+			}
+			if s.Err == nil {
+				fetchWorkspaceScreens(req, c, &s)
 			}
 			cancel()
 			select {
@@ -240,11 +256,13 @@ type workspaceKey struct {
 	Direction int
 	Escape    bool
 	Paste     bool
+	Back      bool
 }
 type workspaceInput struct {
 	pending []byte
 	paste   bool
 	since   time.Time
+	lastJ   time.Time
 }
 
 func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
@@ -253,6 +271,7 @@ func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
 	if len(p.pending) > 65536 {
 		p.pending = nil
 		p.paste = false
+		p.lastJ = time.Time{}
 		return out
 	}
 	for len(p.pending) > 0 {
@@ -280,6 +299,7 @@ func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
 			continue
 		}
 		if p.pending[0] == 0x1b {
+			p.lastJ = time.Time{}
 			if len(p.pending) == 1 {
 				if p.since.IsZero() {
 					p.since = now
@@ -307,7 +327,16 @@ func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
 		}
 		r, n := utf8.DecodeRune(p.pending)
 		p.pending = p.pending[n:]
-		out = append(out, workspaceKey{Rune: r})
+		if r == 'k' && !p.lastJ.IsZero() && now.Sub(p.lastJ) < client.BackKeyWindow {
+			out = append(out, workspaceKey{Back: true})
+			p.lastJ = time.Time{}
+		} else {
+			p.lastJ = time.Time{}
+			if r == 'j' {
+				p.lastJ = now
+			}
+			out = append(out, workspaceKey{Rune: r})
+		}
 	}
 	return out
 }
@@ -321,6 +350,7 @@ func (p *workspaceInput) expire(now time.Time) []workspaceKey {
 }
 
 type workspaceOperation struct {
+	Epoch    uint64
 	Group    *terminal.Group
 	Terminal *terminal.Info
 	Notice   string
@@ -351,7 +381,8 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	defer func() { input.Close() }()
 	_, _ = io.WriteString(out, "\x1b[22;0t"+statusEnter)
 	history := start != "" || (len(showHistory) > 0 && showHistory[0])
-	v := workspaceView{history: history, group: start, selected: string(initial), color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
+	layouts := loadWorkspaceLayouts(c.Addr)
+	v := workspaceView{pins: layouts.pins, motion: os.Getenv("PTYD_REDUCED_MOTION") == "", notice: layouts.notice, history: history, group: start, selected: string(initial), color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
 	queries := make(chan workspaceQuery, 1)
 	updates := make(chan workspaceSnapshot, 1)
 	go refreshWorkspace(ctx, c, queries, updates)
@@ -364,20 +395,30 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	var parser workspaceInput
 	ops := make(chan workspaceOperation, 1)
 	var operationCancel context.CancelFunc
+	var operationEpoch uint64
 	defer func() {
 		if operationCancel != nil {
 			operationCancel()
 		}
 	}()
 	var lastFrame string
+	var frameCols, frameRows int
+	nextMotion := time.Now().Add(workspaceMotionInterval)
 	draw := func() {
 		cols, rows, e := term.GetSize(int(out.Fd()))
 		if e != nil {
 			cols, rows = 80, 24
 		}
-		frame := workspaceFrame(v, cols, rows)
+		frameCols, frameRows = cols, rows
+		stable := v
+		stable.brandPhase = 0
+		frame := workspaceFrame(stable, cols, rows)
 		if frame != lastFrame {
-			_, _ = io.WriteString(out, frame)
+			if v.brandPhase != 0 {
+				_, _ = io.WriteString(out, workspaceFrame(v, cols, rows))
+			} else {
+				_, _ = io.WriteString(out, frame)
+			}
 			lastFrame = frame
 		}
 	}
@@ -385,12 +426,15 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		if v.busy {
 			return
 		}
+		operationEpoch++
+		epoch := operationEpoch
 		v.busy = true
-		v.notice = "Working… q cancels the view."
+		v.notice = "Working… jk goes back. Started work stays in its group."
 		opCtx, stop := context.WithTimeout(ctx, 30*time.Second)
 		operationCancel = stop
 		go func() {
 			r := fn(opCtx)
+			r.Epoch = epoch
 			select {
 			case ops <- r:
 			case <-ctx.Done():
@@ -438,7 +482,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		})
 	}
 	attachGeneration := 0
-	attachTerminal := func(info terminal.Info, watch bool) error {
+	attachTerminal := func(info terminal.Info) error {
 		attachGeneration++
 		lastFrame = ""
 		input.Close()
@@ -452,7 +496,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		}
 		result, attachErr := client.Attach(ctx, client.Options{
 			Addr: c.Addr, Token: c.Token, ID: string(info.ID), Label: label,
-			Human: true, Hold: true, ReadOnly: watch || info.HumanControl || info.Status != terminal.StatusRunning,
+			Human: true, Hold: true, ReadOnly: info.Status != terminal.StatusRunning,
 		}, in, out, resize)
 		var unread []byte
 		if result.Detached && attachErr == nil {
@@ -490,9 +534,6 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	autoOpen := string(initial)
 	var handle func(workspaceKey) (bool, error)
 	handle = func(k workspaceKey) (bool, error) {
-		if cols, rows, e := term.GetSize(int(out.Fd())); e == nil && (cols < 40 || rows < 16) {
-			return !k.Paste && (k.Rune == 'q' || k.Rune == 3), nil
-		}
 		if k.Paste {
 			switch v.mode {
 			case wsSearch, wsCommand, wsNewGroup, wsRun, wsRename, wsConfirm, wsResume:
@@ -502,10 +543,22 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			}
 			return false, nil
 		}
-		if k.Escape {
-			v.mode = wsNormal
-			v.text = ""
-			return false, nil
+		if k.Back || k.Escape {
+			if v.busy {
+				if operationCancel != nil {
+					operationCancel()
+					operationCancel = nil
+				}
+				operationEpoch++
+				v.busy = false
+				v.notice = "Stopped waiting. Started work stays in its group."
+			}
+			quit := v.back()
+			queueWorkspace(queries, v)
+			return quit, nil
+		}
+		if cols, rows, e := term.GetSize(int(out.Fd())); e == nil && (cols < 40 || rows < 16) {
+			return k.Rune == 'q' || k.Rune == 3, nil
 		}
 		if v.busy {
 			return k.Rune == 'q' || k.Rune == 3, nil
@@ -654,10 +707,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 				case "q", "quit", "detach":
 					return true, nil
 				case "groups":
-					v.history, v.outside = false, false
-					v.group = ""
-					v.query = ""
-					v.selected = ""
+					v.toGroups()
 					queueWorkspace(queries, v)
 				case "new":
 					if v.group == "" {
@@ -685,11 +735,20 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 						v.selected = string(selected.ID)
 						return handle(workspaceKey{Rune: '\r'})
 					}
+				case "motion":
+					v.motion = !v.motion
+					if !v.motion {
+						v.brandPhase = 0
+					}
+					v.notice = "Motion on."
+					if !v.motion {
+						v.notice = "Motion off."
+					}
 				case "ls":
 					v.query = ""
 					queueWorkspace(queries, v)
 				default:
-					v.notice = "Commands: groups, new, run command, b name, ls, q."
+					v.notice = "Commands: groups, new, run command, b name, ls, motion, q."
 				}
 			}
 			return false, nil
@@ -719,6 +778,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			v.move(-1 << 30)
 			queueWorkspace(queries, v)
 		case '/':
+			v.searchBefore = v.query
 			v.mode = wsSearch
 			v.text = v.query
 		case ':':
@@ -728,13 +788,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			v.mode = wsHelp
 		case 'q':
 			return true, nil
-		case 'g':
-			v.group = ""
-			v.query = ""
-			v.selected = ""
-			v.outside = false
-			v.history = false
-			queueWorkspace(queries, v)
+
 		case 'h':
 			v.history = !v.history
 			queueWorkspace(queries, v)
@@ -801,19 +855,24 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 					return workspaceOperation{Terminal: &t, Err: e}
 				})
 			}
-		case '\r', '\n', 'i', 'v':
+		case 'v':
+			if v.group != "" {
+				if r, ok := v.row(); ok && r.External == nil && r.Local == nil {
+					v.togglePin(r.ID)
+					if e := layouts.save(v.group, v.watched()); e != nil {
+						v.notice = e.Error()
+					}
+					queueWorkspace(queries, v)
+				}
+			}
+		case '\r', '\n', 'i':
 			if v.err != nil || v.snapshot == nil || !v.snapshot.Query.matches(v) {
 				v.notice = "Wait for this view to refresh before opening it."
 				return false, nil
 			}
 			if v.group == "" {
 				if v.selected != "" {
-					v.group = terminal.GroupID(v.selected)
-					v.rows = nil
-					v.snapshot = nil
-					v.selected = ""
-					v.query = ""
-					v.history = true
+					v.enterGroup(terminal.GroupID(v.selected))
 					queueWorkspace(queries, v)
 				}
 				return false, nil
@@ -837,12 +896,16 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 				}
 				return false, nil
 			}
+			if r.HumanControl {
+				v.notice = "Another person has control. Press v to pin a live pane."
+				return false, nil
+			}
 			return false, attachTerminal(terminal.Info{ID: r.ID, Name: r.Name, GroupID: r.GroupID, HumanControl: r.HumanControl, Status: func() terminal.Status {
 				if r.State == terminal.OverviewRunning {
 					return terminal.StatusRunning
 				}
 				return terminal.StatusExited
-			}()}, k.Rune == 'v')
+			}()})
 		}
 		return false, nil
 	}
@@ -855,7 +918,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		case result := <-updates:
 			before := v.selected
 			v.refresh(result)
-			if before != v.selected {
+			if before != v.selected || !result.Query.matches(v) {
 				queueWorkspace(queries, v)
 			}
 			if autoOpen != "" && v.snapshot != nil && v.err == nil {
@@ -874,6 +937,9 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			draw()
 			continue
 		case result := <-ops:
+			if result.Epoch != operationEpoch {
+				continue
+			}
 			if operationCancel != nil {
 				operationCancel()
 				operationCancel = nil
@@ -883,7 +949,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			if result.Err != nil {
 				v.notice = result.Err.Error()
 			} else if result.Group != nil {
-				v.group = result.Group.ID
+				v.enterGroup(result.Group.ID)
 				v.groups = append(v.groups, terminal.GroupSummary{Group: *result.Group})
 				v.rows = nil
 				v.snapshot = nil
@@ -895,7 +961,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 				v.group = t.GroupID
 				v.outside = false
 				v.selected = string(t.ID)
-				if err = attachTerminal(t, false); err != nil {
+				if err = attachTerminal(t); err != nil {
 					return err
 				}
 			}
@@ -905,8 +971,13 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		case <-resize:
 			draw()
 			continue
-		case <-tick.C:
-			keys = parser.expire(time.Now())
+		case now := <-tick.C:
+			if v.motion && !now.Before(nextMotion) {
+				v.brandPhase = (v.brandPhase + 1) % 32
+				nextMotion = now.Add(workspaceMotionInterval)
+				_, _ = io.WriteString(out, "\x1b[?2026h"+workspaceBrand(frameCols, frameRows, v.brandPhase, v.color)+"\x1b[?2026l")
+			}
+			keys = parser.expire(now)
 			if len(keys) == 0 {
 				continue
 			}
@@ -916,8 +987,14 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			}
 			keys = parser.feed(chunk, time.Now())
 		}
+		backOnly := false
 		for _, k := range keys {
-			generation, group := attachGeneration, v.group
+			// A repeated back chord may cross several levels in one read. Other
+			// queued keys must not activate commands in the newly opened view.
+			if backOnly && !k.Back && !k.Escape {
+				continue
+			}
+			generation, group, mode := attachGeneration, v.group, v.mode
 			quit, e := handle(k)
 			if v.mode == wsSearch && v.query != v.text {
 				v.query = v.text
@@ -929,8 +1006,17 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			if quit {
 				return nil
 			}
-			if v.busy || generation != attachGeneration || group != v.group {
+			if generation != attachGeneration {
 				break
+			}
+			if (group != v.group || mode != v.mode) && (k.Back || k.Escape) {
+				backOnly = true
+			}
+			if group != v.group {
+				if !k.Back && !k.Escape {
+					parser.lastJ = time.Time{}
+					break
+				}
 			}
 		}
 		draw()

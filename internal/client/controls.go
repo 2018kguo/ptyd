@@ -12,7 +12,8 @@ import (
 const DetachKeyHelp = "jk (j, then k quickly)"
 
 const (
-	detachWindow   = 200 * time.Millisecond
+	BackKeyWindow  = 200 * time.Millisecond
+	detachWindow   = BackKeyWindow
 	sequenceWindow = 40 * time.Millisecond
 	maxKeySequence = 128
 )

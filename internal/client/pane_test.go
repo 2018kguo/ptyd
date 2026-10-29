@@ -39,7 +39,7 @@ func TestPaneKeepsStatusOutsideApp(t *testing.T) {
 				host.Write(wire.Bytes())
 				wire.Reset()
 			}
-			if text := host.Line(23); !strings.Contains(text, "attached") || !strings.Contains(text, "Codex · Review colors") || !strings.Contains(text, "jk: return") {
+			if text := host.Line(23); !strings.Contains(text, "attached") || !strings.Contains(text, "Codex · Review colors") || !strings.Contains(text, "jk: back") {
 				t.Fatalf("status lost: %q", text)
 			}
 			for y := 0; y < 23; y++ {
@@ -81,7 +81,7 @@ func TestFramedAttachReservesRowAcrossResize(t *testing.T) {
 	eventually(t, "pane and background", func() bool {
 		u.mu.Lock()
 		defer u.mu.Unlock()
-		return strings.Contains(u.screen.Line(23), "attached") && strings.Contains(u.screen.Line(23), "jk: return") && u.screen.Cell(50, 0).Style.Bg == phosphor.RGBColor(48, 52, 60)
+		return strings.Contains(u.screen.Line(23), "attached") && strings.Contains(u.screen.Line(23), "jk: back") && u.screen.Cell(50, 0).Style.Bg == phosphor.RGBColor(48, 52, 60)
 	})
 	eventually(t, "reserved row", func() bool { s, _ := mgr.Screen(info.ID, false); return s.Rows == 23 })
 	u.resize(t, 100, 30)
@@ -90,7 +90,7 @@ func TestFramedAttachReservesRowAcrossResize(t *testing.T) {
 	eventually(t, "visible footer after resize", func() bool {
 		u.mu.Lock()
 		defer u.mu.Unlock()
-		return strings.Contains(u.screen.Line(29), "jk: return")
+		return strings.Contains(u.screen.Line(29), "jk: back")
 	})
 	u.typeKeys(t, "jk")
 	select {
@@ -159,7 +159,7 @@ func TestInstalledCodexPaneComposer(t *testing.T) {
 				}
 			}
 		}
-		return blank >= 120 && strings.Contains(u.screen.Line(39), "Codex composer") && strings.Contains(u.screen.Line(39), "jk: return")
+		return blank >= 120 && strings.Contains(u.screen.Line(39), "Codex composer") && strings.Contains(u.screen.Line(39), "jk: back")
 	})
 	t.Logf("installed Codex pane retained %d blank background cells above a persistent status row", blank)
 	u.typeKeys(t, "jk")
@@ -235,7 +235,7 @@ func TestInstalledClaudePaneComposer(t *testing.T) {
 	eventually(t, "Claude banner and attached footer", func() bool {
 		u.mu.Lock()
 		defer u.mu.Unlock()
-		return strings.Contains(strings.Join(u.screen.Lines(), "\n"), "Claude Code") && strings.Contains(u.screen.Line(29), "jk: return")
+		return strings.Contains(strings.Join(u.screen.Lines(), "\n"), "Claude Code") && strings.Contains(u.screen.Line(29), "jk: back")
 	})
 	draft := "PTYD_CLAUDE_DRAFT 雪"
 	u.typeKeys(t, draft)
@@ -249,7 +249,7 @@ func TestInstalledClaudePaneComposer(t *testing.T) {
 		}
 		u.mu.Lock()
 		defer u.mu.Unlock()
-		if !strings.Contains(u.screen.Line(23), "Claude Code") || !strings.Contains(u.screen.Line(23), "jk: return") {
+		if !strings.Contains(u.screen.Line(23), "Claude Code") || !strings.Contains(u.screen.Line(23), "jk: back") {
 			return false
 		}
 		for y := 0; y < 23; y++ {
@@ -282,7 +282,7 @@ func TestPanePaletteAndNarrowStatus(t *testing.T) {
 		p.Write([]byte("\x1b]4;1;rgb:12/34/56\a\x1b]10;rgb:ab/cd/ef\a\x1b]11;rgb:28/2c/34\a\x1b[31mX\x1b[0mY"))
 		p.draw(false)
 		host.Write(wire.Bytes())
-		if !strings.Contains(host.Line(9), "jk: return") {
+		if !strings.Contains(host.Line(9), "jk: back") {
 			t.Fatalf("hint clipped at%d: %q", width, host.Line(9))
 		}
 		pal := host.Palette()
@@ -313,7 +313,7 @@ func TestPaneRetainedHistoryIsAvailableInHostScrollback(t *testing.T) {
 			t.Fatalf("missing line%d in host scrollback: %s", i, history)
 		}
 	}
-	if !strings.Contains(host.Line(7), "jk: return") {
+	if !strings.Contains(host.Line(7), "jk: back") {
 		t.Fatal("scrolling erased footer")
 	}
 }

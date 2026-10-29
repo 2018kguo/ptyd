@@ -3,8 +3,8 @@
 Output docs/demo.gif
 Set Shell bash
 Set FontSize 18
-Set Width 1200
-Set Height 760
+Set Width 1400
+Set Height 800
 Set Padding 20
 Set TypingSpeed 65ms
 Set Framerate 15
@@ -25,21 +25,23 @@ Type "q"
 Sleep 600ms
 Type "ptyd attach website" Enter
 Sleep 1800ms
-Type ":b build" Enter
+Type "v"
+Sleep 900ms
+Type "j"
+Sleep 900ms
+Type "v"
+Sleep 2500ms
+Type "k"
+Sleep 600ms
+Enter
 Sleep 1200ms
 Type "work keeps running" Enter
 Sleep 1200ms
 Type@40ms "jk"
 Sleep 1200ms
-Type "j"
-Sleep 1200ms
-Type "v"
-Sleep 1200ms
 Type@40ms "jk"
 Sleep 1200ms
-Type "g"
-Sleep 1200ms
-Type "q"
+Type@40ms "jk"
 Sleep 800ms
 Type "ptyd ls --plain" Enter
 Sleep 1500ms

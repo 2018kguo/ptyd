@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/2018kguo/ptyd/internal/terminal"
@@ -37,14 +38,14 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 	put(8, 1, "/  "+heading, "1")
 	title := "ptyd · " + heading
 	fmt.Fprintf(&out, "\x1b]2;%s\x1b\\", displayText(title, 160))
-	footer := "j/k preview   Enter open   n new group   / search   h history   ? help   q quit"
+	footer := "j/k preview   Enter open   n new group   / search   jk back   ? help   q quit"
 	if v.group != "" {
-		footer = "j/k select   Enter open   v watch   n new terminal   g groups   ? help   q detach"
+		footer = "j/k select   Enter open   v pin pane   n new   jk back   ? help   q quit"
 	}
 	if cols < 96 {
-		footer = "j/k move  Enter open  n new  ?  q quit"
+		footer = "j/k  Enter  n new  jk back  ?  q quit"
 		if v.group != "" {
-			footer = "j/k  Enter open  n new  g  ?  q quit"
+			footer = "j/k  Enter  v pin  jk back  ?  q quit"
 		}
 	}
 	if v.group == "" {
@@ -52,12 +53,12 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 	} else {
 		g, ok := v.groupInfo()
 		if ok {
-			put(2, 2, friendlyCWD(g.CWD), "2")
+			put(2, 2, clipStatus(friendlyCWD(g.CWD), cols-workspaceBrandReserve(cols)-4), "2")
 			summary := fmt.Sprintf("%d running  ·  %s", g.Running, workspaceCount(g.Terminals, "terminal"))
 			if g.Attention > 0 {
 				summary += fmt.Sprintf("  ·  %d need attention", g.Attention)
 			}
-			put(max(cols-textWidth(summary)-3, 2), 1, summary, "36")
+			put(max(cols-textWidth(summary)-workspaceBrandReserve(cols)-3, 2), 1, summary, "36")
 		}
 		if ok && g.Archived {
 			put(2, 3, "Archived · return to groups and press a to unarchive.", "33")
@@ -72,7 +73,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		line(4)
 		put(2, 4, " TERMINALS ", "1;36")
 		if left < cols {
-			put(left+2, 4, " LIVE PREVIEW · read only ", "2")
+			put(left+2, 4, workspaceWatchHeading(v, workspaceRect{left + 3, 6, cols - left - 6, rows - 12}), "2")
 		}
 		available := max(rows-10, 1)
 		if left == cols {
@@ -88,8 +89,11 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 				style = "1;7"
 				mark = "› "
 			}
-			status := workspaceTerminalState(r)
+			status := workspaceTerminalIcon(r) + " " + workspaceTerminalState(r)
 			name := sessionName(r)
+			if slices.Contains(v.watched(), r.ID) {
+				name = "◆ " + name
+			}
 			nameWidth := max(left-16, 5)
 			put(2, y, mark+statusCell(name, max(left-5, 1)), style)
 			put(2, y, mark+statusCell(name, nameWidth), style)
@@ -122,42 +126,23 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			for y := 5; y < rows-5; y++ {
 				put(left, y, "│", "2")
 			}
-			row, selected := v.row()
-			if selected {
-				put(left+3, 6, sessionName(row)+" · "+sessionApp(row), "1")
-				if v.snapshot != nil && v.snapshot.PreviewID == string(row.ID) && v.snapshot.Preview != nil {
-					workspacePreviewLayer(&preview, v.snapshot.Preview, workspaceRect{left + 3, 8, max(cols-left-6, 1), max(rows-16, 1)}, v.color, cols)
-				} else if v.snapshot != nil && v.snapshot.PreviewID == string(row.ID) && v.snapshot.PreviewErr != nil {
-					put(left+3, 9, "Preview unavailable: "+v.snapshot.PreviewErr.Error(), "33")
-				} else if row.Local != nil {
-					put(left+3, 9, "Use its original terminal.", "33")
-					put(left+3, 11, "Ptyd has not verified a live attach route.", "2")
-				} else if row.External != nil {
-					put(left+3, 9, sessionState(row), "33")
-					put(left+3, 11, row.External.Reason, "2")
-				} else {
-					put(left+3, 9, "Loading terminal preview…", "2")
-				}
-			} else {
-				put(left+3, 8, "Your work will appear here.", "2")
-			}
+			workspaceWatchPanel(&preview, v, workspaceRect{left + 3, 6, max(cols-left-6, 1), max(rows-12, 1)}, cols, put)
 		}
 		if left == cols {
 			y := 7 + available
-			put(2, y, " LIVE PREVIEW · read only ", "2")
-			if v.snapshot != nil && v.snapshot.PreviewID == v.selected && v.snapshot.Preview != nil {
-				workspacePreviewLayer(&preview, v.snapshot.Preview, workspaceRect{3, y + 2, cols - 6, max(rows-y-8, 1)}, v.color, cols)
-			}
+			area := workspaceRect{3, y + 1, cols - 6, max(rows-y-6, 1)}
+			put(2, y, workspaceWatchHeading(v, area), "2")
+			workspaceWatchPanel(&preview, v, area, cols, put)
 		}
 		if row, ok := v.row(); ok {
 			detail := sessionName(row) + " · " + sessionApp(row) + " · " + workspaceTerminalState(row)
 			put(2, rows-4, detail, "1")
-			hint := "Enter takes control · v watch · r rename · m move · x close"
+			hint := "Enter takes control · v pin/unpin pane · r rename · m move · x close"
 			if row.State != terminal.OverviewRunning && row.External == nil {
-				hint = "Enter views the saved screen · R relaunch · r rename · m move · x remove"
+				hint = "Enter opens saved screen · v pin pane · R relaunch · x remove"
 			}
 			if row.HumanControl {
-				hint = "Another human has control · Enter or v watches without typing"
+				hint = "Another human has control · v pins its live pane"
 			}
 			if row.Local != nil {
 				hint = row.Local.Guidance()
@@ -207,20 +192,20 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		switch v.mode {
 		case wsNewGroup:
 			label = "Name your new group"
-			hint = "Enter creates it · Esc cancels"
+			hint = "Enter creates it · jk / Esc goes back"
 		case wsRun:
 			label = "Run a command"
-			hint = "Runs in your shell · Enter starts it · Esc cancels"
+			hint = "Runs in your shell · Enter starts it · jk / Esc goes back"
 		case wsRename:
 			label = "Choose a new name"
-			hint = "The process and its id stay the same · Esc cancels"
+			hint = "The process keeps running · jk / Esc goes back"
 		case wsResume:
 			label = "Resume this stopped conversation?"
-			hint = "Type resume, then Enter. Esc cancels."
+			hint = "Type resume, then Enter. jk / Esc goes back."
 			put(x+2, y+4, "Starts its agent again in this group.", "7")
 		case wsConfirm:
 			label = "Close and remove this work?"
-			hint = "Type close, then Enter. Esc cancels."
+			hint = "Type close, then Enter. jk / Esc goes back."
 			put(x+2, y+4, clipStatus(workspaceTarget(v), width-4), "1;7")
 			put(x+2, y+5, "This stops managed programs and removes saved screens.", "7")
 		case wsLaunch:
@@ -229,7 +214,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			put(x+3, y+5, "a   Claude", "1;7")
 			put(x+3, y+7, "s   Shell", "1;7")
 			put(x+3, y+9, "r   Custom command", "1;7")
-			hint = "Choose a letter · Esc cancels"
+			hint = "Choose a letter · jk / Esc goes back"
 		case wsMove:
 			label = "Move to another group"
 			available := []terminal.GroupSummary{}
@@ -249,14 +234,14 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			if len(available) == 0 {
 				put(x+3, y+4, "Create another group first.", "7")
 			}
-			hint = "j/k choose · Enter moves it · Esc cancels"
+			hint = "j/k choose · Enter moves it · jk / Esc goes back"
 		case wsHelp:
 			label = "Your workspace"
-			help := []string{"j/k  Move          Enter  Open / take control", "jk   Return from a terminal    v  Watch read only", "n    New           r      Rename", "m    Move terminal x      Close / remove", "g    Groups        h      Show saved / archived work", "a    Outside agents / archive a group", "/    Search        :      Command", "q    Detach; work keeps running"}
+			help := []string{"j/k  Move          Enter  Open / take control", "jk   Back one level     v  Pin / unpin live pane", "n    New           r      Rename", "m    Move terminal x      Close / remove", "jk   Back anywhere h      Show saved / archived work", "a    Outside agents / archive a group", "/    Search        :      Command", "q    Quit browser; work keeps running"}
 			for i, text := range help {
 				put(x+2, y+2+i, text, "7")
 			}
-			hint = "Esc, q or ? returns"
+			hint = "jk, Esc, q or ? returns"
 		}
 		put(x+2, y+1, label, "1;7")
 		put(x+2, y+10, clipStatus(hint, width-4), "7")
@@ -274,6 +259,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[?25h", rows, min(3+textWidth(prefix+v.text), cols))
 	}
 	out.WriteString("\x1b[0m\x1b[?7h\x1b[?2026l")
+	out.WriteString(workspaceBrand(cols, rows, v.brandPhase, v.color))
 	return start + preview.String() + out.String()
 }
 func workspaceTerminalState(r terminal.SessionSummary) string {

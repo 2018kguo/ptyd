@@ -21,7 +21,7 @@ func windowTitle(label string) string {
 	if len(text) > 120 {
 		text = append(text[:119], '…')
 	}
-	return "ptyd · " + string(text) + " · jk: return"
+	return "ptyd · " + string(text) + " · jk: back"
 }
 
 func setWindowTitle(w io.Writer, label string) {
@@ -101,7 +101,7 @@ func (w *titleWriter) Write(p []byte) (int, error) {
 				continue
 			}
 			if b == 7 && w.title {
-				out.WriteString(" · jk: return")
+				out.WriteString(" · jk: back")
 			}
 			out.WriteByte(b)
 			if b == 7 || b == 0x18 || b == 0x1a {
@@ -122,7 +122,7 @@ func (w *titleWriter) Write(p []byte) (int, error) {
 				continue
 			}
 			if b == '\\' && w.title {
-				out.WriteString(" · jk: return")
+				out.WriteString(" · jk: back")
 			}
 			out.WriteByte(0x1b)
 			out.WriteByte(b)

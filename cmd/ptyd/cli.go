@@ -38,8 +38,8 @@ Usage:
   ptyd serve [flags]              run the daemon in the foreground
   ptyd token                      print the local API token
 
-Inside a terminal, quick jk returns to its group. From a workspace, q detaches
-and g opens your groups. Work keeps running. Commands use PTYD_ADDR and the
+Quick jk goes back one level: terminal, group, groups, shell. In a group,
+v pins a live pane; Enter takes control. Work keeps running. Commands use PTYD_ADDR and the
 local daemon's saved token. Use ptyd COMMAND --help for options.
 `
 
