@@ -25,7 +25,7 @@ const usage = `ptyd keeps groups of terminals running while agents and people co
 Usage:
   ptyd                            open your groups (starts the local daemon if needed)
   ptyd new [-d] name [-- command]  create a group and enter its workspace
-  ptyd ls [--json] [--all]         list groups and their running work
+  ptyd ls [--json|--plain] [--all] browse groups; print a snapshot with --plain
   ptyd attach [group]             enter a group or choose one
   ptyd rename group name          rename a group
   ptyd archive [--undo] group      hide or return finished work

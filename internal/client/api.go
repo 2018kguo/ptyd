@@ -121,37 +121,47 @@ func (c API) Do(method, path string, body, out any) error {
 
 // DoContext lets live clients cancel an in-flight refresh when they close.
 func (c API) DoContext(ctx context.Context, method, path string, body, out any) error {
+	raw, err := c.readContext(ctx, method, path, body, 64<<20)
+	if err != nil {
+		return err
+	}
+	if out != nil {
+		return json.Unmarshal(raw, out)
+	}
+	return nil
+}
+func (c API) readContext(ctx context.Context, method, path string, body any, limit int64) ([]byte, error) {
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		r = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://"+c.Addr+path, r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if c.Token != "" {
 		req.Header.Set("X-Ptyd-Token", c.Token)
 	}
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
-		return c.connErr(err)
+		return nil, c.connErr(err)
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp.StatusCode >= 300 {
-		return c.statusErr(resp.StatusCode, raw)
+		return nil, c.statusErr(resp.StatusCode, raw)
 	}
-	if out != nil {
-		return json.Unmarshal(raw, out)
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("response exceeds the %d-byte read budget", limit)
 	}
-	return nil
+	return raw, nil
 }
 
 // ErrDaemonDown means nothing answers at the daemon's address.

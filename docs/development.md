@@ -74,6 +74,13 @@ without a viewer or observer before querying native state again. This is a
 bounded disconnect check. Native UI redraw is
 not an exact capture of another terminal's past screen or partial output.
 
+Browser tests run `ls` in real wide and narrow PTYs, observe output changes
+without input, switch groups, and delete a selected group during refresh. They
+verify colored Unicode cells stay inside the preview rectangle, app control
+sequences do not escape into the browser, and previewing leaves source size,
+process identity and human control unchanged. Piped, JSON and `--plain` output
+remain snapshots.
+
 The README demo is reproducible with `vhs docs/demo.tape`. Its setup creates
 disposable local terminals, uses an ephemeral port, and removes its
 own processes and files on exit. It does not need an agent login or call a

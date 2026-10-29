@@ -336,3 +336,118 @@ func TestGroupListKeepsOldInboxBehindHistory(t *testing.T) {
 		t.Fatalf("active Inbox hidden: %+v", groups)
 	}
 }
+
+func TestListBrowsesGroupsWithLiveColoredPreviews(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("NO_COLOR", "")
+	d := startDaemon(t, freeAddr(t))
+	ids := []string{}
+	for i, name := range []string{"alpha", "beta"} {
+		if _, err, code := d.cli(nil, "new", "-d", name); code != 0 {
+			t.Fatal(err)
+		}
+		word := []string{"FIRST", "SECOND"}[i]
+		id, err, code := d.cli(nil, "term", "new", "-d", "--group", name, "-n", "worker", "--", "sh", "-c", "printf '\\033[48;2;40;42;54m"+word+"\\033[0m\\n'; exec cat")
+		if code != 0 {
+			t.Fatal(err)
+		}
+		ids = append(ids, strings.TrimSpace(id))
+	}
+	w := d.open(120, 32, "ls")
+	w.waitText("WORKSPACE PREVIEW")
+	w.waitText("FIRST")
+	w.mu.Lock()
+	colored := false
+	for y := 0; y < 32; y++ {
+		for x := 0; x < 120; x++ {
+			c := w.screen.Cell(x, y)
+			if c.Rune == 'F' && c.Style.Bg == phosphor.RGBColor(40, 42, 54) {
+				colored = true
+			}
+		}
+	}
+	w.mu.Unlock()
+	if !colored {
+		t.Fatal("home preview lost app background colors")
+	}
+	var info terminal.Info
+	d.do("GET", "/terminals/"+ids[0], nil, &info)
+	if info.Attached != 0 || info.HumanControl {
+		t.Fatal("preview claimed a viewer or keyboard")
+	}
+	var screen terminal.Screen
+	d.do("GET", "/terminals/"+ids[0]+"/screen", nil, &screen)
+	if screen.Cols != 80 || screen.Rows != 24 {
+		t.Fatalf("preview resized source: %+v", screen)
+	}
+	d.do("POST", "/terminals/"+ids[0]+"/write", map[string]any{"data": "LIVE-UPDATE", "submit": true}, nil)
+	w.waitText("LIVE-UPDATE")
+	w.keys("j")
+	w.waitText("SECOND")
+	if strings.Contains(strings.Join(w.lines(), "\n"), "FIRST") {
+		t.Fatal("old group's preview escaped selection change")
+	}
+	var groups []terminal.GroupSummary
+	d.do("GET", "/groups", nil, &groups)
+	for _, g := range groups {
+		if g.Name == "beta" {
+			d.do("DELETE", "/groups/"+string(g.ID)+"?force=true", nil, nil)
+		}
+	}
+	w.waitText("FIRST") // Selection recovers when a group disappears during refresh.
+	w.keys("q")
+	if code := w.waitExit(); code != 0 {
+		t.Fatal(code)
+	}
+	narrow := d.open(80, 24, "ls")
+	narrow.waitText("LIVE-UPDATE")
+	narrow.keys("q")
+	if code := narrow.waitExit(); code != 0 {
+		t.Fatal(code)
+	}
+	plain := d.open(80, 24, "ls", "--plain")
+	plain.waitText("GROUP")
+	if code := plain.waitExit(); code != 0 {
+		t.Fatal(code)
+	}
+	out, stderr, code := d.cli(nil, "ls")
+	if code != 0 || !strings.Contains(out, "GROUP") || strings.Contains(out, "\x1b") {
+		t.Fatalf("piped ls stopped being plain text: %q %q %d", out, stderr, code)
+	}
+	out, stderr, code = d.cli(nil, "ls", "--json")
+	if code != 0 || json.Unmarshal([]byte(out), &groups) != nil {
+		t.Fatalf("JSON ls failed: %q %q %d", out, stderr, code)
+	}
+}
+
+func TestPreviewCellsStayInsideTheirRectangle(t *testing.T) {
+	source := phosphor.New(80, 24)
+	source.Write([]byte("\x1b]2;UNTRUSTED TITLE\a\x1b]52;c;Y2xpcGJvYXJk\a\x1b[48;2;40;42;54m界e\u0301 👩‍💻\x1b[0m\r\nsecond line"))
+	host := phosphor.New(40, 16)
+	host.Write([]byte("\x1b[1;1HCHROME\x1b[8;25HNEIGHBOR"))
+	var output strings.Builder
+	workspacePaintPreview(&output, source, workspaceRect{10, 5, 8, 3}, true)
+	host.Write([]byte(output.String()))
+	if !strings.Contains(host.Line(0), "CHROME") || !strings.Contains(host.Line(7), "NEIGHBOR") {
+		t.Fatal("preview overwrote neighboring UI")
+	}
+	if host.Cell(10, 5).Style.Bg != phosphor.RGBColor(40, 42, 54) || host.Cell(10, 5).Rune != '界' {
+		t.Fatal("preview lost Unicode or colors")
+	}
+	if strings.Contains(output.String(), "\x1b]2;") || strings.Contains(output.String(), "\x1b]52;") {
+		t.Fatal("preview forwarded app side effects")
+	}
+	for _, line := range []int{4, 8} {
+		if strings.TrimSpace(host.Line(line)) != "" {
+			t.Fatal("preview escaped vertical bounds")
+		}
+	}
+	if c, r := source.Size(); c != 80 || r != 24 {
+		t.Fatal("rendering mutated source geometry")
+	}
+	output.Reset()
+	workspacePaintPreview(&output, source, workspaceRect{1, 1, 12, 3}, false)
+	if strings.Contains(output.String(), "48;2;") || strings.Contains(output.String(), "38;5;") {
+		t.Fatal("NO_COLOR preview emitted color")
+	}
+}

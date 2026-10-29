@@ -37,62 +37,23 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 	put(8, 1, "/  "+heading, "1")
 	title := "ptyd · " + heading
 	fmt.Fprintf(&out, "\x1b]2;%s\x1b\\", displayText(title, 160))
-	footer := "j/k move   Enter open   n new group   / search   h history   ? help   q quit"
+	footer := "j/k preview   Enter open   n new group   / search   h history   ? help   q quit"
 	if v.group != "" {
 		footer = "j/k select   Enter open   v watch   n new terminal   g groups   ? help   q detach"
 	}
+	if cols < 96 {
+		footer = "j/k move  Enter open  n new  ?  q quit"
+		if v.group != "" {
+			footer = "j/k  Enter open  n new  g  ?  q quit"
+		}
+	}
 	if v.group == "" {
-		put(2, 2, "Persistent workspaces for you and your agents.", "2")
-		gs := v.visibleGroups()
-		line(4)
-		if v.snapshot == nil && v.err == nil {
-			put(4, 6, "Finding your groups…", "36")
-		}
-		if v.snapshot != nil && len(gs) == 0 {
-			if v.query != "" {
-				put(4, 7, "No groups match your search.", "1")
-			} else {
-				put(4, 7, "Make room for your next piece of work.", "1")
-			}
-			put(4, 9, "Press n to create a group, then launch an agent, a shell or a command.", "2")
-			put(4, 11, "Groups stay here after you detach. Press h to find older saved work.", "2")
-		}
-		available := max(rows-10, 1)
-		start := max(v.index()-available+1, 0)
-		for i := start; i < len(gs) && i < start+available; i++ {
-			g := gs[i]
-			y := 6 + i - start
-			style := ""
-			mark := "  "
-			if string(g.ID) == v.selected {
-				style = "1;7"
-				mark = "› "
-			}
-			name := g.Name
-			if g.Archived {
-				name += " · archived"
-			}
-			width := min(max(cols/2, 20), 48)
-			text := mark + statusCell(name, max(width-2, 1)) + fmt.Sprintf("  %d running · %d terminals", g.Running, g.Terminals)
-			if g.Attention > 0 {
-				text += fmt.Sprintf(" · %d need attention", g.Attention)
-			}
-			put(2, y, text, style)
-		}
-		if len(gs) > 0 {
-			g := gs[min(v.index(), len(gs)-1)]
-			put(2, rows-4, friendlyCWD(g.CWD), "2")
-			if g.ID == terminal.DefaultGroup && g.Running == 0 {
-				put(2, rows-3, "Earlier saved terminals. Enter to browse them.", "2")
-			} else {
-				put(2, rows-3, "Enter to return to this workspace. r rename · a archive/unarchive · x remove", "2")
-			}
-		}
+		workspaceHome(&out, v, cols, rows, put, line)
 	} else {
 		g, ok := v.groupInfo()
 		if ok {
 			put(2, 2, friendlyCWD(g.CWD), "2")
-			summary := fmt.Sprintf("%d running  ·  %d terminals", g.Running, g.Terminals)
+			summary := fmt.Sprintf("%d running  ·  %s", g.Running, workspaceCount(g.Terminals, "terminal"))
 			if g.Attention > 0 {
 				summary += fmt.Sprintf("  ·  %d need attention", g.Attention)
 			}
@@ -114,6 +75,9 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			put(left+2, 4, " LIVE PREVIEW · read only ", "2")
 		}
 		available := max(rows-10, 1)
+		if left == cols {
+			available = max((rows-13)/2, 1)
+		}
 		start := max(v.index()-available+1, 0)
 		for i := start; i < len(v.rows) && i < start+available; i++ {
 			r := v.rows[i]
@@ -161,17 +125,10 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			row, selected := v.row()
 			if selected {
 				put(left+3, 6, sessionName(row)+" · "+sessionApp(row), "1")
-				if v.snapshot != nil && v.snapshot.PreviewID == string(row.ID) {
-					lines := v.snapshot.Preview.Lines
-					limit := max(rows-16, 1)
-					start := 0
-					// Keep a bottom composer/cursor visible when the source is taller.
-					if len(lines) > limit {
-						start = min(max(v.snapshot.Preview.CursorY-limit+3, 0), len(lines)-limit)
-					}
-					for i := 0; i < limit && start+i < len(lines); i++ {
-						put(left+3, 8+i, clipStatus(lines[start+i], max(cols-left-6, 1)), "2")
-					}
+				if v.snapshot != nil && v.snapshot.PreviewID == string(row.ID) && v.snapshot.Preview != nil {
+					workspacePaintPreview(&out, v.snapshot.Preview, workspaceRect{left + 3, 8, max(cols-left-6, 1), max(rows-16, 1)}, v.color)
+				} else if v.snapshot != nil && v.snapshot.PreviewErr != nil {
+					put(left+3, 9, "Preview unavailable: "+v.snapshot.PreviewErr.Error(), "33")
 				} else if row.Local != nil {
 					put(left+3, 9, "Use its original terminal.", "33")
 					put(left+3, 11, "Ptyd has not verified a live attach route.", "2")
@@ -183,6 +140,13 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 				}
 			} else {
 				put(left+3, 8, "Your work will appear here.", "2")
+			}
+		}
+		if left == cols {
+			y := 7 + available
+			put(2, y, " LIVE PREVIEW · read only ", "2")
+			if v.snapshot != nil && v.snapshot.PreviewID == v.selected && v.snapshot.Preview != nil {
+				workspacePaintPreview(&out, v.snapshot.Preview, workspaceRect{3, y + 2, cols - 6, max(rows-y-8, 1)}, v.color)
 			}
 		}
 		if row, ok := v.row(); ok {

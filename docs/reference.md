@@ -9,7 +9,7 @@ control. Both use the same daemon and session ids.
 |---|---|
 | `ptyd`, `ptyd ui` | Open your groups; start a local daemon if needed. |
 | `ptyd new [-d] [--cwd directory] name [-- command args...]` | Create a group and enter it; `-d` prints its id. An optional command opens its first terminal. |
-| `ptyd ls [--json] [--all]` | List groups and counts; `--all` includes archived groups and saved-only Inbox. JSON always includes all groups. |
+| `ptyd ls [--json \| --plain] [--all]` | Live group browser on an interactive terminal; pipes and `--plain` print a table. `--all` starts with archived/saved groups visible. JSON always includes all groups. |
 | `ptyd attach [group]` | Enter a group's workspace, or choose a group. |
 | `ptyd rename group name` | Rename without changing its id. |
 | `ptyd archive [--undo] group` | Archive finished work or bring it back. Running terminals must stop first. |
@@ -107,6 +107,13 @@ conversations before applying the row limit. `active_only: true` confirms
 that the daemon applied it; `history_hidden` counts matching records omitted
 by this filter. Counts describe the remaining matches. The default API and
 `ptyd status --json` include history.
+
+The live group browser previews the selected group before opening it. Screen
+previews retain colors and backgrounds, update without taking control, and
+never resize the source PTY. Smaller windows stack the preview below the list.
+Previews use the existing ANSI screen export; framed attachments use exact
+snapshots. Oversized or unavailable previews show a reason while navigation
+remains available.
 
 The workspace shows all members of an opened group by default; `h` hides or
 shows finished members. The group list hides archived work and saved-only Inbox
