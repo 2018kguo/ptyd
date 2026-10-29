@@ -249,7 +249,7 @@ func (m *Manager) create(cfg CreateConfig) (Info, error) {
 
 // normalize validates cfg and fills in defaults.
 func (m *Manager) normalize(cfg *CreateConfig) error {
-	if _, err := cfg.TerminalColors.palette(); err != nil {
+	if _, err := cfg.TerminalColors.Palette(); err != nil {
 		return err
 	}
 	if cfg.Name == "" {
@@ -393,7 +393,7 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 	}
 
 	reply := new(queryReplies)
-	palette, _ := cfg.TerminalColors.palette() // normalize validated this pair
+	palette, _ := cfg.TerminalColors.Palette() // normalize validated this pair
 	options := []phosphor.Option{phosphor.WithReply(reply)}
 	if cfg.TerminalColors != nil {
 		options = append(options, phosphor.WithPalette(palette))

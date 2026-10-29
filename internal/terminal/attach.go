@@ -36,15 +36,16 @@ const (
 // feeds the screen), so a repaint taken under scrMu is exactly in step
 // with the queue.
 type attacher struct {
-	human        bool
-	renderedView bool
-	rawResponder bool // writable raw viewer supplies terminal replies
-	mu           sync.Mutex
-	buf          []byte
-	spare        []byte // a buffer the reader is done with, reused by push
-	overflow     bool   // dropped output; the next read is a repaint
-	ended        bool   // the terminal's output has ended
-	wake         chan struct{}
+	human            bool
+	renderedView     bool
+	rawResponder     bool // writable raw viewer supplies terminal replies
+	mu               sync.Mutex
+	buf              []byte
+	spare            []byte    // a buffer the reader is done with, reused by push
+	overflow         bool      // dropped output; the next read is a repaint
+	ended            bool      // the terminal's output has ended
+	interactiveUntil time.Time // a short response burst bypasses bulk batching
+	wake             chan struct{}
 }
 
 func (a *attacher) push(p []byte) {
@@ -82,6 +83,13 @@ func (a *attacher) signal() {
 	case a.wake <- struct{}{}:
 	default:
 	}
+}
+
+func (a *attacher) prioritizeInput(until time.Time) {
+	a.mu.Lock()
+	a.interactiveUntil = until
+	a.mu.Unlock()
+	a.signal()
 }
 
 // Attachment is a client attached to a terminal: it receives an initial
@@ -159,9 +167,11 @@ func (m *Manager) Attach(id ID, options AttachOptions) (*Attachment, error) {
 		}
 	}
 
-	initial := t.screen.Repaint(true)
+	var initial []byte
 	if options.Rendered {
 		initial = t.screen.Snapshot()
+	} else {
+		initial = t.screen.Repaint(true)
 	}
 	if t.outputEnded {
 		a.ended = true
@@ -214,7 +224,7 @@ func (at *Attachment) ReadUpdate(ctx context.Context) (AttachmentUpdate, error) 
 			return AttachmentUpdate{Data: at.repaint(), Snapshot: at.rendered}, nil
 		}
 		if n := len(a.buf); n > 0 {
-			if wait := Coalesce - time.Since(at.sent); wait > 0 && !at.held && n >= CoalesceMin && n < holdMax {
+			if wait := Coalesce - time.Since(at.sent); wait > 0 && time.Until(a.interactiveUntil) <= 0 && !at.held && n >= CoalesceMin && n < holdMax {
 				a.mu.Unlock()
 				at.held = true
 				if err := at.sleep(ctx, wait); err != nil {
@@ -276,6 +286,14 @@ func (at *Attachment) sleep(ctx context.Context, d time.Duration) error {
 	case <-at.a.wake:
 	default:
 	}
+	// A wake may have arrived between choosing to coalesce and this drain.
+	// Recheck its sticky condition before sleeping; later events keep their wake.
+	at.a.mu.Lock()
+	ready := time.Until(at.a.interactiveUntil) > 0 || len(at.a.buf) >= holdMax || at.a.overflow || at.a.ended
+	at.a.mu.Unlock()
+	if ready {
+		return nil
+	}
 	select {
 	case <-at.arm(d):
 		return nil
@@ -330,6 +348,11 @@ func (at *Attachment) Write(p []byte) error {
 	t.scrMu.Unlock()
 	if !t.running() {
 		return ErrNotRunning
+	}
+	// Large redraws caused by typing or a wheel event are interactive too.
+	// Wake an already-held read as well as bypassing the next coalescing wait.
+	if len(p) > 0 {
+		at.a.prioritizeInput(time.Now().Add(Coalesce))
 	}
 	_, err := t.ptmx.Write(p)
 	return err
@@ -475,16 +498,20 @@ func (m *Manager) closeUnusedNativeView(id ID) {
 }
 
 func staticAttachment(scr *phosphor.Terminal, options AttachOptions) (*Attachment, error) {
-	copy := phosphor.New(1, 1)
-	if err := copy.RestoreSnapshot(scr.Snapshot(), trustedSnapshotLimits()); err != nil {
-		return nil, err
-	}
-	if options.Cols > 0 && options.Rows > 0 {
+	cols, rows := scr.Size()
+	if options.Cols > 0 && options.Rows > 0 && (cols != int(options.Cols) || rows != int(options.Rows)) {
+		copy := phosphor.New(1, 1)
+		if err := copy.RestoreSnapshot(scr.Snapshot(), trustedSnapshotLimits()); err != nil {
+			return nil, err
+		}
 		copy.Resize(int(options.Cols), int(options.Rows))
+		scr = copy
 	}
-	initial := copy.Repaint(true)
+	var initial []byte
 	if options.Rendered {
-		initial = copy.Snapshot()
+		initial = scr.Snapshot()
+	} else {
+		initial = scr.Repaint(true)
 	}
 	return &Attachment{initial: initial, readOnly: true, rendered: options.Rendered, a: &attacher{ended: true, wake: make(chan struct{}, 1)}}, nil
 }

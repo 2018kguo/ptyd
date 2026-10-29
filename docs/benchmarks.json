@@ -9,11 +9,14 @@
     "current_results": "bench/native-mining"
   },
   "attachment_scrolling": {
-    "url": "https://github.com/2018kguo/ptyd/releases/download/v0.12.1/ptyd-attachment-benchmarks.tar.gz",
-    "sha256": "ec23352c28595bfe20fabc26e30222b6b5cdedea18f04658b10fd5ccd717d2e4",
-    "baseline_commit": "22af6fb358221be74a35df32a86aa7d5c7eb871c",
-    "source_commit": "712076b949ad955af56702fff2470004fed44304",
-    "fixture_sha256": "fcef3b1d7c563aeb2feb78e66221ac9cf0b2b3f0d22c9a46e29a344645bd2c97",
+    "url": "https://github.com/2018kguo/ptyd/releases/download/v0.12.2/ptyd-attachment-benchmarks.tar.gz",
+    "sha256": "f3c22031408b809286da3dff31b7a5c02e62927dab243a7f2207033e1946e76a",
+    "baseline_commit": "23b2404a86bbabc16f95a93d225bd6441aeb5586",
+    "source_commit": "1799ae4a5c05ee5bee60eae4422b4882d057b3cc",
+    "fixtures": {
+      "internal/client/pane_bench_test.go": "fcef3b1d7c563aeb2feb78e66221ac9cf0b2b3f0d22c9a46e29a344645bd2c97",
+      "internal/terminal/hotpath_bench_test.go": "46e7deaff45b3e361a7ed8036963395a4a3a3df7889e8e6521d2ad7b59df40f6"
+    },
     "rounds": 6,
     "manifest": "manifest.json"
   }
