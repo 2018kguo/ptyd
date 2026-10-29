@@ -344,7 +344,7 @@ func TestSavedScreenStaysOpenUntilUserReturns(t *testing.T) {
 	u.mu.Lock()
 	title := u.screen.Title()
 	u.mu.Unlock()
-	if !strings.Contains(title, "ptyd · Saved window") || !strings.Contains(title, "jk: return") {
+	if !strings.Contains(title, "ptyd · Saved window") || !strings.Contains(title, "jk: back") {
 		t.Fatalf("missing attached indicator%q", title)
 	}
 	u.typeKeys(t, "jk")

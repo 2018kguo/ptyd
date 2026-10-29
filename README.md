@@ -41,7 +41,10 @@ The default daemon address is `127.0.0.1:4242`; `PTYD_ADDR` selects another.
 ## Find your way around
 
 Running `ptyd` or `ptyd ls` opens your groups. Move with `j/k` to see a
-group's terminals and live screen preview before entering it. Previews keep
+group's terminals and live screen preview before entering it. Inside a group,
+press **v** to pin a terminal beside the list. Pin up to three to follow several
+agents at once while moving between them. Pins survive leaving and reopening
+the browser. Previews keep
 application colors and backgrounds; smaller windows stack the preview below
 the list. Finished screens stay available without being restarted.
 
@@ -52,9 +55,15 @@ Piped output stays plain text. Older ungrouped terminals live in
 | Where | Keys |
 |---|---|
 | Groups | `j/k` select · Enter open · `n` create · `h` history |
-| Inside a group | `j/k` select · Enter take control · `v` watch · `n` launch |
-| Inside a terminal | Quick `jk` returns to the group |
-| Workspace | `/` search · `?` help · `g` groups · `q` detach |
+| Inside a group | `j/k` select · Enter take control · `v` pin/unpin pane · `n` launch |
+| Anywhere | Quick `jk` goes back: terminal → group → groups → shell |
+| Workspace | `/` search · `?` help · `q` quit |
+
+`jk` also dismisses menus and cancels prompts. Use slower `j` and `k` to move
+down and up; pasted text stays literal. **●** running, **◉** human control,
+**!** attention and **◆** pinned give each view a quick visual cue. A small
+ASCII cube rotates in the header; use `:motion` or set `PTYD_REDUCED_MOTION=1`
+for a still header.
 
 An attached terminal keeps **group / terminal** and the return hint in its
 bottom row, including when an app clears the screen. The app keeps its colors,

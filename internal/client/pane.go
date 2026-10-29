@@ -177,7 +177,7 @@ func paneLabel(label, state string, cols int) string {
 			clean.WriteRune(r)
 		}
 	}
-	hint := "jk: return"
+	hint := "jk: back"
 	prefix := " ptyd · " + state + " · "
 	if cols < displayWidth(prefix)+displayWidth(hint)+6 {
 		return clipPane("ptyd · "+hint, cols)

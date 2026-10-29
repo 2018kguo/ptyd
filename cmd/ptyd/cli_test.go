@@ -112,6 +112,15 @@ func (w *window) waitText(sub string) {
 	}
 }
 
+func (w *window) waitNoText(sub string) {
+	w.t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); strings.Contains(strings.Join(w.lines(), "\n"), sub); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			w.t.Fatalf("window still showed %q:\n%s", sub, strings.Join(w.lines(), "\n"))
+		}
+	}
+}
+
 // waitExit waits for the command to end and checks that the window is
 // back in the mode it started in (not raw) with the modes a program
 // might have left on reset.
