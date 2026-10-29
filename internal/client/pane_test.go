@@ -75,7 +75,7 @@ func TestFramedAttachReservesRowAcrossResize(t *testing.T) {
 	winch := make(chan os.Signal, 1)
 	done := make(chan result, 1)
 	go func() {
-		r, e := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: string(info.ID), Label: info.Name}, u.slave, u.slave, winch)
+		r, e := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: string(info.ID), Label: info.Name, ViewerColors: &terminal.TerminalColors{Foreground: "#d8dee9", Background: "#282c34"}}, u.slave, u.slave, winch)
 		done <- result{r.Detached, e}
 	}()
 	eventually(t, "pane and background", func() bool {
@@ -460,5 +460,78 @@ func TestPaneScrollDamagePreservesRenderedState(t *testing.T) {
 			host.Resize(width+4, 26)
 			check()
 		})
+	}
+}
+
+func TestPaneStatusThemeWidthAndCaching(t *testing.T) {
+	for _, theme := range []struct{ name, fg, bg string }{{"dark", "#d8dee9", "#282c34"}, {"light", "#20252b", "#fafafa"}} {
+		for _, state := range []string{"attached", "viewing", "finished"} {
+			for width := 1; width <= 100; width++ {
+				var wire bytes.Buffer
+				p := newPane(&wire, "project / codex", width, 8)
+				p.viewOnly = state == "viewing"
+				p.finished = state == "finished"
+				p.Write([]byte("\x1b]10;" + theme.fg + "\a\x1b]11;" + theme.bg + "\aAPP"))
+				if err := p.draw(false); err != nil {
+					t.Fatal(err)
+				}
+				host := phosphor.New(width, 8)
+				host.Write(wire.Bytes())
+				line := host.Line(7)
+				if width >= 8 && !strings.Contains(line, "jk: back") {
+					t.Fatalf("%s/%s/%d lost back hint: %q", theme.name, state, width, line)
+				}
+				if width >= 48 && !strings.Contains(line, state) {
+					t.Fatalf("state missing: %q", line)
+				}
+				for x := 0; x < width; x++ {
+					if host.Cell(x, 7).Style.Attrs&phosphor.AttrInverse != 0 {
+						t.Fatal("status used inverse video")
+					}
+					if host.Cell(x, 7).Style.Bg != host.Cell(0, 7).Style.Bg {
+						t.Fatal("status background has a gap")
+					}
+				}
+				wire.Reset()
+				p.Write([]byte("\x1b[HNEW"))
+				p.draw(false)
+				if strings.Contains(wire.String(), "jk: back") {
+					t.Fatal("app output repainted the unchanged status bar")
+				}
+				if width == 80 {
+					wire.Reset()
+					p.Write([]byte("\x1b]11;#567890\a"))
+					p.draw(false)
+					if !strings.Contains(wire.String(), "jk: back") {
+						t.Fatal("changed background did not refresh status")
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestPaneStatusUnicodeKeepsEdgesAcrossPaletteChanges(t *testing.T) {
+	var wire bytes.Buffer
+	p := newPane(&wire, "repo / 👩‍💻 work", 80, 8)
+	host := phosphor.New(80, 8)
+	for _, write := range []string{"\x1b[?2027h\x1b[48;2;30;40;50m\x1b[2J", "\x1b]10;#aabbcc\a", "\x1b]11;#223344\a", "\x1b[Hupdate"} {
+		p.Write([]byte(write))
+		if err := p.draw(false); err != nil {
+			t.Fatal(err)
+		}
+		host.Write(wire.Bytes())
+		wire.Reset()
+		if line := host.Line(7); strings.Count(line, "jk: back") != 1 || !strings.HasSuffix(line, "jk: back") {
+			t.Fatalf("status shifted: %q", line)
+		}
+		for x := 0; x < 80; x++ {
+			if host.Cell(x, 7).Style.Bg != host.Cell(0, 7).Style.Bg {
+				t.Fatalf("background gap at %d", x)
+			}
+		}
+		if !host.Modes().GraphemeClustering {
+			t.Fatal("status did not restore app join mode")
+		}
 	}
 }

@@ -15,7 +15,8 @@ type TerminalColors struct {
 	Background string `json:"background"`
 }
 
-func (c *TerminalColors) palette() (phosphor.Palette, error) {
+// Palette validates the color pair and applies it to the default palette.
+func (c *TerminalColors) Palette() (phosphor.Palette, error) {
 	p := phosphor.DefaultPalette()
 	if c == nil {
 		return p, nil

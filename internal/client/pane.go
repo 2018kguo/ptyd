@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/2018kguo/phosphor"
 )
@@ -14,25 +13,29 @@ import (
 // Apps can clear, scroll or switch screens without painting over the status row.
 // Only attached human views allocate this model; the API byte stream stays raw.
 type pane struct {
-	history      []historyRow
-	historyBytes int
-	mu           sync.Mutex
-	screen       *phosphor.Terminal
-	out          io.Writer
-	label        string
-	finished     bool
-	viewOnly     bool
-	cols, rows   int
-	changed      bool
-	lastModes    phosphor.Modes
-	haveModes    bool
-	sequences    sequenceReader
-	err          error
-	title        string
-	initialized  bool
-	painted      []paneRow
-	buffer       []byte
-	ready        chan struct{}
+	history       []historyRow
+	historyBytes  int
+	mu            sync.Mutex
+	screen        *phosphor.Terminal
+	out           io.Writer
+	label         string
+	finished      bool
+	viewOnly      bool
+	cols, rows    int
+	changed       bool
+	lastModes     phosphor.Modes
+	haveModes     bool
+	sequences     sequenceReader
+	err           error
+	title         string
+	initialized   bool
+	painted       []paneRow
+	buffer        []byte
+	ready         chan struct{}
+	paints        uint64 // completed host writes; only the drawing goroutine changes it
+	statusKey     paneStatusKey
+	status        []byte
+	viewerPalette *phosphor.Palette
 }
 
 func newPane(out io.Writer, label string, cols, rows int) *pane {
@@ -101,20 +104,7 @@ func (p *pane) draw(force bool) error {
 		force = true
 	}
 	b = p.appendDamage(b, view, force)
-	if force {
-		b = fmt.Appendf(b, "\x1b[%d;1H\x1b[0m\x1b[7m", p.rows)
-		state := "attached"
-		if p.viewOnly {
-			state = "viewing"
-		}
-		if p.finished {
-			state = "finished"
-		}
-		text := paneLabel(p.label, state, p.cols)
-		b = append(b, text...)
-		b = append(b, strings.Repeat(" ", max(p.cols-displayWidth(text), 0))...)
-		b = append(b, "\x1b[0m"...)
-	}
+	b = p.appendStatus(b, force)
 	modes := p.screen.Modes()
 	if !p.haveModes || modes != p.lastModes {
 		for _, m := range []struct {
@@ -152,6 +142,9 @@ func (p *pane) draw(force bool) error {
 		p.title = title
 	}
 	cur := view.Cursor()
+	// Row/status encoders select their own join modes. Restore the app's
+	// mode even when its input modes did not otherwise change this frame.
+	b = appendMode(b, 2027, modes.GraphemeClustering)
 	shape := int(max(cur.Shape, phosphor.CursorBlock)) * 2
 	if cur.Blink {
 		shape--
@@ -160,6 +153,7 @@ func (p *pane) draw(force bool) error {
 	b = appendMode(b, 25, cur.Visible)
 	b = append(b, "\x1b[?2026l"...)
 	_, p.err = p.out.Write(b)
+	p.paints++
 	p.buffer = b
 	p.screen.ClearDirty()
 	p.changed = false
@@ -178,21 +172,6 @@ func displayWidth(s string) int {
 		n += max(phosphor.CodepointWidth(r), 0)
 	}
 	return n
-}
-func paneLabel(label, state string, cols int) string {
-	var clean strings.Builder
-	for _, r := range label {
-		if !unicode.IsControl(r) {
-			clean.WriteRune(r)
-		}
-	}
-	hint := "jk: back"
-	prefix := " ptyd · " + state + " · "
-	if cols < displayWidth(prefix)+displayWidth(hint)+6 {
-		return clipPane("ptyd · "+hint, cols)
-	}
-	budget := max(cols-displayWidth(prefix)-displayWidth(hint)-5, 0)
-	return prefix + clipPane(clean.String(), budget) + "  ·  " + hint
 }
 func clipPane(s string, width int) string {
 	if displayWidth(s) <= width {

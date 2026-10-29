@@ -20,6 +20,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/2018kguo/ptyd/internal/api"
+	"github.com/2018kguo/ptyd/internal/terminal"
 )
 
 // resetLocal undoes modes a program may have switched on in the local
@@ -58,6 +59,7 @@ type Options struct {
 	rendered bool
 	// InitialInput precedes bytes read from the local terminal.
 	InitialInput []byte
+	ViewerColors *terminal.TerminalColors // known host theme; used only for status chrome
 }
 
 // AttachResult describes the handoff back to the caller. PendingInput contains
@@ -126,6 +128,11 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 		if framed {
 			frame = newPane(out, opts.Label, cols, rows)
 			frame.viewOnly = readOnly
+			if opts.ViewerColors != nil {
+				if palette, err := opts.ViewerColors.Palette(); err == nil {
+					frame.viewerPalette = &palette
+				}
+			}
 
 			output = frame
 			frameReady = frame.ready
@@ -217,8 +224,13 @@ func Attach(ctx context.Context, opts Options, in, out *os.File, winch <-chan os
 	}
 	outputDone := (<-chan struct{})(copied)
 	drawFrame := func() error {
+		before := frame.paints
 		err := frame.draw(false)
-		lastDraw = time.Now()
+		// An incomplete synchronized frame did not paint. Keep its input
+		// priority until the update actually reaches the host terminal.
+		if frame.paints != before {
+			lastDraw = time.Now()
+		}
 		return err
 	}
 	for {

@@ -373,3 +373,48 @@ func BenchmarkRestoreGhosts(b *testing.B) {
 		b.StartTimer()
 	}
 }
+
+// Rendered viewers need a binary checkpoint, including retained history. No
+// producer PTY or transport is involved: this isolates daemon attachment setup.
+func BenchmarkRenderedAttach(b *testing.B) {
+	for _, history := range []int{0, 2000} {
+		b.Run(fmt.Sprintf("history%d", history), func(b *testing.B) {
+			m := NewManager()
+			t := fakeTerminal(m, 0, 120, 40)
+			b.Cleanup(func() {
+				m.mu.Lock()
+				delete(m.terms, t.info.ID)
+				m.mu.Unlock()
+				m.CloseAll()
+			})
+			for i := 0; i < history+39; i++ {
+				t.screen.Write([]byte(fmt.Sprintf("\x1b[32mrow-%04d\x1b[0m project files and notes\r\n", i)))
+			}
+			if got := len(t.screen.ScrollbackLines()); got != history {
+				b.Fatalf("retained %d rows, want %d", got, history)
+			}
+			for _, ghost := range []bool{false, true} {
+				b.Run(fmt.Sprintf("ghost%t", ghost), func(b *testing.B) {
+					b.ReportAllocs()
+					for b.Loop() {
+						var at *Attachment
+						var err error
+						if ghost {
+							at, err = staticAttachment(t.screen, AttachOptions{Rendered: true, ReadOnly: true})
+						} else {
+							at, err = m.Attach(t.info.ID, AttachOptions{Rendered: true})
+						}
+						if err != nil {
+							b.Fatal(err)
+						}
+						update, err := at.ReadUpdate(context.Background())
+						if err != nil || !update.Snapshot || len(update.Data) == 0 {
+							b.Fatalf("invalid snapshot: %v", err)
+						}
+						at.Close()
+					}
+				})
+			}
+		})
+	}
+}

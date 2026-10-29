@@ -104,7 +104,11 @@ func TestTypingClientGetsItsSize(t *testing.T) {
 	if got, _ := m.Get(info.ID); got.Attached != 2 {
 		t.Fatalf("attached %d", got.Attached)
 	}
+	beforeInput := time.Now()
 	_ = a.Write([]byte("x"))
+	if !a.a.interactiveUntil.After(beforeInput) || !b.a.interactiveUntil.IsZero() {
+		t.Fatal("typing did not prioritize only its own attachment")
+	}
 	if got := size(); got != "100x30" {
 		t.Fatalf("after a typed: %s", got)
 	}
@@ -210,6 +214,31 @@ func TestAttachCoalescesBulkOutput(t *testing.T) {
 	}
 	if !at.timer.Stop() {
 		t.Fatal("full queue waited for its timer")
+	}
+	// Input wakes a held batch. Its short priority window covers an entire
+	// response burst, including split synchronized frames, then batching resumes.
+	at.sent = time.Now().Add(time.Hour)
+	a.push(bulk[:2048])
+	ctx, done, _ = startRead()
+	wait(ctx, done)
+	a.prioritizeInput(time.Now().Add(time.Hour))
+	if result := <-done; result.err != nil || len(result.data) != 2048 {
+		t.Fatalf("input did not release held output: %d bytes, %v", len(result.data), result.err)
+	}
+	if !at.timer.Stop() {
+		t.Fatal("input waited for the coalescing timer")
+	}
+	a.push(bulk[:2048])
+	if b, err := at.Read(ready); err != nil || len(b) != 2048 {
+		t.Fatal("split response was held", err)
+	}
+	a.prioritizeInput(time.Now().Add(-time.Hour))
+	a.push(bulk[:2048])
+	ctx, done, _ = startRead()
+	wait(ctx, done)
+	at.timer.Reset(0)
+	if result := <-done; result.err != nil || len(result.data) != 2048 {
+		t.Fatal("background batching did not resume", result.err)
 	}
 	// Expire the idle timer, then wait until Read has released the buffer
 	// and entered its next wait before canceling it.
@@ -338,5 +367,65 @@ func TestRenderedOverflowRecoversPaletteAndFutureOutput(t *testing.T) {
 		if strings.Contains(strings.Join(view.Lines(), "\n"), "future") {
 			break
 		}
+	}
+}
+
+func TestStaticAttachmentDoesNotChangeRetainedSource(t *testing.T) {
+	for _, rendered := range []bool{false, true} {
+		for _, size := range [][2]uint16{{0, 0}, {80, 12}, {40, 6}} {
+			scr := phosphor.New(80, 12)
+			scr.Write([]byte(strings.Repeat("\x1b[32mretained history\x1b[0m\r\n", 30) + "\x1b[?1049h\x1b[Heditor\x1b[?1049l\x1b]2;unfinished"))
+			before := scr.Snapshot()
+			at, err := staticAttachment(scr, AttachOptions{Cols: size[0], Rows: size[1], ReadOnly: true, Rendered: rendered})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(scr.Snapshot(), before) {
+				t.Fatal("static view mutated the retained source")
+			}
+			update, err := at.ReadUpdate(context.Background())
+			if err != nil || len(update.Data) == 0 || update.Snapshot != rendered {
+				t.Fatalf("invalid static view: %v", err)
+			}
+			scr.Write([]byte(" title\aFUTURE"))
+			if rendered {
+				view := phosphor.New(1, 1)
+				if err := view.RestoreSnapshot(update.Data, trustedSnapshotLimits()); err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(strings.Join(view.Lines(), "\n"), "FUTURE") {
+					t.Fatal("later writes changed an already-created snapshot")
+				}
+			}
+			at.Close()
+		}
+	}
+}
+
+func TestCoalescingDoesNotLoseWakeBeforeSleep(t *testing.T) {
+	for _, event := range []string{"input", "full", "overflow", "end"} {
+		t.Run(event, func(t *testing.T) {
+			a := &attacher{wake: make(chan struct{}, 1)}
+			at := &Attachment{a: a}
+			switch event {
+			case "input":
+				a.prioritizeInput(time.Now().Add(time.Hour))
+			case "full":
+				a.push(make([]byte, holdMax))
+			case "overflow":
+				a.push(make([]byte, maxAttachBuffer+1))
+			case "end":
+				a.end()
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := at.sleep(ctx, time.Hour); err != nil {
+				t.Fatalf("wake was discarded: %v", err)
+			}
+			if at.timer != nil {
+				at.timer.Stop()
+				t.Fatal("ready event armed a batching timer")
+			}
+		})
 	}
 }

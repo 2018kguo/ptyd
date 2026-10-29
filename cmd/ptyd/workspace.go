@@ -486,7 +486,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		historyView := info.Status != terminal.StatusRunning
 		result, attachErr := client.Attach(ctx, client.Options{
 			Addr: c.Addr, Token: c.Token, ID: string(info.ID), Label: label,
-			Human: true, Hold: historyView, ReadOnly: historyView,
+			Human: true, Hold: historyView, ReadOnly: historyView, ViewerColors: colors,
 		}, in, out, resize)
 		var unread []byte
 		if result.Detached && attachErr == nil {
@@ -501,7 +501,9 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			v.notice = "Could not open: " + attachErr.Error()
 		} else if !result.Detached {
 			ended, endErr := waitExited(ctx, c, info.ID)
-			if ctx.Err()!=nil {return ctx.Err()}
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			switch {
 			case endErr != nil:
 				v.notice = "Connection closed: " + endErr.Error()
