@@ -12,9 +12,9 @@ import (
 	"strings"
 )
 
-func statusEscape(p []byte) (// statusEscape consumes one CSI/SS3 key sequence, including split writes.
+// statusEscape consumes one CSI/SS3 key sequence, including split writes.
 // Unknown keys are ignored as a whole rather than leaking into the filter.
-consumed, direction int) {
+func statusEscape(p []byte) (consumed, direction int) {
 	if len(p) < 2 {
 		return 0, 0
 	}
@@ -76,12 +76,7 @@ func statusCell(s string, width int) string {
 	return s + strings.Repeat(" ", max(width-textWidth(s), 0))
 }
 func sessionApp(row terminal.SessionSummary) string {
-	provider := row.Agent
-	if row.External != nil {
-		provider = string(row.External.Ref.Provider)
-	} else if row.Source.Provider != "" {
-		provider = string(row.Source.Provider)
-	}
+	provider := sessionProvider(row)
 	switch provider {
 	case "codex":
 		return "Codex"
@@ -89,6 +84,34 @@ func sessionApp(row terminal.SessionSummary) string {
 		return "Claude"
 	}
 	return "Terminal"
+}
+
+func sessionProvider(row terminal.SessionSummary) string {
+	provider := row.Agent
+	if row.External != nil {
+		provider = string(row.External.Ref.Provider)
+	} else if row.Source.Provider != "" {
+		provider = string(row.Source.Provider)
+	} else if row.Local != nil {
+		provider = string(row.Local.Provider)
+	}
+	if provider == "" {
+		command := filepath.Base(row.Command)
+		if command == "codex" || command == "claude" {
+			provider = command
+		}
+	}
+	return provider
+}
+
+func (v workspaceView) sessionTitle(row terminal.SessionSummary) string {
+	return v.sessionCaption(row).Title(v.titles[row.ID])
+}
+func (v workspaceView) sessionLabel(row terminal.SessionSummary) string {
+	return v.sessionCaption(row).Session(v.titles[row.ID])
+}
+func (v workspaceView) sessionCaption(row terminal.SessionSummary) client.SessionCaption {
+	return client.SessionCaption{Name: sessionName(row), Provider: sessionProvider(row), Captain: v.isCaptain(row)}
 }
 func sessionState(row terminal.SessionSummary) string {
 	if row.Local != nil {
@@ -159,4 +182,4 @@ func friendlyCWD(path string) string {
 	return path
 }
 
-const statusEnter = "\x1b[?1049h\x1b[?25l\x1b[?2027l\x1b[?2004h"
+const statusEnter = "\x1b[?1049h\x1b[?25l\x1b[?2027l\x1b[?2004h\x1b[?9l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1015l\x1b[?1016l\x1b[?1000h\x1b[?1006h"

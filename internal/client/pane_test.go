@@ -141,9 +141,10 @@ func TestInstalledCodexPaneComposer(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := newUserTerminal(t, 120, 40)
+	viewerKeyboard := true // This witness's Phosphor host supports the protocol.
 	done := make(chan result, 1)
 	go func() {
-		r, e := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: string(info.ID), Label: info.Name}, u.slave, u.slave, nil)
+		r, e := Attach(context.Background(), Options{Addr: addr, Token: "tok", ID: string(info.ID), Label: info.Name, ViewerKeyboard: &viewerKeyboard}, u.slave, u.slave, nil)
 		done <- result{r.Detached, e}
 	}()
 	blank := 0
@@ -162,6 +163,14 @@ func TestInstalledCodexPaneComposer(t *testing.T) {
 		return blank >= 120 && strings.Contains(u.screen.Line(39), "Codex composer") && strings.Contains(u.screen.Line(39), "jk: back")
 	})
 	t.Logf("installed Codex pane retained %d blank background cells above a persistent status row", blank)
+	u.typeKeys(t, "\x1b")
+	time.Sleep(3 * sequenceWindow)
+	u.typeKeys(t, "[<65;30;12M")
+	u.typeKeys(t, "mouse-framing-ok")
+	eventually(t, "mouse report stays out of Codex draft", func() bool { return strings.Contains(u.text(), "mouse-framing-ok") })
+	if strings.Contains(u.text(), "[<65;") {
+		t.Fatal("mouse report leaked into Codex composer")
+	}
 	u.typeKeys(t, "jk")
 	select {
 	case r := <-done:

@@ -103,6 +103,14 @@ type API struct {
 	Token string
 }
 
+// Four search workers and pane/title reads share keep-alive connections.
+// The default per-host idle limit of two otherwise closes healthy connections
+// between batches and churns local ports in a long-lived browser.
+var apiHTTP = &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{
+	Proxy: http.ProxyFromEnvironment, MaxIdleConns: 16, MaxIdleConnsPerHost: 8,
+	IdleConnTimeout: 30 * time.Second,
+}}
+
 // HTTPError retains the response status for operations that can explain how
 // to recover from an unsupported endpoint.
 type HTTPError struct {
@@ -146,7 +154,7 @@ func (c API) readContext(ctx context.Context, method, path string, body any, lim
 	if c.Token != "" {
 		req.Header.Set("X-Ptyd-Token", c.Token)
 	}
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	resp, err := apiHTTP.Do(req)
 	if err != nil {
 		return nil, c.connErr(err)
 	}

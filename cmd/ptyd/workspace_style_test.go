@@ -63,10 +63,7 @@ func TestWorkspaceLongListsKeepTheirBottomBorders(t *testing.T) {
 			}
 			host := phosphor.New(cols, rows)
 			host.Write([]byte(workspaceFrame(v, cols, rows)))
-			left := min(max(cols/3, 30), 42)
-			if group != "" {
-				left = min(max(cols/3, 30), 44)
-			}
+			left := workspaceSidebarWidth(cols)
 			for x := 1; x <= left; x++ {
 				want := '─'
 				if x == 1 {
@@ -123,14 +120,18 @@ func TestWorkspaceInputTailKeepsWideTextSuffix(t *testing.T) {
 }
 
 func TestWorkspaceNarrowPaneCountStaysVisible(t *testing.T) {
-	v := workspaceView{group: "work", selected: "four", pins: map[terminal.GroupID][]terminal.ID{"work": {"one", "two", "three"}}, snapshot: &workspaceSnapshot{Query: workspaceQuery{Group: "work"}, PreviewID: "four", Preview: phosphor.New(80, 24)}}
+	v := workspaceView{group: "work", selected: "four", pins: map[terminal.GroupID][]terminal.ID{"work": {"one", "two", "three"}}, snapshot: &workspaceSnapshot{Query: workspaceQuery{Group: "work"}, Panes: []workspacePane{{Row: terminal.SessionSummary{ID: "four", Name: "four"}, Screen: phosphor.New(80, 24)}}}}
 	for _, id := range []terminal.ID{"one", "two", "three", "four"} {
 		v.rows = append(v.rows, terminal.SessionSummary{ID: id, Name: string(id), State: terminal.OverviewRunning})
 	}
 	for _, size := range [][2]int{{40, 16}, {80, 24}} {
 		host := phosphor.New(size[0], size[1])
 		host.Write([]byte(workspaceFrame(v, size[0], size[1])))
-		if !strings.Contains(host.Line(4), "1/4 panes") {
+		want := "1/4 panes"
+		if size[0] == 80 {
+			want = "2/4 panes"
+		}
+		if !strings.Contains(host.Line(4), want) {
 			t.Fatalf("narrow view hid pane visibility: %s", host.Line(4))
 		}
 		if !strings.Contains(strings.Join(host.Lines(), "\n"), "four") {

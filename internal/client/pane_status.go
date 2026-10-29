@@ -11,6 +11,7 @@ import (
 type paneStatusKey struct {
 	cols                   int
 	label, state           string
+	identity, groupID      string
 	foreground, background phosphor.RGB
 }
 
@@ -26,7 +27,11 @@ func (p *pane) appendStatus(b []byte, force bool) []byte {
 	if p.viewerPalette != nil {
 		palette = *p.viewerPalette
 	}
-	key := paneStatusKey{p.cols, p.label, state, palette.Foreground, palette.Background}
+	label := p.label
+	if p.caption != nil {
+		label = p.caption.Label(p.screen.Title())
+	}
+	key := paneStatusKey{cols: p.cols, label: label, state: state, identity: p.identity, groupID: p.groupID, foreground: palette.Foreground, background: palette.Background}
 	if key != p.statusKey || len(p.status) == 0 {
 		p.statusKey = key
 		p.status = appendPaneStatus(p.status[:0], key)
@@ -50,10 +55,13 @@ func appendPaneStatus(b []byte, key paneStatusKey) []byte {
 	if 299*int(bg.R)+587*int(bg.G)+114*int(bg.B) < 128000 {
 		accent = phosphor.RGB{R: 137, G: 198, B: 190}
 	}
+	if key.identity != "" {
+		accent = IdentityColor(key.identity, bg)
+	}
 	if key.state == "finished" {
 		accent = muted
 	}
-	b = fmt.Appendf(b, "\x1b[0m\x1b]8;;\x1b\\\x1b[?2027l\x1b[48;2;%d;%d;%dm", surface.R, surface.G, surface.B)
+	b = fmt.Appendf(b, "\x1b[0m\x1b]8;;\x1b\\\x1b[?2027l\x1b[48;2;%d;%d;%dm\x1b[2K", surface.R, surface.G, surface.B)
 	put := func(text string, color phosphor.RGB, bold bool) {
 		weight := 22
 		if bold {
@@ -94,17 +102,49 @@ func appendPaneStatus(b []byte, key paneStatusKey) []byte {
 	if name != "" {
 		put("  │  ", muted, false)
 		if group, terminal, ok := strings.Cut(name, " / "); ok {
-			put(group+" / ", muted, false)
-			put(terminal, fg, true)
+			groupColor := muted
+			if key.groupID != "" {
+				groupColor = IdentityColor(key.groupID, bg)
+			}
+			put(group, groupColor, false)
+			put(" / ", muted, false)
+			put(terminal, accent, true)
 		} else {
-			put(name, fg, true)
+			put(name, accent, true)
 		}
 	}
 	put(strings.Repeat(" ", padding), muted, false)
 	if right != hint {
 		put(key.state+"   ", muted, false)
 	}
+	from, _ := paneBackColumns(key.cols)
+	b = fmt.Appendf(b, "\x1b[%dG", from)
 	put(hint, accent, true)
 	put(" ", fg, false)
 	return append(b, "\x1b[0m"...)
+}
+
+func paneBackColumns(cols int) (int, int) {
+	if cols >= 18 {
+		return cols - displayWidth("jk: back"), cols - 1
+	}
+	if cols >= displayWidth("ptyd · jk: back") {
+		return displayWidth("ptyd · ") + 1, displayWidth("ptyd · jk: back")
+	}
+	return 1, min(cols, displayWidth("jk: back"))
+}
+func (p *pane) backButton() (rows, from, to int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.haveModes || len(p.status) == 0 || p.statusKey.cols != p.cols || p.lastModes.MouseEncoding == 1016 {
+		return 0, 0, 0
+	}
+	from, to = paneBackColumns(p.cols)
+	return p.rows - 1, from, to
+}
+
+func (p *pane) escapeDisambiguated() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.haveModes && p.lastModes.KittyKeyboard&1 != 0
 }

@@ -17,7 +17,7 @@ Both use the same groups, terminals and output. An agent can launch work,
 wait for a result and read only what changed; you can enter that same
 terminal whenever you want.
 
-![Entering a group, switching terminals and leaving work running](docs/demo.gif)
+![Browsing live terminal panes, searching output and opening a group](docs/demo.gif)
 
 ## Get started
 
@@ -44,15 +44,27 @@ The default daemon address is `127.0.0.1:4242`; `PTYD_ADDR` selects another.
 
 ## Find your way around
 
-Running `ptyd` or `ptyd ls` opens your groups. Move with `j/k` to see a
-group's terminals and live screen preview before entering it. Inside a group,
-press **v** to pin a terminal beside the list. Pin up to three to follow several
-agents at once while moving between them. Pins survive leaving and reopening
-the browser. Previews keep
-application colors and backgrounds; smaller windows stack the preview below
-the list. Previews keep application footers and input boxes in view. Pane edges
-show when rows above or columns to the right are hidden; Enter opens the terminal.
-Finished screens stay available without being restarted.
+Running `ptyd` or `ptyd ls` opens your groups, with up to **eight live previews**
+of the selected group's terminals. Wide windows show a four-column, two-row
+grid; smaller windows use fewer columns. Inside a group, press **v** to pin up
+to seven terminals and keep the spare pane for the selected terminal. Pins
+survive reopening the browser. Previews preserve application colors, footers
+and input boxes; their edges say when content is cropped. Enter opens the
+terminal. Finished screens stay available without restarting.
+
+Click a row or pane to select it; double-click to open it. The workspace's
+bottom controls are clickable too. Groups and terminals have distinct,
+consistent color accents so you can recognize them between visits.
+
+Agent labels include both the app and conversation title, such as
+**Codex · Investigate AOP save failure**. Titles update as the agent changes
+them; custom names you set in ptyd take precedence. The sidebar gives titles
+their own line, with the app and status below.
+
+Press **/** to find text in terminal screens and retained scrollback, including
+wrapped lines. Search works across groups from the home view, or within an open
+group. Matches show a short excerpt and where it was found. Use **h** to include
+finished work; incomplete searches say what could not be checked.
 
 Use `ptyd ls --plain` for a table that exits, or `--json` for structured output.
 Piped output stays plain text. Older ungrouped terminals live in
@@ -61,7 +73,7 @@ Piped output stays plain text. Older ungrouped terminals live in
 | Where | Keys |
 |---|---|
 | Groups | `j/k` select · Enter open · `n` create · `h` history |
-| Inside a group | `j/k` select · Enter take control · `v` pin/unpin pane · `n` launch |
+| Inside a group | `j/k` select · Enter take control · `v` pin/unpin · `c` captain · `n` launch |
 | Finished terminal | `R` launch again · Enter view history |
 | Anywhere | Quick `jk` goes back: terminal → group → groups → shell |
 | Workspace | `/` search · `?` help · `q` quit |
@@ -85,6 +97,11 @@ screen. History views stay open until **jk**.
 Rename with **r**, move a terminal with **m**, and close with **x**. Closing
 requires confirmation. Archive finished groups with **a** in the group list.
 
+Choose a coordinator by selecting its terminal and pressing **c**. A
+**★ Captain** badge identifies it in previews and the attached status bar.
+Press **c** again to clear the designation. Tell that agent what to coordinate;
+it uses the same ptyd commands as any other session.
+
 ## Work with agents
 
 Ask your agent to use ptyd and choose a group for the work. A managing agent
@@ -96,6 +113,8 @@ a handoff format or a task workflow.
 ptyd new -d research
 ptyd term new -d --group research -n tests -- make test
 ptyd status --json --group research
+ptyd search --group research --json 'tests passed'
+ptyd captain --group research --json
 ptyd attach research
 ```
 
@@ -103,6 +122,12 @@ Terminals receive their daemon address, terminal id and group context.
 Commands started inside one inherit its current group, including after a
 move. Use `--group` to choose another. Full terminal ids keep working across
 groups; names resolve within the chosen group.
+
+Use `ptyd captain --group research terminal-id` to designate a coordinator.
+`ptyd captain --json` reads the current group's choice and availability.
+Captains and pins are workspace preferences saved on this machine, per daemon
+address. Another machine has its own preferences. Moving or removing the
+chosen terminal makes it unavailable as that group's captain; choose another.
 
 The HTTP API keeps the operations useful to agents:
 

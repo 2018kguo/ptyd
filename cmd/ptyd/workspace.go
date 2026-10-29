@@ -14,7 +14,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/client"
 	"github.com/2018kguo/ptyd/internal/native"
 	"github.com/2018kguo/ptyd/internal/terminal"
@@ -41,25 +40,27 @@ type workspaceQuery struct {
 	Generation uint64
 	Group      terminal.GroupID
 	Selected   string
+	Focus      terminal.ID
 	Search     string
 	History    bool
 	Outside    bool
 	Watches    []terminal.ID
 }
 type workspaceSnapshot struct {
-	Query      workspaceQuery
-	Groups     []terminal.GroupSummary
-	Overview   terminal.Overview
-	Preview    *phosphor.Terminal
-	PreviewErr error
-	PreviewID  string
-	Pinned     []workspacePinnedPreview
-	Err        error
+	Query    workspaceQuery
+	Groups   []terminal.GroupSummary
+	Overview terminal.Overview
+	Panes    []workspacePane
+	Titles   map[terminal.ID]string
+	Search   *client.ContentSearch
+	Matches  map[terminal.ID]*client.ContentMatch
+	Err      error
 }
 type workspaceView struct {
 	generation              uint64 // attachment handoffs fence input and stale refreshes
 	group                   terminal.GroupID
 	selected                string
+	previewFocus            terminal.ID
 	groups                  []terminal.GroupSummary
 	rows                    []terminal.SessionSummary
 	snapshot                *workspaceSnapshot
@@ -72,6 +73,8 @@ type workspaceView struct {
 	busy                    bool
 	home                    workspaceHomeState
 	pins                    map[terminal.GroupID][]terminal.ID
+	captains                map[terminal.GroupID]terminal.ID
+	titles                  map[terminal.ID]string
 	searchBefore            string
 	motion                  bool
 	brandPhase              int
@@ -91,9 +94,6 @@ func (v workspaceView) visibleGroups() []terminal.GroupSummary {
 	var out []terminal.GroupSummary
 	for _, g := range v.groups {
 		if !v.history && (g.Archived || (g.ID == terminal.DefaultGroup && g.Running == 0)) {
-			continue
-		}
-		if v.query != "" && !strings.Contains(strings.ToLower(g.Name+" "+g.CWD), strings.ToLower(v.query)) {
 			continue
 		}
 		out = append(out, g)
@@ -122,6 +122,9 @@ func (v workspaceView) index() int {
 	return 0
 }
 func (v *workspaceView) move(n int) {
+	if v.group == "" {
+		v.previewFocus = ""
+	}
 	ids := v.items()
 	if len(ids) > 0 {
 		v.selected = ids[min(max(v.index()+n, 0), len(ids)-1)]
@@ -146,7 +149,13 @@ func (v *workspaceView) refresh(s workspaceSnapshot) {
 	v.err = nil
 	v.groups = s.Groups
 	v.snapshot = &s
-	for _, p := range s.Pinned {
+	if v.titles == nil {
+		v.titles = map[terminal.ID]string{}
+	}
+	for id, title := range s.Titles {
+		v.titles[id] = title
+	}
+	for _, p := range s.Panes {
 		if p.Removed {
 			v.unpin(p.Row.ID)
 		}
@@ -169,90 +178,12 @@ func (q workspaceQuery) matches(v workspaceView) bool {
 	return q.Generation == v.generation && q.Group == v.group && q.Search == v.query && q.History == v.history && q.Outside == v.outside && slices.Equal(q.Watches, v.watched())
 }
 func queueWorkspace(ch chan workspaceQuery, v workspaceView) {
-	q := workspaceQuery{Generation: v.generation, Group: v.group, Selected: v.selected, Search: v.query, History: v.history, Outside: v.outside, Watches: append([]terminal.ID(nil), v.watched()...)}
+	q := workspaceQuery{Generation: v.generation, Group: v.group, Selected: v.selected, Focus: v.previewFocus, Search: v.query, History: v.history, Outside: v.outside, Watches: append([]terminal.ID(nil), v.watched()...)}
 	select {
 	case <-ch:
 	default:
 	}
 	ch <- q
-}
-func refreshWorkspace(ctx context.Context, c client.API, queries <-chan workspaceQuery, updates chan workspaceSnapshot) {
-	ticker := time.NewTicker(750 * time.Millisecond)
-	defer ticker.Stop()
-	q := workspaceQuery{}
-	for {
-		select {
-		case q = <-queries:
-		case <-ctx.Done():
-			return
-		}
-		for {
-			budget := 3 * time.Second
-			if q.Outside {
-				budget = 12 * time.Second
-			}
-			req, cancel := context.WithTimeout(ctx, budget)
-			s := workspaceSnapshot{Query: q}
-			s.Groups, s.Err = c.Groups(req)
-			group := q.Group
-			home := group == ""
-			if home {
-				group = terminal.GroupID(q.Selected)
-			}
-			if s.Err == nil && group != "" {
-				options := terminal.OverviewOptions{GroupID: group, Limit: terminal.MaxOverviewLimit, Discover: q.Outside, ActiveOnly: !q.History}
-				if !home {
-					options.Query = q.Search
-				} else {
-					options.ActiveOnly = false
-				}
-				s.Overview, s.Err = c.Overview(req, options)
-				if home && s.Err != nil {
-					s.PreviewErr = s.Err
-					s.Err = nil
-				}
-				if s.Err == nil {
-					rows := s.Overview.Sessions
-					if home {
-						for i, r := range rows {
-							if r.Attention > 0 || r.State == terminal.OverviewRunning {
-								rows = append([]terminal.SessionSummary{r}, rows[:i]...)
-								break
-							}
-						}
-					}
-					for _, r := range rows {
-						if (home || string(r.ID) == q.Selected) && r.External == nil && r.Local == nil {
-							s.PreviewID = string(r.ID)
-							// Screens are fetched together below.
-							break
-						}
-					}
-				}
-			}
-			if s.Err == nil {
-				fetchWorkspaceScreens(req, c, &s)
-			}
-			cancel()
-			select {
-			case <-updates:
-			default:
-			}
-			select {
-			case updates <- s:
-			case <-ctx.Done():
-				return
-			}
-			select {
-			case q = <-queries:
-				continue
-			case <-ticker.C:
-				continue
-			case <-ctx.Done():
-				return
-			}
-		}
-	}
 }
 
 type workspaceKey struct {
@@ -261,6 +192,7 @@ type workspaceKey struct {
 	Escape    bool
 	Paste     bool
 	Back      bool
+	Mouse     *client.MouseEvent
 }
 type workspaceInput struct {
 	pending []byte
@@ -314,10 +246,13 @@ func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
 			if n == 0 {
 				break
 			}
+			mouse, isMouse := client.ParseMouseReport(p.pending[:n])
 			paste := bytes.Equal(p.pending[:n], []byte("\x1b[200~"))
 			p.pending = p.pending[n:]
 			p.since = time.Time{}
-			if paste {
+			if isMouse {
+				out = append(out, workspaceKey{Mouse: &mouse})
+			} else if paste {
 				p.paste = true
 			} else if d != 0 {
 				out = append(out, workspaceKey{Direction: d})
@@ -375,9 +310,11 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		if raw != nil {
 			_ = term.Restore(int(in.Fd()), raw)
 		}
-		_, _ = io.WriteString(out, "\x18"+"\x1b[?2026l\x1b[?2004l\x1b[?7h\x1b[0m\x1b[?25h\x1b[?1049l\x1b[23;0t")
+		_, _ = io.WriteString(out, "\x18"+"\x1b[?1000l\x1b[?1006l\x1b[?2026l\x1b[?2004l\x1b[?7h\x1b[0m\x1b[?25h\x1b[?1049l\x1b[23;0t")
 	}()
 	colors, pending := client.ProbeColors(ctx, in, out)
+	viewerKeyboard, keyboardPending := client.ProbeKeyboard(ctx, in, out)
+	pending = append(pending, keyboardPending...)
 	input, err := client.NewInput(ctx, in, pending)
 	if err != nil {
 		return err
@@ -387,13 +324,23 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	history := start != "" || (len(showHistory) > 0 && showHistory[0])
 	layouts := loadWorkspaceLayouts(c.Addr)
 	v := workspaceView{theme: workspaceThemeFor(colors), pins: layouts.pins, motion: os.Getenv("PTYD_REDUCED_MOTION") == "", notice: layouts.notice, history: history, group: start, selected: string(initial), color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
+	v.captains = layouts.captains
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
 	}
 	queries := make(chan workspaceQuery, 1)
 	updates := make(chan workspaceSnapshot, 1)
-	go refreshWorkspace(ctx, c, queries, updates)
+	var stopRefresh context.CancelFunc
+	var refreshDone chan struct{}
+	startRefresh := func() {
+		var refreshCtx context.Context
+		refreshCtx, stopRefresh = context.WithCancel(ctx)
+		refreshDone = make(chan struct{})
+		go func() { defer close(refreshDone); refreshWorkspace(refreshCtx, c, queries, updates) }()
+	}
+	startRefresh()
+	defer func() { stopRefresh(); <-refreshDone }()
 	queueWorkspace(queries, v)
 	resize := make(chan os.Signal, 1)
 	signal.Notify(resize, syscall.SIGWINCH)
@@ -411,6 +358,8 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	}()
 	var lastFrame string
 	var frameCols, frameRows int
+	var sceneHits []workspaceHit
+	var mouse workspaceMouse
 	nextMotion := time.Now().Add(workspaceMotionInterval)
 	draw := func() {
 		cols, rows, e := term.GetSize(int(out.Fd()))
@@ -420,10 +369,14 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		frameCols, frameRows = cols, rows
 		stable := v
 		stable.brandPhase = 0
-		frame := workspaceFrame(stable, cols, rows)
+		scene := renderWorkspace(stable, cols, rows)
+		frame := scene.ANSI
+		sceneHits = scene.Hits
 		if frame != lastFrame {
 			if v.brandPhase != 0 {
-				_, _ = io.WriteString(out, workspaceFrame(v, cols, rows))
+				// Reuse the painted panes; only the small header animation differs.
+				brand := workspaceBrand(cols, rows, 0, v.color)
+				_, _ = io.WriteString(out, strings.TrimSuffix(frame, brand)+workspaceBrand(cols, rows, v.brandPhase, v.color))
 			} else {
 				_, _ = io.WriteString(out, frame)
 			}
@@ -473,20 +426,23 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	}
 	attachTerminal := func(info terminal.Info) error {
 		v.generation++
+		// The workspace is hidden while attached; pause its preview/search reads.
+		stopRefresh()
+		<-refreshDone
 		lastFrame = ""
 		input.Close()
 		_ = client.FlushInput(in)
 		_ = term.Restore(int(in.Fd()), raw)
 		raw = nil
-		_, _ = io.WriteString(out, "\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
-		label := info.Name
+		_, _ = io.WriteString(out, "\x1b[?1000l\x1b[?1006l\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
+		caption := client.SessionCaption{Name: info.Name, Provider: sessionProvider(terminal.SessionSummary{Agent: info.Agent, Source: info.Source, Command: info.Command}), Captain: v.captains[info.GroupID] == info.ID}
 		if g, ok := v.groupInfo(); ok {
-			label = g.Name + " / " + info.Name
+			caption.Group = g.Name
 		}
 		historyView := info.Status != terminal.StatusRunning
 		result, attachErr := client.Attach(ctx, client.Options{
-			Addr: c.Addr, Token: c.Token, ID: string(info.ID), Label: label,
-			Human: true, Hold: historyView, ReadOnly: historyView, ViewerColors: colors,
+			Addr: c.Addr, Token: c.Token, ID: string(info.ID), Label: caption.Label(v.titles[info.ID]), Caption: &caption,
+			Human: true, Hold: historyView, ReadOnly: historyView, ViewerColors: colors, ViewerKeyboard: &viewerKeyboard, GroupID: info.GroupID,
 		}, in, out, resize)
 		var unread []byte
 		if result.Detached && attachErr == nil {
@@ -527,6 +483,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		}
 		parser = workspaceInput{}
 		_, _ = io.WriteString(out, statusEnter)
+		startRefresh()
 		queueWorkspace(queries, v)
 		return nil
 	}
@@ -541,6 +498,89 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	autoOpen := string(initial)
 	var handle func(workspaceKey) (bool, error)
 	handle = func(k workspaceKey) (bool, error) {
+		if k.Mouse != nil {
+			event := *k.Mouse
+			if cols, rows, e := term.GetSize(int(out.Fd())); e == nil && (cols != frameCols || rows != frameRows) {
+				draw()
+				return false, nil
+			}
+			if event.Button == 64 || event.Button == 65 {
+				for _, h := range sceneHits {
+					r := h.Rect
+					if (h.Kind == workspaceHitGroup || h.Kind == workspaceHitTerminal) && event.X-1 >= r.x && event.X-1 < r.x+r.w && event.Y-1 >= r.y && event.Y-1 < r.y+r.h {
+						direction := -1
+						if event.Button == 65 {
+							direction = 1
+						}
+						return handle(workspaceKey{Direction: direction})
+					}
+				}
+				return false, nil
+			}
+			h, open, ok := mouse.click(event, sceneHits, time.Now())
+			if !ok {
+				return false, nil
+			}
+			if h.Kind == workspaceHitKey {
+				return handle(h.Key)
+			}
+			if v.snapshot == nil || v.err != nil || !v.snapshot.Query.matches(v) {
+				v.notice = "Wait for this view to refresh before opening it."
+				return false, nil
+			}
+			if v.mode == wsSearch {
+				v.mode = wsNormal
+				v.text = ""
+			}
+			switch h.Kind {
+			case workspaceHitGroup:
+				if v.selected != h.ID {
+					v.previewFocus = ""
+				}
+				v.selected = h.ID
+				if open {
+					v.enterGroup(terminal.GroupID(h.ID))
+				}
+			case workspaceHitPane:
+				if v.group == "" {
+					v.previewFocus = terminal.ID(h.ID)
+					if open {
+						v.enterGroup(h.Group)
+						v.selected = h.ID
+						autoOpen = h.ID
+					}
+				} else {
+					v.selected = h.ID
+					if open {
+						return handle(workspaceKey{Rune: '\r'})
+					}
+				}
+			case workspaceHitTerminal:
+				v.selected = h.ID
+				if open {
+					return handle(workspaceKey{Rune: '\r'})
+				}
+			case workspaceHitDestination:
+				index := 0
+				for _, g := range v.groups {
+					if g.ID == v.group || g.Archived {
+						continue
+					}
+					if string(g.ID) == h.ID {
+						v.aux = index
+						if open {
+							return handle(workspaceKey{Rune: '\r'})
+						}
+						break
+					}
+					index++
+				}
+			case workspaceHitKey:
+			}
+			queueWorkspace(queries, v)
+			return false, nil
+		}
+		mouse.last = workspaceClick{}
 		if k.Paste {
 			switch v.mode {
 			case wsSearch, wsCommand, wsNewGroup, wsRun, wsRename, wsConfirm, wsResume:
@@ -771,7 +811,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			queueWorkspace(queries, v)
 			return false, nil
 		}
-		if strings.ContainsRune("rmxR", k.Rune) || (k.Rune == 'a' && v.group == "") {
+		if strings.ContainsRune("rmxRc", k.Rune) || (k.Rune == 'a' && v.group == "") {
 			if v.err != nil || v.snapshot == nil || !v.snapshot.Query.matches(v) {
 				v.notice = "Wait for this view to refresh before changing it."
 				return false, nil
@@ -878,6 +918,17 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 					queueWorkspace(queries, v)
 				}
 			}
+		case 'c':
+			if r, ok := v.row(); v.group != "" && ok && r.External == nil && r.Local == nil {
+				group, id := v.group, r.ID
+				notice := "Captain designated."
+				if v.isCaptain(r) {
+					id, notice = "", "Captain designation cleared."
+				}
+				launch(func(ctx context.Context) workspaceOperation {
+					return workspaceOperation{Notice: notice, Err: chooseCaptain(ctx, c, group, id)}
+				})
+			}
 		case '\r', '\n', 'i':
 			if v.err != nil || v.snapshot == nil || !v.snapshot.Query.matches(v) {
 				v.notice = "Wait for this view to refresh before opening it."
@@ -913,7 +964,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 				v.notice = "Another person has control. Press v to pin a live pane."
 				return false, nil
 			}
-			return false, attachTerminal(terminal.Info{ID: r.ID, Name: r.Name, GroupID: r.GroupID, HumanControl: r.HumanControl, Status: func() terminal.Status {
+			return false, attachTerminal(terminal.Info{ID: r.ID, Name: r.Name, GroupID: r.GroupID, Agent: r.Agent, Source: r.Source, Command: r.Command, HumanControl: r.HumanControl, Status: func() terminal.Status {
 				if r.State == terminal.OverviewRunning {
 					return terminal.StatusRunning
 				}
@@ -929,6 +980,9 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		case <-ctx.Done():
 			return nil
 		case result := <-updates:
+			if saved := loadWorkspaceLayouts(c.Addr); saved.readErr == nil {
+				v.captains = saved.captains
+			}
 			before := v.selected
 			v.refresh(result)
 			if before != v.selected || !result.Query.matches(v) {
@@ -959,6 +1013,9 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			}
 			v.busy = false
 			v.notice = result.Notice
+			if saved := loadWorkspaceLayouts(c.Addr); saved.readErr == nil {
+				v.captains = saved.captains
+			}
 			if result.Err != nil {
 				v.notice = result.Err.Error()
 			} else if result.Group != nil {
@@ -990,7 +1047,17 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 				nextMotion = now.Add(workspaceMotionInterval)
 				_, _ = io.WriteString(out, "\x1b[?2026h"+workspaceBrand(frameCols, frameRows, v.brandPhase, v.color)+"\x1b[?2026l")
 			}
-			keys = parser.expire(now)
+			// Complete queued mouse/key reports before treating a timed-out
+			// prefix as Escape after a delayed draw.
+			select {
+			case chunk, ok := <-input.Bytes:
+				if !ok {
+					return nil
+				}
+				keys = parser.feed(chunk, now)
+			default:
+				keys = parser.expire(now)
+			}
 			if len(keys) == 0 {
 				continue
 			}

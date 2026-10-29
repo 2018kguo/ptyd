@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 
@@ -20,4 +21,16 @@ func (c API) Preview(ctx context.Context, id terminal.ID) (*phosphor.Terminal, e
 		return nil, fmt.Errorf("preview unavailable or too large; open the terminal to view it: %w", err)
 	}
 	return view, nil
+}
+
+func (c API) TerminalTitle(ctx context.Context, id terminal.ID) (string, error) {
+	raw, err := c.readContext(ctx, "GET", "/terminals/"+url.PathEscape(string(id))+"/screen", nil, 1<<20)
+	if err != nil {
+		return "", err
+	}
+	var screen struct {
+		Title string `json:"title"`
+	}
+	err = json.Unmarshal(raw, &screen)
+	return screen.Title, err
 }

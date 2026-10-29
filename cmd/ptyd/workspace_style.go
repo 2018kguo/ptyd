@@ -7,10 +7,14 @@ import (
 	"strings"
 
 	"github.com/2018kguo/phosphor"
+	"github.com/2018kguo/ptyd/internal/client"
 	"github.com/2018kguo/ptyd/internal/terminal"
 )
 
-type workspaceTheme struct{ selection, surface string }
+type workspaceTheme struct {
+	selection, surface string
+	background         phosphor.RGB
+}
 
 func workspaceThemeFor(colors *terminal.TerminalColors) workspaceTheme {
 	if colors == nil || len(colors.Foreground) != 7 || len(colors.Background) != 7 || colors.Foreground[0] != '#' || colors.Background[0] != '#' {
@@ -28,8 +32,9 @@ func workspaceThemeFor(colors *terminal.TerminalColors) workspaceTheme {
 		}
 		return fmt.Sprintf("48;2;%d;%d;%d", rgb[0], rgb[1], rgb[2])
 	}
-	return workspaceTheme{selection: "1;" + blend(16), surface: blend(6)}
+	return workspaceTheme{selection: "1;" + blend(16), surface: blend(6), background: phosphor.RGB{R: bg[0], G: bg[1], B: bg[2]}}
 }
+func (t workspaceTheme) identity(id string) string { return client.IdentityStyle(id, t.background) }
 func (t workspaceTheme) selected() string {
 	if t.selection == "" {
 		return "1;36"
@@ -60,12 +65,14 @@ func workspaceBox(r workspaceRect, style string, put func(int, int, string, stri
 
 type workspaceKeyHint struct{ key, label string }
 
-func workspaceKeys(v workspaceView, cols, y int, put func(int, int, string, string)) {
+func workspaceSidebarWidth(cols int) int { return min(max(cols/5, 26), 32) }
+
+func workspaceKeys(v workspaceView, cols, y int, put func(int, int, string, string), hit func(workspaceHit)) {
 	hints := []workspaceKeyHint{{"j/k", "move"}, {"Enter", "open"}, {"n", "new"}, {"/", "search"}, {"jk", "back"}, {"?", "help"}, {"q", "quit"}}
 	if v.group != "" {
-		hints = slices.Insert(hints, 2, workspaceKeyHint{"v", "pin"})
+		hints = slices.Insert(hints, 2, workspaceKeyHint{"v", "pin"}, workspaceKeyHint{"c", "captain"})
 	}
-	optional := []string{"/", "n", "j/k", "v"}
+	optional := []string{"c", "/", "n", "j/k", "v"}
 	if row, ok := v.row(); v.group != "" && ok && row.Local == nil && row.External == nil && row.State != terminal.OverviewRunning {
 		hints[1].label = "history"
 		hints = slices.Insert(hints, 1, workspaceKeyHint{"R", "relaunch"})
@@ -107,6 +114,23 @@ func workspaceKeys(v workspaceView, cols, y int, put func(int, int, string, stri
 	}
 	x := 2
 	for _, h := range hints {
+		var key workspaceKey
+		valid := true
+		switch h.key {
+		case "jk":
+			key.Back = true
+		case "Enter":
+			key.Rune = '\r'
+		default:
+			if len([]rune(h.key)) == 1 {
+				key.Rune = []rune(h.key)[0]
+			} else {
+				valid = false
+			}
+		}
+		if valid {
+			hit(workspaceHit{Rect: workspaceRect{x, y, textWidth(h.key) + 1 + textWidth(h.label), 1}, Kind: workspaceHitKey, Key: key})
+		}
 		put(x, y, h.key, "1;36")
 		x += textWidth(h.key) + 1
 		put(x, y, h.label, "2")

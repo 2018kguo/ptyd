@@ -13,29 +13,31 @@ import (
 // Apps can clear, scroll or switch screens without painting over the status row.
 // Only attached human views allocate this model; the API byte stream stays raw.
 type pane struct {
-	history       []historyRow
-	historyBytes  int
-	mu            sync.Mutex
-	screen        *phosphor.Terminal
-	out           io.Writer
-	label         string
-	finished      bool
-	viewOnly      bool
-	cols, rows    int
-	changed       bool
-	lastModes     phosphor.Modes
-	haveModes     bool
-	sequences     sequenceReader
-	err           error
-	title         string
-	initialized   bool
-	painted       []paneRow
-	buffer        []byte
-	ready         chan struct{}
-	paints        uint64 // completed host writes; only the drawing goroutine changes it
-	statusKey     paneStatusKey
-	status        []byte
-	viewerPalette *phosphor.Palette
+	history           []historyRow
+	historyBytes      int
+	mu                sync.Mutex
+	screen            *phosphor.Terminal
+	out               io.Writer
+	label             string
+	caption           *SessionCaption
+	identity, groupID string
+	finished          bool
+	viewOnly          bool
+	cols, rows        int
+	changed           bool
+	lastModes         phosphor.Modes
+	haveModes         bool
+	sequences         sequenceReader
+	err               error
+	title             string
+	initialized       bool
+	painted           []paneRow
+	buffer            []byte
+	ready             chan struct{}
+	paints            uint64 // completed host writes; only the drawing goroutine changes it
+	statusKey         paneStatusKey
+	status            []byte
+	viewerPalette     *phosphor.Palette
 }
 
 func newPane(out io.Writer, label string, cols, rows int) *pane {
@@ -132,6 +134,9 @@ func (p *pane) draw(force bool) error {
 		p.lastModes = modes
 	}
 	title := p.screen.Title()
+	if p.caption != nil {
+		title = p.caption.Label(title)
+	}
 	if title == "" {
 		title = p.label
 	}

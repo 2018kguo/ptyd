@@ -11,10 +11,16 @@ import (
 // The workspace uses the host palette: bright text for focus, muted context,
 // cyan navigation, amber attention. Every status also has a plain-text label.
 func workspaceFrame(v workspaceView, cols, rows int) string {
+	return renderWorkspace(v, cols, rows).ANSI
+}
+
+func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
+	var hits []workspaceHit
+	hit := func(h workspaceHit) { hits = append(hits, h) }
 	cols = max(cols, 1)
 	rows = max(rows, 1)
 	if cols < 40 || rows < 16 {
-		return "\x1b[?2026h\x1b[H\x1b[2J\x1b[0m" + clipStatus("ptyd · enlarge to 40×16", cols) + "\r\n" + clipStatus("q detaches · work keeps running", cols) + "\x1b[?2026l"
+		return workspaceScene{ANSI: "\x1b[?2026h\x1b[H\x1b[2J\x1b[0m" + clipStatus("ptyd · enlarge to 40×16", cols) + "\r\n" + clipStatus("q detaches · work keeps running", cols) + "\x1b[?2026l"}
 	}
 	var out, preview strings.Builder
 	const start = "\x1b[?2026h\x1b[?25l\x1b[?7l\x1b[0m\x1b[H\x1b[2J"
@@ -39,11 +45,15 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 	if cols >= 96 {
 		headingWidth = min(headingWidth, cols/2-10)
 	}
-	put(8, 1, clipStatus("/  "+heading, headingWidth), "1")
+	headingStyle := "1"
+	if v.group != "" {
+		headingStyle += ";" + v.theme.identity(string(v.group))
+	}
+	put(8, 1, clipStatus("/  "+heading, headingWidth), headingStyle)
 	title := "ptyd · " + heading
 	fmt.Fprintf(&out, "\x1b]2;%s\x1b\\", displayText(title, 160))
 	if v.group == "" {
-		workspaceHome(&preview, v, cols, rows, put, line)
+		workspaceHome(&preview, v, cols, rows, put, line, hit)
 	} else {
 		g, ok := v.groupInfo()
 		if ok {
@@ -66,7 +76,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		}
 		left := cols
 		if cols >= 96 {
-			left = min(max(cols/3, 30), 44)
+			left = workspaceSidebarWidth(cols)
 		}
 		line(4)
 		if left < cols {
@@ -77,29 +87,42 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			put(left+2, 4, workspaceWatchHeading(v, workspaceRect{left + 3, 6, cols - left - 6, rows - 11}), "1;36")
 		}
 		// Rows start at 6 and end above the box's bottom edge at rows-6.
-		available := max(rows-12, 1)
+		rowHeight := 2
+		if strings.TrimSpace(v.query) != "" {
+			rowHeight = 3
+		}
+		available := max((rows-12)/rowHeight, 1)
 		if left == cols {
-			available = min(max(len(v.rows), 1), max((rows-13)/2, 1))
+			available = min(max(len(v.rows), 1), max((rows-13)/(rowHeight+1), 1))
 		}
 		start := max(v.index()-available+1, 0)
 		for i := start; i < len(v.rows) && i < start+available; i++ {
 			r := v.rows[i]
-			y := 6 + i - start
+			y := 6 + (i-start)*rowHeight
 			style := ""
 			mark := "  "
 			if string(r.ID) == v.selected {
 				style = v.theme.selected()
 				mark = "› "
 			}
-			status := workspaceTerminalIcon(r) + " " + workspaceTerminalState(r)
-			name := sessionName(r)
+			status := sessionApp(r) + " · " + workspaceTerminalIcon(r) + " " + workspaceTerminalState(r)
+			name := v.sessionTitle(r)
+			if v.isCaptain(r) {
+				name = "★ " + name
+			}
 			if slices.Contains(v.watched(), r.ID) {
 				name = "◆ " + name
 			}
-			statusWidth := min(textWidth(status), max(left/2-4, 7))
-			nameWidth := max(left-statusWidth-7, 5)
+			nameWidth := max(left-6, 5)
 			put(2, y, statusCell("", max(left-2, 1)), style)
-			put(2, y, mark+statusCell(name, nameWidth), style)
+			nameStyle := v.theme.identity(string(r.ID))
+			if style != "" {
+				nameStyle = style + ";" + nameStyle
+			}
+			put(2, y, mark+statusCell(name, nameWidth), nameStyle)
+			if v.mode == wsNormal || v.mode == wsSearch {
+				hit(workspaceHit{Rect: workspaceRect{2, y, left - 3, rowHeight}, Kind: workspaceHitTerminal, ID: string(r.ID), Group: v.group})
+			}
 			if style == "" {
 				if r.Attention > 0 {
 					style = "33"
@@ -109,12 +132,20 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 					style = "2"
 				}
 			}
-			put(left-statusWidth-1, y, clipStatus(status, statusWidth), style)
+			put(4, y+1, clipStatus(status, left-7), style)
+			if rowHeight == 3 {
+				if hit := v.contentMatch(r.ID); hit != nil {
+					put(4, y+2, clipStatus(hit.Source+": "+hit.Text, left-7), "2")
+				}
+			}
 		}
 		if len(v.rows) == 0 && v.snapshot != nil {
 			heading := "This group is ready."
 			if v.query != "" {
 				heading = "No terminals match your search."
+				if v.snapshot.Search != nil && !v.snapshot.Search.Complete {
+					heading = "No confirmed matches; search is incomplete."
+				}
 			} else if v.outside {
 				heading = "No terminals received in this view."
 			} else if !v.history && v.snapshot.Overview.HistoryHidden > 0 {
@@ -131,19 +162,19 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			leftPut(13, "Or ask an agent to use this group.", "2")
 		}
 		if left < cols {
-			workspaceWatchPanel(&preview, v, workspaceRect{left + 3, 6, max(cols-left-6, 1), max(rows-11, 1)}, cols, put)
+			workspaceWatchPanel(&preview, v, workspaceRect{left + 3, 6, max(cols-left-6, 1), max(rows-11, 1)}, cols, put, hit)
 		}
 		if left == cols {
-			y := 7 + available
+			y := 7 + available*rowHeight
 			area := workspaceRect{2, y, cols - 4, max(rows-y-5, 1)}
 			if n := len(v.watchPanes()); n > 1 {
-				label := fmt.Sprintf(" %d/%d panes ", min(n, workspacePaneLimit(area.h)), n)
+				label := fmt.Sprintf(" %d/%d panes ", min(n, workspacePaneCapacity(area)), n)
 				put(cols-textWidth(label)-2, 4, label, "2")
 			}
-			workspaceWatchPanel(&preview, v, area, cols, put)
+			workspaceWatchPanel(&preview, v, area, cols, put, hit)
 		}
 		if row, ok := v.row(); ok {
-			detail := sessionName(row) + " · " + sessionApp(row) + " · " + workspaceTerminalState(row)
+			detail := v.sessionCaption(row).Label(v.titles[row.ID]) + " · " + workspaceTerminalState(row)
 			hint := detail
 			if row.State != terminal.OverviewRunning && row.External == nil {
 				hint = detail + " · R relaunches"
@@ -171,6 +202,13 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 	if v.snapshot != nil && v.group != "" && v.snapshot.Overview.Truncated {
 		notice = "Only the first 500 matches are shown. Use / to narrow this group."
 	}
+	if strings.TrimSpace(v.query) != "" {
+		if v.snapshot == nil || !v.snapshot.Query.matches(v) {
+			notice = "Searching terminal contents…"
+		} else if v.snapshot.Search != nil && !v.snapshot.Search.Complete {
+			notice = fmt.Sprintf("Search incomplete · read %d of %d terminals. Narrow to a group or open unreadable screens.", v.snapshot.Search.Checked, v.snapshot.Search.Candidates)
+		}
+	}
 	if v.snapshot != nil && v.snapshot.Overview.ProcessIssue != "" {
 		notice = v.snapshot.Overview.ProcessIssue
 	}
@@ -192,7 +230,11 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		put(2, max(rows-5, 3), clipStatus(notice, cols-4), style)
 	}
 	line(rows - 3)
-	workspaceKeys(v, cols, rows-2, put)
+	workspaceKeys(v, cols, rows-2, put, func(h workspaceHit) {
+		if v.mode != wsSearch && v.mode != wsCommand {
+			hit(h)
+		}
+	})
 	if v.mode != wsNormal && v.mode != wsSearch && v.mode != wsCommand {
 		x, y := max((cols-min(cols-4, 70))/2, 1), max((rows-14)/2, 2)
 		width := max(min(cols-4, 70), 1)
@@ -258,6 +300,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 					style = v.theme.selected()
 				}
 				put(x+3, y+3+i-first, clipStatus(mark+available[i].Name, width-6), style)
+				hit(workspaceHit{Rect: workspaceRect{x + 2, y + 3 + i - first, width - 4, 1}, Kind: workspaceHitDestination, ID: string(available[i].ID)})
 			}
 			if len(available) == 0 {
 				put(x+3, y+4, "Create another group first.", "")
@@ -265,11 +308,19 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 			hint = "j/k choose · Enter moves it · jk / Esc goes back"
 		case wsHelp:
 			label = "Your workspace"
-			help := []string{"j/k  Move       Enter  Open", "jk   Back       v      Pin / unpin", "n    New        r      Rename", "m    Move       x      Close / remove", "h    Finished / archived work", "a    Outside agents / archive", "/    Search     :      Command", "q    Quit; work keeps running"}
+			help := []string{"j/k  Move       Enter  Open", "jk   Back       v      Pin / unpin", "n    New        c      Captain", "r/m  Rename/move  x    Close", "h    Finished   a      Outside / archive", "/    Search screens and scrollback", "Click selects; double-click opens", "q    Quit; work keeps running"}
 			for i, text := range help {
 				put(x+2, y+2+i, text, "")
 			}
 			hint = "jk, Esc, q or ? returns"
+		}
+		if v.mode == wsLaunch {
+			for _, choice := range []struct {
+				row int
+				key rune
+			}{{3, 'c'}, {4, 'a'}, {5, 's'}, {6, 'r'}, {8, 'f'}} {
+				hit(workspaceHit{Rect: workspaceRect{x + 2, y + choice.row, width - 4, 1}, Kind: workspaceHitKey, Key: workspaceKey{Rune: choice.key}})
+			}
 		}
 		put(x+2, y+1, label, "1;36")
 		put(x+2, y+10, clipStatus(hint, width-4), "2")
@@ -280,12 +331,20 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 		}
 	} else if v.mode == wsSearch || v.mode == wsCommand {
 		prefix := "/ "
-		hint := "Enter applies the filter · jk cancels"
+		hint := "Enter applies · jk cancels"
+		if cols >= 80 {
+			hint += " · screens + scrollback"
+		}
 		if v.mode == wsCommand {
 			prefix = ": "
 			hint = "Enter runs the command · jk cancels"
 		}
 		put(2, rows-4, clipStatus(hint, cols-4), "2")
+		enterWidth := textWidth(strings.Split(hint, " · ")[0])
+		hit(workspaceHit{Rect: workspaceRect{2, rows - 4, enterWidth, 1}, Kind: workspaceHitKey, Key: workspaceKey{Rune: '\r'}})
+		if at := strings.Index(hint, "jk cancels"); at >= 0 {
+			hit(workspaceHit{Rect: workspaceRect{2 + textWidth(hint[:at]), rows - 4, textWidth("jk cancels"), 1}, Kind: workspaceHitKey, Key: workspaceKey{Back: true}})
+		}
 		text := workspaceInputTail(v.text, cols-7)
 		put(1, rows-2, strings.Repeat(" ", max(cols-2, 0)), v.theme.onSurface(""))
 		put(2, rows-2, prefix+text, v.theme.onSurface("1"))
@@ -293,7 +352,7 @@ func workspaceFrame(v workspaceView, cols, rows int) string {
 	}
 	out.WriteString("\x1b[0m\x1b[?7h\x1b[?2026l")
 	out.WriteString(workspaceBrand(cols, rows, v.brandPhase, v.color))
-	return start + preview.String() + out.String()
+	return workspaceScene{ANSI: start + preview.String() + out.String(), Hits: hits}
 }
 func workspaceTerminalState(r terminal.SessionSummary) string {
 	if r.External != nil || r.Local != nil {
