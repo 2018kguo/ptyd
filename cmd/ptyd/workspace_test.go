@@ -515,3 +515,51 @@ func TestPreviewCanonicalRowsKeepHistoricalClusters(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspacePreviewFrameKeepsChromeAndSourceState(t *testing.T) {
+	const cols, rows, left = 120, 24, 40
+	rect := workspaceRect{left + 3, 8, cols - left - 6, rows - 16}
+	cases := []string{
+		"\x1b[?2027h\x1b[1;3H🇧🇨\x1b[?2027l\x1b[1;1H🇦",
+		"\x1b[?2027lA❤️",
+		"\x1b[?2027hA☔︎",
+		"\x1b[?2027h👩‍💻\x1b[?2027lX",
+		"\x1b[?2027hक्‍ष",
+		"\x1b[?2027l\x1b[1;74H❤️",
+		"\x1b[?2027h\x1b[1;74H☔︎",
+		"\x1b]4;1;rgb:12/34/56\a\x1b[31;4;58;2;60;70;80mX",
+	}
+	for _, input := range cases {
+		source := phosphor.New(80, 4)
+		source.Write([]byte(input))
+		before := source.Snapshot()
+		v := workspaceView{group: "work", selected: "preview", color: true,
+			groups:   []terminal.GroupSummary{{Group: terminal.Group{ID: "work", Name: "work"}, Running: 1, Terminals: 1}},
+			rows:     []terminal.SessionSummary{{ID: "preview", Name: "preview", State: terminal.OverviewRunning}},
+			snapshot: &workspaceSnapshot{PreviewID: "preview"},
+		}
+		chrome := phosphor.New(cols, rows)
+		chrome.Write([]byte(workspaceFrame(v, cols, rows)))
+		v.snapshot.Preview = source
+		host := phosphor.New(cols, rows)
+		host.Write([]byte(workspaceFrame(v, cols, rows)))
+		sourcePalette, hostPalette := source.Palette(), host.Palette()
+		for y := 0; y < rows; y++ {
+			for x := 0; x < cols; x++ {
+				if x >= rect.x && x < rect.x+rect.w && y >= rect.y && y < rect.y+4 {
+					actual, want := host.Cell(x, y), source.Cell(x-rect.x, y-rect.y)
+					if actual.Text() != want.Text() || actual.Width != want.Width || hostPalette.Resolve(actual.Style.Fg, false) != sourcePalette.Resolve(want.Style.Fg, false) || hostPalette.Resolve(actual.Style.Bg, true) != sourcePalette.Resolve(want.Style.Bg, true) {
+						t.Fatalf("%q at %d,%d: actual=%+v want=%+v", input, x, y, actual, want)
+					}
+				} else if !(x >= rect.x && x < rect.x+rect.w && y >= rect.y && y < rect.y+rect.h) {
+					if host.Cell(x, y) != chrome.Cell(x, y) {
+						t.Fatalf("%q changed chrome at %d,%d", input, x, y)
+					}
+				}
+			}
+		}
+		if string(source.Snapshot()) != string(before) {
+			t.Fatal("rendering changed source terminal state")
+		}
+	}
+}
