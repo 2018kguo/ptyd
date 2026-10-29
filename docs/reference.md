@@ -261,12 +261,18 @@ Human TTY attachments reserve the bottom row for the session name and
 `jk: back`. The app receives one fewer PTY row and cannot draw over this
 indicator by clearing, scrolling or switching screens. The client draws cells
 and preserves the app's cursor, keyboard modes, colors and links. Mouse events
-for the status row do not reach the app. The window/tab title identifies the
+for the status row do not reach the app. The bar uses a subtle surface, a group
+and terminal label, an attachment state and a right-aligned return hint. It uses
+the viewer's known colors; without them it follows the app's palette. The
+window/tab title identifies the
 view too. App title updates retain the ptyd prefix and hint;
 the previous title is restored on return. Matching transcript rows move within
 the app rectangle instead of repainting the whole screen. Keyboard and wheel
 responses can paint immediately; background output batches at up to 120 paints
 per second, and idle views do not poll for redraws.
+The daemon prioritizes a short response burst after attached input; bulk output
+still coalesces. Daemon changes take effect when it restarts. Updating only the
+client preserves running work and gives it the current status bar and renderer.
 `ptyd term attach --raw` forwards terminal
 output directly without reserving a row; piped output remains raw too. The title is a view label; it does not verify
 the current conversation after navigation inside an agent.

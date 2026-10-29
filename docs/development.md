@@ -139,6 +139,11 @@ the app rectangle. Input responses paint without waiting for the background
 refresh budget; idle panes have no periodic paint timer. The maintained
 [attachment benchmarks](../bench/README.md#attached-scrolling) measure emitted
 bytes, CPU work and local input-to-paint latency separately.
+Status checks cover dark/light themes, narrow windows, Unicode labels across
+palette changes, and restoring the app's grapheme mode. Queue tests control the
+held-read boundary so an input, overflow or end wake cannot disappear just
+before sleep. Static-view tests keep source snapshots unchanged across matching
+and resized geometry, and verify later output cannot change returned bytes.
 
 Native discovery tests cover loaded Codex threads without rollouts, original-tab
 observations without conversation authority, same-terminal deduplication and

@@ -50,46 +50,62 @@ for its workload conditions and remaining native leads.
 
 ## Attached scrolling
 
-Human attachments keep a status row below the app. The client compares exact
-rendered rows, moves matching transcript rows within the app rectangle, and
-paints only the rows that changed. Keyboard and wheel responses bypass the
-background paint budget. Idle views have no periodic redraw wakeups.
+Human attachments compare exact rendered rows, move matching transcript rows
+within the app rectangle, and keep the status bar outside it. The bar follows
+the viewer's theme and stays cached while the app scrolls. Keyboard and wheel
+input bypass the background paint budget; incomplete synchronized frames keep
+that priority until they can actually paint. Idle panes have no paint timer.
+The daemon also prioritizes a short output burst after attached input while
+retaining bulk-output batching.
 
-Six alternating A/B rounds on an Apple M5 Pro, with the same synthetic transcript
-and Go toolchain, measured these medians:
+Six alternating A/B rounds on an Apple M5 Pro used identical synthetic transcript
+fixtures and Go toolchains. These are medians across the six runs:
 
-| Measurement | Window | Before | After |
-|---|---|---:|---:|
-| Sequential wheel input → completed paint, p50 | 120×30 / 240×64 | 16.7 ms | 4.5 ms |
-| Sequential wheel input → completed paint, p95 | 120×30 / 240×64 | 17.4 ms | 4.6 ms |
-| Bytes sent to the viewing terminal per frame | 120×30 | 6,162 | 385 |
-| Bytes sent to the viewing terminal per frame | 240×64 | 21,242 | 729 |
-| Parse and render time per frame | 120×30 | 37.7–38.2 µs | 25.3–26.0 µs |
-| Parse and render time per frame | 240×64 | 105–110 µs | 66.7–67.7 µs |
+| Sequential wheel input to completed paint | Direct PTY control | Ptyd before | Ptyd after |
+|---|---:|---:|---:|
+| 120×30, p50 | 0.03 ms | 4.50 ms | 0.15 ms |
+| 120×30, p95 | 0.04 ms | 4.56 ms | 0.18 ms |
+| 240×64, p50 | 0.06 ms | 4.49 ms | 0.21 ms |
+| 240×64, p95 | 0.08 ms | 4.55 ms | 0.25 ms |
 
 Latency includes real local PTYs, the app, daemon, TCP and the client painting
 into a host emulator. Each run sends 100 sequential wheel events, waiting for
-each synchronized frame to finish. The direct PTY control uses equal app
-dimensions and measured about 0.05–0.09 ms p50. Ptyd still adds work and output
-batching; this is a comparison with the previous attachment path, not a claim
-of direct-terminal latency. Neither case measures a GUI, GPU or physical display.
+each synchronized frame to finish. The direct control uses equal app dimensions.
+These results require both the updated client and daemon. A client update works
+with an existing daemon, but does not change that daemon's batching behavior.
+Leave running work intact and update the daemon at its next safe restart.
 
-The separate rendering fixture parses full transcript redraws and renders into
-the same host emulator. Timings are Go benchmark elapsed time on a shared
-workstation; ranges cover upward and downward scrolling. Emitted
-bytes include occasional full redraws when the finite transcript wraps. These
-synthetic fixtures do not establish a speedup for every terminal application.
+Snapshot setup also avoids an ANSI repaint that a framed viewer never uses,
+and skips cloning retained screens when their geometry already matches:
 
-[Download the samples, source patch and fixture](https://github.com/2018kguo/ptyd/releases/download/v0.12.1/ptyd-attachment-benchmarks.tar.gz).
-The [evidence index](../docs/benchmarks.json) pins the source revisions and archive
-checksum. To compare an explicit baseline with your checkout:
+| Snapshot setup, 2,000 history rows | Before | After |
+|---|---:|---:|
+| Live screen, elapsed time | 42.6 µs | 22.5 µs |
+| Loaded static screen, elapsed time | 139 µs | 22.1 µs |
+| Live screen, allocated bytes | 287,040 | 139,584 |
+| Loaded static screen, allocated bytes | 593,048 | 139,584 |
+
+This fixture verifies exactly 2,000 retained rows. It excludes network, PTY I/O,
+disk loading and human-client painting. The separate one/eight-attacher fanout
+fixture found no measured throughput change. Prioritizing response chunks can
+cost a few more allocations per input; these are targeted improvements rather
+than a claim that every metric improves.
+
+All timings are elapsed measurements on a shared workstation. No fixture
+measures a GUI, GPU or physical display, and none establishes a speedup for
+every terminal application.
+[Download all samples, source patch and fixtures](https://github.com/2018kguo/ptyd/releases/download/v0.12.2/ptyd-attachment-benchmarks.tar.gz).
+The [evidence index](../docs/benchmarks.json) pins sources and the archive checksum.
+To repeat the comparisons:
 
 ```sh
-BASELINE=22af6fb358221be74a35df32a86aa7d5c7eb871c
-COUNT=6 BENCHTIME=200ms OUT=.bench/paint \
-  bench/ab.sh "$BASELINE" ./internal/client '^BenchmarkPaneScroll$'
+BASELINE=23b2404a86bbabc16f95a93d225bd6441aeb5586
 COUNT=6 BENCHTIME=100x OUT=.bench/latency \
   bench/ab.sh "$BASELINE" ./internal/client '^BenchmarkAttachScrollLatency$'
+COUNT=6 BENCHTIME=200ms OUT=.bench/snapshot \
+  bench/ab.sh "$BASELINE" ./internal/terminal '^BenchmarkRenderedAttach$'
+COUNT=6 BENCHTIME=200ms OUT=.bench/fanout \
+  bench/ab.sh "$BASELINE" ./internal/terminal '^BenchmarkAttachFanout/(K=1|K=8)$'
 ```
 
 ## Run a comparison
