@@ -38,12 +38,13 @@ const (
 )
 
 type workspaceQuery struct {
-	Group    terminal.GroupID
-	Selected string
-	Search   string
-	History  bool
-	Outside  bool
-	Watches  []terminal.ID
+	Generation uint64
+	Group      terminal.GroupID
+	Selected   string
+	Search     string
+	History    bool
+	Outside    bool
+	Watches    []terminal.ID
 }
 type workspaceSnapshot struct {
 	Query      workspaceQuery
@@ -56,6 +57,7 @@ type workspaceSnapshot struct {
 	Err        error
 }
 type workspaceView struct {
+	generation              uint64 // attachment handoffs fence input and stale refreshes
 	group                   terminal.GroupID
 	selected                string
 	groups                  []terminal.GroupSummary
@@ -74,6 +76,7 @@ type workspaceView struct {
 	motion                  bool
 	brandPhase              int
 	theme                   workspaceTheme
+	agentAccess             workspaceAgentAccess
 }
 
 func (v workspaceView) groupInfo() (terminal.GroupSummary, bool) {
@@ -163,10 +166,10 @@ func (v *workspaceView) refresh(s workspaceSnapshot) {
 	}
 }
 func (q workspaceQuery) matches(v workspaceView) bool {
-	return q.Group == v.group && q.Search == v.query && q.History == v.history && q.Outside == v.outside && slices.Equal(q.Watches, v.watched())
+	return q.Generation == v.generation && q.Group == v.group && q.Search == v.query && q.History == v.history && q.Outside == v.outside && slices.Equal(q.Watches, v.watched())
 }
 func queueWorkspace(ch chan workspaceQuery, v workspaceView) {
-	q := workspaceQuery{Group: v.group, Selected: v.selected, Search: v.query, History: v.history, Outside: v.outside, Watches: append([]terminal.ID(nil), v.watched()...)}
+	q := workspaceQuery{Generation: v.generation, Group: v.group, Selected: v.selected, Search: v.query, History: v.history, Outside: v.outside, Watches: append([]terminal.ID(nil), v.watched()...)}
 	select {
 	case <-ch:
 	default:
@@ -384,6 +387,10 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 	history := start != "" || (len(showHistory) > 0 && showHistory[0])
 	layouts := loadWorkspaceLayouts(c.Addr)
 	v := workspaceView{theme: workspaceThemeFor(colors), pins: layouts.pins, motion: os.Getenv("PTYD_REDUCED_MOTION") == "", notice: layouts.notice, history: history, group: start, selected: string(initial), color: os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
 	queries := make(chan workspaceQuery, 1)
 	updates := make(chan workspaceSnapshot, 1)
 	go refreshWorkspace(ctx, c, queries, updates)
@@ -442,30 +449,12 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			}
 		}()
 	}
-	createTerminal := func(command string) {
+	createTerminal := func(cfg terminal.CreateConfig) {
 		g, ok := v.groupInfo()
 		if !ok {
 			return
 		}
-		cfg := terminal.CreateConfig{GroupID: g.ID, CWD: g.CWD, Restore: terminal.RestoreAuto, TerminalColors: colors}
-		switch command {
-		case "codex", "claude":
-			cfg.Command, cfg.Name = command, command
-		case "shell":
-			cfg.Command = os.Getenv("SHELL")
-			if cfg.Command == "" {
-				cfg.Command = "/bin/sh"
-			}
-			cfg.Name = "shell"
-		default:
-			cfg.Command = os.Getenv("SHELL")
-			if cfg.Command == "" {
-				cfg.Command = "/bin/sh"
-			}
-			cfg.Args = []string{"-lc", command}
-			cfg.Name = clipStatus(command, 40)
-			cfg.Restore = terminal.RestoreNone
-		}
+		cfg.GroupID, cfg.CWD, cfg.TerminalColors = g.ID, g.CWD, colors
 		count := 1
 		for _, r := range v.rows {
 			if r.Name == cfg.Name || strings.HasPrefix(r.Name, cfg.Name+" ") {
@@ -482,9 +471,8 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			return workspaceOperation{Terminal: &t, Err: e}
 		})
 	}
-	attachGeneration := 0
 	attachTerminal := func(info terminal.Info) error {
-		attachGeneration++
+		v.generation++
 		lastFrame = ""
 		input.Close()
 		_ = client.FlushInput(in)
@@ -495,9 +483,10 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		if g, ok := v.groupInfo(); ok {
 			label = g.Name + " / " + info.Name
 		}
+		historyView := info.Status != terminal.StatusRunning
 		result, attachErr := client.Attach(ctx, client.Options{
 			Addr: c.Addr, Token: c.Token, ID: string(info.ID), Label: label,
-			Human: true, Hold: true, ReadOnly: info.Status != terminal.StatusRunning,
+			Human: true, Hold: historyView, ReadOnly: historyView,
 		}, in, out, resize)
 		var unread []byte
 		if result.Detached && attachErr == nil {
@@ -506,9 +495,29 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		v.selected = string(info.ID)
+		v.notice = "Returned to your workspace."
+		if attachErr != nil {
+			v.notice = "Could not open: " + attachErr.Error()
+		} else if !result.Detached {
+			ended, endErr := waitExited(ctx, c, info.ID)
+			if ctx.Err()!=nil {return ctx.Err()}
+			switch {
+			case endErr != nil:
+				v.notice = "Connection closed: " + endErr.Error()
+			case ended.Status == terminal.StatusRunning:
+				v.notice = "Connection closed. The terminal is still running; Enter reconnects."
+			default:
+				v.showEnded(ended)
+			}
+		}
 		raw, err = term.MakeRaw(int(in.Fd()))
 		if err != nil {
 			return err
+		}
+		if !result.Detached || attachErr != nil {
+			// Input for a process that just ended must not become workspace commands.
+			_ = client.FlushInput(in)
 		}
 		input, err = client.NewInput(ctx, in, unread)
 		if err != nil {
@@ -516,11 +525,6 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		}
 		parser = workspaceInput{}
 		_, _ = io.WriteString(out, statusEnter)
-		v.selected = string(info.ID)
-		v.notice = "Returned to your workspace."
-		if attachErr != nil {
-			v.notice = "Could not open: " + attachErr.Error()
-		}
 		queueWorkspace(queries, v)
 		return nil
 	}
@@ -575,15 +579,21 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		}
 		if v.mode == wsLaunch {
 			switch k.Rune {
+			case 'f':
+				if v.agentAccess == workspaceFullAccess {
+					v.agentAccess = workspaceCLISettings
+				} else {
+					v.agentAccess = workspaceFullAccess
+				}
 			case 'c':
 				v.mode = wsNormal
-				createTerminal("codex")
+				createTerminal(v.agentAccess.launch("codex"))
 			case 'a':
 				v.mode = wsNormal
-				createTerminal("claude")
+				createTerminal(v.agentAccess.launch("claude"))
 			case 's':
 				v.mode = wsNormal
-				createTerminal("shell")
+				createTerminal(terminal.CreateConfig{Command: shell, Name: "shell", Restore: terminal.RestoreAuto})
 			case 'r':
 				v.mode = wsRun
 				v.text = ""
@@ -659,7 +669,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 				})
 			case wsRun:
 				if text != "" {
-					createTerminal(text)
+					createTerminal(workspaceCustomLaunch(text, shell))
 				}
 			case wsRename:
 				if text == "" {
@@ -720,7 +730,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 					if v.group == "" {
 						v.notice = "Open a group before starting a terminal."
 					} else if arg != "" {
-						createTerminal(arg)
+						createTerminal(workspaceCustomLaunch(arg, shell))
 					} else {
 						v.mode = wsRun
 					}
@@ -995,7 +1005,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			if backOnly && !k.Back && !k.Escape {
 				continue
 			}
-			generation, group, mode := attachGeneration, v.group, v.mode
+			generation, group, mode := v.generation, v.group, v.mode
 			quit, e := handle(k)
 			if v.mode == wsSearch && v.query != v.text {
 				v.query = v.text
@@ -1007,7 +1017,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			if quit {
 				return nil
 			}
-			if generation != attachGeneration {
+			if generation != v.generation {
 				break
 			}
 			if (group != v.group || mode != v.mode) && (k.Back || k.Escape) {

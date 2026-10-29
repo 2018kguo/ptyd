@@ -221,7 +221,7 @@ func attach(parent context.Context, c client.API, t terminal.Info, opts client.O
 		return 0, pending
 	}
 	// The output ended: the program exited, or the daemon went away.
-	info, err := waitExited(c, t.ID)
+	info, err := waitExited(ctx, c, t.ID)
 	switch {
 	case errors.Is(err, client.ErrDaemonDown):
 		fmt.Fprintf(os.Stderr, "[lost the connection: ptyd at %s stopped]\n", c.Addr)
@@ -252,12 +252,29 @@ func attach(parent context.Context, c client.API, t terminal.Info, opts client.O
 // waitExited returns the terminal's state once it is no longer running,
 // or after a short wait: its output ends just before its exit status is
 // known.
-func waitExited(c client.API, id terminal.ID) (terminal.Info, error) {
+func waitExited(ctx context.Context, c client.API, id terminal.ID) (terminal.Info, error) {
+	// Bound requests too: a lost daemon must not trap a returning workspace.
+	wait, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
 	var info terminal.Info
-	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(20 * time.Millisecond) {
-		err := c.Do("GET", "/terminals/"+string(id), nil, &info)
-		if err != nil || info.Status != terminal.StatusRunning || time.Now().After(deadline) {
+	for {
+		var current terminal.Info
+		if err := c.DoContext(wait, "GET", "/terminals/"+string(id), nil, &current); err != nil {
 			return info, err
+		}
+		info = current
+		if info.Status != terminal.StatusRunning {
+			return info, nil
+		}
+		select {
+		case <-wait.Done():
+			if ctx.Err() != nil {
+				return info, ctx.Err()
+			}
+			return info, nil
+		case <-tick.C:
 		}
 	}
 }

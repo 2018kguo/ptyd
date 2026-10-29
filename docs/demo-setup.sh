@@ -35,7 +35,7 @@ fi
 cd /tmp
 ptyd new -d --cwd /tmp website >/dev/null
 ptyd new -d --cwd /tmp research >/dev/null
-ptyd term new -d --group website -n build -- sh -c 'printf "\033[48;2;40;42;54m\033[32m Build complete. 12 tests passed. \033[0m\n"; exec cat' >/dev/null
+ptyd term new -d --group website -n build -- sh -c 'printf "\033[48;2;40;42;54m\033[32m Build complete. 12 tests passed. \033[0m\n"; while IFS= read -r line; do if [ "$line" = exit ]; then printf "Build session finished.\n"; exit 0; fi; printf "%s\n" "$line"; done' >/dev/null
 ptyd term new -d --group website -n logs -- sh -c 'printf "\033[36mService ready. Listening for requests.\033[0m\n"; i=0; while [ "$i" -lt 30 ]; do printf "\rRequests served: %s" "$i"; i=$((i+1)); sleep 1; done; exec cat' >/dev/null
 ptyd term new -d --group research -n notes -- sh -c 'printf "A persistent research shell is ready.\n"; exec cat' >/dev/null
 export PS1='$ '

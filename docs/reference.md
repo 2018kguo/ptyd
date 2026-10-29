@@ -245,11 +245,17 @@ input passes through without local shortcuts.
 Escape, double Escape, control keys and function keys belong to the attached
 program. Modified keys and key-repeat events do not activate `jk`; unmodified
 kitty and modifyOtherKeys encodings do. On detach, terminal modes reset and
-the attached window moves into local scrollback. Connection loss exits the
-client with code 1; a normal program exit uses its exit code. Stopped sessions
-attach read-only and return immediately from the standalone command. In the
-workspace, saved screens and newly exited frontends stay open until `jk`. Further
-keystrokes stay local after output ends; the footer changes to “finished.”
+the attached window moves into local scrollback. Standalone attachments exit
+with code 1 on connection loss or the program's code on a normal exit. Stopped
+sessions attach read-only and return immediately from the standalone command.
+
+In the workspace, a running program's exit returns to its group automatically.
+The finished terminal stays selected, with `R` to relaunch and Enter to view
+history. A filter or hidden-history setting is cleared so the record stays
+visible. Queued input for the ended program is discarded. Explicit history
+views stay read-only until `jk`; their footer says “finished.” A dropped
+connection returns to the group with a reconnect message if the process is
+still running.
 
 Human TTY attachments reserve the bottom row for the session name and
 `jk: back`. The app receives one fewer PTY row and cannot draw over this
@@ -268,7 +274,7 @@ the current conversation after navigation inside an agent.
 | `j/k`, arrows; `0/G` | Move; first/last item. |
 | Enter, `i` | Open a group or take keyboard control of a terminal. |
 | `v` | Pin/unpin a live terminal pane beside the group list; up to three pins per group. |
-| `n` | Create a group, or launch Codex (`c`), Claude (`a`), shell (`s`) or a custom command (`r`). |
+| `n` | Create a group, or launch Codex (`c`), Claude (`a`), shell (`s`) or a custom command (`r`). In the launch menu, `f` toggles agent access. |
 | `r` | Rename the selected group or terminal. |
 | `m` | Move a terminal to another unarchived group. |
 | `x` | Close/remove; requires typing `close` to confirm. |
@@ -306,6 +312,14 @@ Pins are local presentation settings, saved per daemon address under
 `$XDG_STATE_HOME/ptyd` (default `~/.local/state/ptyd`) in an owner-only `view-*.json`
 file. They persist across browser restarts. `●` means running, `◉` human control,
 `◇` saved, `✓` successful exit, `!` attention or failure, and `◆` pinned.
+
+Built-in Codex and Claude launches start with **Full (YOLO)** access. Press `f`
+in the launch menu to choose **CLI settings**, which adds no permission override.
+Codex full access uses `--dangerously-bypass-approvals-and-sandbox`; Claude uses
+`--dangerously-skip-permissions`. The choice applies to new built-in agent
+launches while this browser is open. A fresh browser starts with full access.
+Restored agents keep the flags they were launched with. Shells, custom commands,
+explicit CLI commands and HTTP creations use their supplied arguments.
 
 In the browser, a lone `j` moves immediately. Pasted text can edit prompts but cannot execute
 commands or move the selection. Custom commands run through the caller's shell

@@ -27,6 +27,10 @@ Type "ptyd attach website" Enter
 Sleep 1800ms
 Type "n"
 Sleep 900ms
+Type "f"
+Sleep 600ms
+Type "f"
+Sleep 600ms
 Type@40ms "jk"
 Sleep 500ms
 Type "v"
@@ -40,6 +44,10 @@ Sleep 600ms
 Enter
 Sleep 1200ms
 Type "work keeps running" Enter
+Sleep 1200ms
+Type "exit" Enter
+Sleep 1500ms
+Type "R"
 Sleep 1200ms
 Type@40ms "jk"
 Sleep 1200ms

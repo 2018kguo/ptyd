@@ -65,11 +65,17 @@ func workspaceKeys(v workspaceView, cols, y int, put func(int, int, string, stri
 	if v.group != "" {
 		hints = slices.Insert(hints, 2, workspaceKeyHint{"v", "pin"})
 	}
+	optional := []string{"/", "n", "j/k", "v"}
+	if row, ok := v.row(); v.group != "" && ok && row.Local == nil && row.External == nil && row.State != terminal.OverviewRunning {
+		hints[1].label = "history"
+		hints = slices.Insert(hints, 1, workspaceKeyHint{"R", "relaunch"})
+		optional = append(optional, "Enter")
+	}
 	switch v.mode {
 	case wsHelp:
 		hints = []workspaceKeyHint{{"jk", "back"}, {"q", "close"}}
 	case wsLaunch:
-		hints = []workspaceKeyHint{{"c/a/s/r", "choose"}, {"jk", "back"}}
+		hints = []workspaceKeyHint{{"c/a/s/r", "choose"}, {"f", "access"}, {"jk", "back"}}
 	case wsMove:
 		hints = []workspaceKeyHint{{"j/k", "choose"}, {"Enter", "move"}, {"jk", "back"}}
 	case wsNewGroup:
@@ -88,7 +94,7 @@ func workspaceKeys(v workspaceView, cols, y int, put func(int, int, string, stri
 		}
 		return max(n-2, 0)
 	}
-	for _, key := range []string{"/", "n", "j/k", "v"} {
+	for _, key := range optional {
 		if width() <= cols-4 {
 			break
 		}

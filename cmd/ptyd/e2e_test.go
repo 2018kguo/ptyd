@@ -29,15 +29,23 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	ptydBin = filepath.Join(dir, "ptyd")
+	ptydBin = os.Getenv("PTYD_TEST_BIN")
+	if ptydBin == "" {
+		ptydBin = filepath.Join(dir, "ptyd")
+		if out, err := exec.Command("go", "build", "-o", ptydBin, ".").CombinedOutput(); err != nil {
+			panic(fmt.Sprintf("build: %v\n%s", err, out))
+		}
+	} else {
+		ptydBin, err = filepath.Abs(ptydBin)
+		if err != nil {
+			panic(err)
+		}
+	}
 	// Daemons save their tokens here, and the CLI and d.do read them.
 	os.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
 	os.Unsetenv("PTYD_TOKEN")
 	os.Unsetenv("PTYD_GROUP_ID")
 	os.Unsetenv("PTYD_TERMINAL_ID")
-	if out, err := exec.Command("go", "build", "-o", ptydBin, ".").CombinedOutput(); err != nil {
-		panic(fmt.Sprintf("build: %v\n%s", err, out))
-	}
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
