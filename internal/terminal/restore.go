@@ -71,6 +71,11 @@ const restoreParallelism = 16
 // stays a ghost, the notice is printed on its saved screen and recorded,
 // and the error wraps ErrRestoreDeclined.
 func (m *Manager) Restore(id ID, policy RestorePolicy) (Info, error) {
+	m.workspaceMu.RLock()
+	defer m.workspaceMu.RUnlock()
+	return m.restore(id, policy)
+}
+func (m *Manager) restore(id ID, policy RestorePolicy) (Info, error) {
 	m.mu.Lock()
 	_, ghost := m.ghosts[id]
 	_, live := m.terms[id]
@@ -105,6 +110,14 @@ func (m *Manager) Restore(id ID, policy RestorePolicy) (Info, error) {
 		return Info{}, fmt.Errorf("import native session %s again to revalidate its worker", meta.Source.Key())
 	}
 	cfg := meta.config()
+	g, err := m.groupLocked(cfg.GroupID)
+	if err != nil {
+		return Info{}, err
+	}
+	if g.Archived {
+		return Info{}, fmt.Errorf("%w: unarchive this group before restoring terminals", ErrGroupConflict)
+	}
+	cfg.GroupID = g.ID
 	if policy != "" {
 		cfg.Restore = policy
 	}

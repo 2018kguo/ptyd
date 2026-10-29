@@ -7,7 +7,7 @@
 #                the daemon saved in ~/.local/state/ptyd/token-<port>
 set -euo pipefail
 
-API="${PTYD_API:-http://127.0.0.1:4242}"
+API="${PTYD_API:-http://${PTYD_ADDR:-127.0.0.1:4242}}"
 port="${API##*:}"
 port="${port%%/*}"
 TOKEN="${PTYD_TOKEN:-$(cat "${XDG_STATE_HOME:-$HOME/.local/state}/ptyd/token-$port" 2>/dev/null || true)}"

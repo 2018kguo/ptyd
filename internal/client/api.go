@@ -162,7 +162,7 @@ func (c API) connErr(err error) error {
 	if !errors.As(err, &op) || op.Op != "dial" {
 		return fmt.Errorf("ptyd at %s: %w", c.Addr, err)
 	}
-	return fmt.Errorf("%w at %s (start it with `ptyd &`, or set PTYD_ADDR)", ErrDaemonDown, c.Addr)
+	return fmt.Errorf("%w at %s (start it with `ptyd serve`, or set PTYD_ADDR)", ErrDaemonDown, c.Addr)
 }
 
 func (c API) statusErr(status int, body []byte) error {
@@ -231,5 +231,5 @@ func Find(list []terminal.Info, target string) (terminal.Info, error) {
 			return terminal.Info{}, fmt.Errorf("%q matches %d terminals (%s); use the id", target, len(m), strings.Join(ids, ", "))
 		}
 	}
-	return terminal.Info{}, fmt.Errorf("no terminal %q (see `ptyd ls`)", target)
+	return terminal.Info{}, fmt.Errorf("no terminal %q (see `ptyd term ls`)", target)
 }

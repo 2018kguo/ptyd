@@ -60,11 +60,15 @@ type Options struct {
 
 // Manager owns a set of PTY-backed terminal sessions.
 type Manager struct {
-	importMu sync.Mutex // serializes native import decisions, not ordinary terminal work
-	opts     Options
-	mu       sync.RWMutex
-	terms    map[ID]*terminal
-	ghosts   map[ID]Info // metadata-only entries from prior daemon runs
+	workspaceMu sync.RWMutex // serializes group membership changes with terminal creation/restoration
+	groups      map[GroupID]Group
+	groupErr    error
+	address     string
+	importMu    sync.Mutex // serializes native import decisions, not ordinary terminal work
+	opts        Options
+	mu          sync.RWMutex
+	terms       map[ID]*terminal
+	ghosts      map[ID]Info // metadata-only entries from prior daemon runs
 	// restoring holds ghosts with a restore in progress.
 	restoring map[ID]bool
 	next      atomic.Int64
@@ -81,8 +85,9 @@ type Manager struct {
 }
 
 type terminal struct {
-	mu   sync.Mutex // protects info, attention, lastOutputAt, pendingFired
-	info Info
+	inputMu sync.Mutex // input transactions and human ownership; never held by observers
+	mu      sync.Mutex // protects info, attention, lastOutputAt, pendingFired
+	info    Info
 
 	// mgr backref so waitLoop can update counters + persist exit info
 	// when the child process exits without an API close.
@@ -107,7 +112,8 @@ type terminal struct {
 	outputEnded    bool                   // guarded by scrMu
 	nativeClosing  bool                   // scrMu: last native viewer left; no new attachment may claim this frontend
 	nativeDeadline *time.Timer            // scrMu: bounds an imported frontend never claimed by an attachment
-	attached       atomic.Int32           // len(attachers), read without scrMu
+	humans         atomic.Int32
+	attached       atomic.Int32 // len(attachers), read without scrMu
 
 	// persist saves the screen under the persist dir (nil without one);
 	// ckptMu serializes its checkpoints.
@@ -143,7 +149,9 @@ var (
 	// ErrNotFound is returned for ids that are neither live nor ghosts.
 	ErrNotFound = errors.New("terminal not found")
 	// ErrNotRunning is returned when an operation needs a live process.
-	ErrNotRunning = errors.New("terminal is not running")
+	ErrNotRunning   = errors.New("terminal is not running")
+	ErrInputBusy    = errors.New("terminal input is busy; watch read-only or retry after the pending write finishes")
+	ErrHumanControl = errors.New("a person has keyboard control of this terminal; continue observing or retry after they return to the group")
 )
 
 // NewManager returns an empty manager with default options.
@@ -206,11 +214,28 @@ func NewManagerWithOptions(opts Options) *Manager {
 			fmt.Fprintf(os.Stderr, "[ptyd] ghost load failed: %v\n", err)
 		}
 	}
+	m.initGroups()
 	return m
 }
 
 // Create spawns a new terminal.
 func (m *Manager) Create(cfg CreateConfig) (Info, error) {
+	m.workspaceMu.RLock()
+	defer m.workspaceMu.RUnlock()
+	return m.create(cfg)
+}
+func (m *Manager) create(cfg CreateConfig) (Info, error) {
+	g, err := m.groupLocked(cfg.GroupID)
+	if err != nil {
+		return Info{}, err
+	}
+	if g.Archived {
+		return Info{}, fmt.Errorf("%w: group is archived; unarchive it before creating terminals", ErrGroupConflict)
+	}
+	cfg.GroupID = g.ID
+	if cfg.CWD == "" {
+		cfg.CWD = g.CWD
+	}
 	if err := m.normalize(&cfg); err != nil {
 		return Info{}, err
 	}
@@ -357,6 +382,11 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 		return slices.Contains(terminalNames, key)
 	})
 	cmd.Env = mergeEnv(parentEnv, cfg.Env)
+	contextEnv := map[string]string{"PTYD_GROUP_ID": string(cfg.GroupID), "PTYD_TERMINAL_ID": string(sp.id)}
+	if m.address != "" {
+		contextEnv["PTYD_ADDR"] = m.address
+	}
+	cmd.Env = mergeEnv(cmd.Env, contextEnv)
 	// Service managers start us without TERM; programs on a PTY need one.
 	if !slices.ContainsFunc(cmd.Env, func(kv string) bool { return strings.HasPrefix(kv, "TERM=") }) {
 		cmd.Env = append(cmd.Env, "TERM=xterm-256color")
@@ -403,6 +433,7 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 	t := &terminal{
 		mgr: m,
 		info: Info{
+			GroupID:    cfg.GroupID,
 			Source:     cfg.source,
 			ID:         sp.id,
 			Name:       cfg.Name,
@@ -436,7 +467,7 @@ func (m *Manager) spawn(cfg CreateConfig, sp spawnSpec) (Info, error) {
 	// exits immediately must find meta.json in place for its exit.json,
 	// and a daemon that dies right now must find the new pid.
 	meta := persistedMeta{
-		TerminalColors: cfg.TerminalColors, Source: cfg.source, ID: sp.id, Name: cfg.Name, CWD: cfg.CWD, Command: cfg.Command, Args: cfg.Args, Env: cfg.Env,
+		GroupID: cfg.GroupID, TerminalColors: cfg.TerminalColors, Source: cfg.source, ID: sp.id, Name: cfg.Name, CWD: cfg.CWD, Command: cfg.Command, Args: cfg.Args, Env: cfg.Env,
 		Tags: cfg.Tags, Watches: cfg.Watches, Cols: cfg.Cols, Rows: cfg.Rows, Restore: cfg.Restore, Agent: cfg.Agent,
 		PID: pid, ProcIdentity: ident, CreatedAt: sp.createdAt, Restored: sp.restored, RestoredAt: restoredAt,
 	}
@@ -751,7 +782,22 @@ func (m *Manager) Write(id ID, data string) error {
 	if !t.running() {
 		return ErrNotRunning
 	}
-	_, err = io.WriteString(t.ptmx, data)
+	if t.humans.Load() > 0 {
+		return ErrHumanControl
+	}
+	t.inputMu.Lock()
+	defer t.inputMu.Unlock()
+	return t.writeInput(data)
+}
+
+func (t *terminal) writeInput(data string) error {
+	if !t.running() {
+		return ErrNotRunning
+	}
+	if t.humans.Load() > 0 {
+		return ErrHumanControl
+	}
+	_, err := io.WriteString(t.ptmx, data)
 	return err
 }
 
@@ -764,16 +810,24 @@ func (m *Manager) Submit(id ID, data string) error {
 	if err != nil {
 		return err
 	}
+	if !t.running() {
+		return ErrNotRunning
+	}
+	if t.humans.Load() > 0 {
+		return ErrHumanControl
+	}
+	t.inputMu.Lock()
+	defer t.inputMu.Unlock()
 	t.scrMu.Lock()
 	bracketed := t.screen.Modes().BracketedPaste
 	t.scrMu.Unlock()
 	if bracketed && data != "" {
-		if err := m.Write(id, "\x1b[200~"+data+"\x1b[201~"); err != nil {
+		if err := t.writeInput("\x1b[200~" + data + "\x1b[201~"); err != nil {
 			return err
 		}
-		return m.Write(id, "\r")
+		return t.writeInput("\r")
 	}
-	return m.Write(id, data+"\r")
+	return t.writeInput(data + "\r")
 }
 
 func (t *terminal) running() bool {
@@ -800,6 +854,9 @@ func (m *Manager) Resize(id ID, cols, rows uint16) error {
 func (t *terminal) resize(cols, rows uint16) error {
 	t.scrMu.Lock()
 	defer t.scrMu.Unlock()
+	return t.resizeLocked(cols, rows)
+}
+func (t *terminal) resizeLocked(cols, rows uint16) error {
 	if err := setSize(t.ptmx, cols, rows); err != nil {
 		return err
 	}
@@ -841,22 +898,33 @@ func (m *Manager) Signal(id ID, sig syscall.Signal) error {
 // metadata, so it does not come back as a ghost after a restart. Closing a
 // ghost deletes its metadata.
 func (m *Manager) Close(id ID) error {
-	m.mu.Lock()
-	t, ok := m.terms[id]
+	m.workspaceMu.Lock()
+	defer m.workspaceMu.Unlock()
+	return m.closeTerminal(id)
+}
+func (m *Manager) closeTerminal(id ID) error {
+	m.mu.RLock()
+	t, live := m.terms[id]
 	_, ghost := m.ghosts[id]
+	m.mu.RUnlock()
+	if !live && !ghost {
+		return fmt.Errorf("%w: %q", ErrNotFound, id)
+	}
+	if live {
+		t.stopPersisting()
+		t.terminate()
+	}
+	// Keep failed removals registered. Otherwise a second group deletion can
+	// report success while a member's metadata survives and resurrects it.
+	if err := removePersisted(m.opts.PersistDir, id); err != nil {
+		return fmt.Errorf("terminal stopped but saved state could not be removed: %w", err)
+	}
+	m.mu.Lock()
 	delete(m.terms, id)
 	delete(m.ghosts, id)
 	m.mu.Unlock()
-	if !ok && !ghost {
-		return fmt.Errorf("%w: %q", ErrNotFound, id)
-	}
-	if ok {
-		t.stopPersisting()
-		t.terminate()
+	if live {
 		m.totalClosed.Add(1)
-	}
-	if err := removePersisted(m.opts.PersistDir, id); err != nil {
-		fmt.Fprintf(os.Stderr, "[ptyd] remove persisted %s: %v\n", id, err)
 	}
 	return nil
 }
@@ -865,6 +933,8 @@ func (m *Manager) Close(id ID) error {
 // at most one closeGrace, not one per terminal). Their metadata is kept so
 // they are listed as ghosts on the next start.
 func (m *Manager) CloseAll() {
+	m.workspaceMu.Lock()
+	defer m.workspaceMu.Unlock()
 	m.mu.Lock()
 	terms := make([]*terminal, 0, len(m.terms))
 	for id, t := range m.terms {
@@ -935,18 +1005,65 @@ func (t *terminal) exitCode() *int {
 // Restart closes a terminal and spawns a new one with the same config.
 // The new terminal has a different ID.
 func (m *Manager) Restart(id ID) (Info, error) {
-	if info, err := m.Get(id); err == nil && info.Source.Provider != "" {
+	m.workspaceMu.Lock()
+	defer m.workspaceMu.Unlock()
+	return m.restart(id)
+}
+func (m *Manager) restart(id ID) (Info, error) {
+	info, err := m.Get(id)
+	if err != nil {
+		return Info{}, err
+	}
+	if info.Source.Provider != "" {
 		return Info{}, fmt.Errorf("import native session %s again to revalidate its worker", info.Source.Key())
+	}
+	g, err := m.groupLocked(info.GroupID)
+	if err != nil {
+		return Info{}, err
+	}
+	if g.Archived {
+		return Info{}, fmt.Errorf("%w: unarchive this group before restarting terminals", ErrGroupConflict)
 	}
 	t, err := m.get(id)
 	if err != nil {
 		return Info{}, err
 	}
 	cfg := t.cfg
-	if err := m.Close(id); err != nil {
+	cfg.Name, cfg.GroupID = info.Name, info.GroupID
+	if err := m.normalize(&cfg); err != nil {
 		return Info{}, err
 	}
-	return m.Create(cfg)
+	if _, err := exec.LookPath(cfg.Command); err != nil {
+		return Info{}, err
+	}
+	if dir, err := os.Stat(cfg.CWD); err != nil || !dir.IsDir() {
+		return Info{}, fmt.Errorf("terminal directory is no longer available")
+	}
+	if err := m.closeTerminal(id); err != nil {
+		return Info{}, err
+	}
+	return m.create(cfg)
+}
+
+// Relaunch is the human action for an ended terminal. A fresh status check
+// prevents a stale dashboard from restarting a process that is now running.
+func (m *Manager) Relaunch(id ID, policy RestorePolicy) (Info, error) {
+	m.workspaceMu.Lock()
+	defer m.workspaceMu.Unlock()
+	m.mu.RLock()
+	_, ghost := m.ghosts[id]
+	m.mu.RUnlock()
+	if ghost {
+		return m.restore(id, policy)
+	}
+	info, err := m.Get(id)
+	if err != nil {
+		return Info{}, err
+	}
+	if info.Status == StatusRunning {
+		return Info{}, fmt.Errorf("%w: terminal is already running; refresh the workspace", ErrNotGhost)
+	}
+	return m.restart(id)
 }
 
 // Metrics is a snapshot of the daemon's operational state, returned by
@@ -1116,6 +1233,7 @@ func (t *terminal) memorySnapshot() Info {
 	}
 	t.mu.Unlock()
 	info.Attached = int(t.attached.Load())
+	info.HumanControl = t.humans.Load() > 0
 	info.LatestSeq = t.ring.LatestSeq()
 	info.Pending = t.ring.Pending()
 	return info

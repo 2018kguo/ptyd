@@ -1,5 +1,5 @@
 # From the repo root: vhs docs/demo.tape
-# Records real ptyd terminals with local fixtures; no agent login or provider.
+# Real ptyd groups and terminals; local fixtures, no model-provider calls.
 Output docs/demo.gif
 Set Shell bash
 Set FontSize 18
@@ -15,29 +15,27 @@ Type "source docs/demo-setup.sh" Enter
 Sleep 2s
 Type "clear" Enter
 Show
-Type "ptyd ui --discover=false" Enter
+Type "ptyd ls" Enter
 Sleep 1200ms
-Type "h"
-Sleep 1500ms
-Type "h"
-Sleep 1200ms
+Type "ptyd attach website" Enter
+Sleep 1800ms
 Type ":b build" Enter
-Sleep 1500ms
-Type "hello from the keyboard" Enter
-Sleep 1500ms
-Type@40ms "jk"
 Sleep 1200ms
-Type "/logs" Enter
-Sleep 1200ms
-Type "i"
-Sleep 1500ms
-Type "work continues while you switch" Enter
+Type "work keeps running" Enter
 Sleep 1200ms
 Type@40ms "jk"
 Sleep 1200ms
-Type ":ls" Enter
+Type "j"
 Sleep 1200ms
-Type ":q" Enter
+Type "v"
+Sleep 1200ms
+Type@40ms "jk"
+Sleep 1200ms
+Type "g"
+Sleep 1200ms
+Type "q"
+Sleep 800ms
+Type "ptyd ls" Enter
 Sleep 1500ms
 
 Hide

@@ -6,7 +6,7 @@ Description=ptyd PTY session daemon
 Documentation=https://github.com/2018kguo/ptyd
 
 [Service]
-ExecStart=%h/go/bin/ptyd --bind 127.0.0.1:4242
+ExecStart=%h/go/bin/ptyd serve --bind 127.0.0.1:4242
 # Let ptyd terminate its own terminals on SIGTERM; systemd SIGKILLs leftovers.
 KillMode=mixed
 Restart=always

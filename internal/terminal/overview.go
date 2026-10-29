@@ -18,6 +18,7 @@ const (
 
 // OverviewOptions select a bounded view of the canonical session list.
 type OverviewOptions struct {
+	GroupID    GroupID
 	ActiveOnly bool
 	Discover   bool
 	Limit      int
@@ -54,21 +55,23 @@ const (
 // SessionSummary leaves arguments, watch definitions and transcripts on the
 // detail routes. LatestSeq lets an agent continue incremental output reads.
 type SessionSummary struct {
-	Local       *native.LocalProcess `json:"local_process,omitempty"`
-	Source      native.Ref           `json:"source,omitzero"`
-	External    *native.Session      `json:"external,omitempty"`
-	ID          ID                   `json:"id"`
-	Name        string               `json:"name"`
-	CWD         string               `json:"cwd"`
-	Command     string               `json:"command"`
-	Agent       string               `json:"agent,omitempty"`
-	State       OverviewState        `json:"state"`
-	ExitCode    *int                 `json:"exit_code,omitempty"`
-	IdleSeconds *float64             `json:"idle_seconds"`
-	Attached    int                  `json:"attached"`
-	LatestSeq   int64                `json:"latest_seq"`
-	Attention   int                  `json:"attention"`
-	Preview     *OverviewPreview     `json:"preview,omitempty"`
+	HumanControl bool                 `json:"human_control,omitempty"`
+	GroupID      GroupID              `json:"group_id"`
+	Local        *native.LocalProcess `json:"local_process,omitempty"`
+	Source       native.Ref           `json:"source,omitzero"`
+	External     *native.Session      `json:"external,omitempty"`
+	ID           ID                   `json:"id"`
+	Name         string               `json:"name"`
+	CWD          string               `json:"cwd"`
+	Command      string               `json:"command"`
+	Agent        string               `json:"agent,omitempty"`
+	State        OverviewState        `json:"state"`
+	ExitCode     *int                 `json:"exit_code,omitempty"`
+	IdleSeconds  *float64             `json:"idle_seconds"`
+	Attached     int                  `json:"attached"`
+	LatestSeq    int64                `json:"latest_seq"`
+	Attention    int                  `json:"attention"`
+	Preview      *OverviewPreview     `json:"preview,omitempty"`
 }
 
 type Overview struct {
@@ -108,6 +111,9 @@ func BuildOverview(infos []Info, options OverviewOptions) Overview {
 	indices := make([]int, 0, min(len(infos), limit))
 	out := Overview{ActiveOnly: options.ActiveOnly}
 	for i, info := range infos {
+		if options.GroupID != "" && info.GroupID != options.GroupID {
+			continue
+		}
 		if !overviewMatches(info, query, options.Tags) {
 			continue
 		}
@@ -156,7 +162,7 @@ func BuildOverview(infos []Info, options OverviewOptions) Overview {
 			idle = &seconds
 		}
 		out.Sessions = append(out.Sessions, SessionSummary{
-			Source: info.Source, External: info.external, Local: info.local,
+			HumanControl: info.HumanControl, GroupID: info.GroupID, Source: info.Source, External: info.external, Local: info.local,
 			ID: info.ID, Name: info.Name, CWD: info.CWD,
 			Command: filepath.Base(info.Command), Agent: info.Agent,
 			State: overviewState(info), ExitCode: info.ExitCode, IdleSeconds: idle,
@@ -266,7 +272,7 @@ func BuildDiscoveredOverview(infos []Info, listing native.Listing, options Overv
 		if s.Reason != "" {
 			text = s.Reason
 		}
-		merged = append(merged, Info{ID: ID("native:" + s.Ref.Key()), Name: name, CWD: s.CWD, Command: string(s.Ref.Provider), Agent: string(s.Ref.Provider), Status: status, CreatedAt: s.StartedAt, LatestSeq: -1, Pending: text, external: &s})
+		merged = append(merged, Info{GroupID: options.GroupID, ID: ID("native:" + s.Ref.Key()), Name: name, CWD: s.CWD, Command: string(s.Ref.Provider), Agent: string(s.Ref.Provider), Status: status, CreatedAt: s.StartedAt, LatestSeq: -1, Pending: text, external: &s})
 	}
 	ownedProcesses := map[int]bool{}
 	for _, info := range infos {
@@ -283,7 +289,7 @@ func BuildDiscoveredOverview(infos []Info, listing native.Listing, options Overv
 		if managed {
 			continue
 		}
-		merged = append(merged, Info{ID: ID(p.Key()), Name: p.Name(), CWD: p.CWD, Command: string(p.Provider), Agent: string(p.Provider), Status: StatusRunning, CreatedAt: p.StartedAt, LatestSeq: -1, Pending: p.Guidance(), local: &p})
+		merged = append(merged, Info{GroupID: options.GroupID, ID: ID(p.Key()), Name: p.Name(), CWD: p.CWD, Command: string(p.Provider), Agent: string(p.Provider), Status: StatusRunning, CreatedAt: p.StartedAt, LatestSeq: -1, Pending: p.Guidance(), local: &p})
 	}
 	out := BuildOverview(merged, options)
 	out.ProcessIssue = listing.ProcessIssue

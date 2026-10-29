@@ -7,42 +7,64 @@ control. Both use the same daemon and session ids.
 
 | Command | Use |
 |---|---|
-| `ptyd` | Start the daemon; `ptyd -h` lists flags. |
-| `ptyd new [-n name] [-d] [--restore policy] [command [args...]]` | Start and attach; `-d` prints the id without attaching. |
-| `ptyd ls` | List sessions. |
-| `ptyd ui [--discover=false] [--history] [--filter text] [--limit N]` | Open the Vim-style session picker; native discovery is on by default. |
-| `ptyd status [--json \| --watch] [--discover] [--limit N] [--filter text] [--tag tags]` | Attention-first overview; live selection or compact agent JSON. |
-| `ptyd agents [--json]` | Discover native Codex and Claude sessions and their import actions. |
-| `ptyd import [-d] [-n name] [--resume] provider:UUID` | Open a view for an exact native conversation; `-d` prints its terminal id. |
-| `ptyd attach [--readonly] [--raw] terminal` | Attach to a running session or view a stopped one's screen. |
-| `ptyd restore [--policy policy] terminal` | Start a stopped terminal again under the same id, then attach. |
-| `ptyd kill terminal...` | Kill and forget sessions. |
-| `ptyd token` | Print the daemon token for an HTTP client. |
+| `ptyd`, `ptyd ui` | Open your groups; start a local daemon if needed. |
+| `ptyd new [-d] [--cwd directory] name [-- command args...]` | Create a group and enter it; `-d` prints its id. An optional command opens its first terminal. |
+| `ptyd ls [--json] [--all]` | List groups and counts; `--all` includes archived groups and saved-only Inbox. JSON always includes all groups. |
+| `ptyd attach [group]` | Enter a group's workspace, or choose a group. |
+| `ptyd rename group name` | Rename without changing its id. |
+| `ptyd archive [--undo] group` | Archive finished work or bring it back. Running terminals must stop first. |
+| `ptyd remove [--force] group` | Remove an empty group; `--force` stops and removes its terminals. |
+| `ptyd term new [-n name] [-d] [--group group] [--restore policy] [-- command args...]` | Create a terminal; `-d` prints its id. |
+| `ptyd term ls [--json] [--group group]` | List individual terminals. Inside a terminal, defaults to its current group; outside, lists all. |
+| `ptyd term attach [--readonly] [--raw] [--group group] terminal` | Open an individual terminal. |
+| `ptyd term rename [--group group] terminal name` | Rename without restarting. |
+| `ptyd term move [--group group] terminal destination` | Move without restarting. |
+| `ptyd term restore [-d] [--group group] [--policy policy] terminal` | Relaunch an ended terminal; a ghost keeps its id, an exited live record gets a new id. |
+| `ptyd term kill [--group group] terminal...` | Stop and forget terminals. |
+| `ptyd term import [-d] [--group group] [-n name] [--resume] provider:UUID` | Open an exact native conversation. |
+| `ptyd status [--json] [--group group] [--discover] [--limit N] [--filter text] [--tag tags]` | Terminal overview for scripts and agents. |
+| `ptyd agents [--json]` | Discover native conversations and original tabs. |
+| `ptyd serve [flags]` | Run the daemon in the foreground; `ptyd serve -h` lists flags. |
+| `ptyd token` | Print the token for an HTTP client. |
 
-A terminal can be named by id, unique prefix, name or number (`3` for
-`term-3-ab12`). Commands use `PTYD_ADDR` (default `127.0.0.1:4242`) and
-`PTYD_TOKEN`, or the daemon's saved token. Subcommands also accept `--addr`.
+Put flags before positional arguments. Group names are unique ignoring case;
+full group ids take precedence over names, and unique id prefixes work.
+Terminal names, numbers and prefixes resolve inside `--group`, the current
+terminal's group, or Inbox. Exact terminal ids work globally. `term ls` outside
+ptyd is the exception: it lists all groups.
+
+Commands use `PTYD_ADDR` (default `127.0.0.1:4242`) and `PTYD_TOKEN`, or the
+daemon's saved token. Subcommands accept `--addr`. Child terminals receive
+`PTYD_ADDR`, `PTYD_GROUP_ID` and `PTYD_TERMINAL_ID`. CLI inheritance consults
+current membership before the launch-time group variable, so a moved manager's
+new children follow it.
+
+The root `new`, `ls` and `attach` commands operate on groups. Terminal commands
+live under `term`; scripts using the HTTP terminal routes need no migration.
 
 ## HTTP
 
 Send `X-Ptyd-Token` on every request except `/healthz` and `/metrics`. Bodies
 are JSON. Errors are `{"error":"..."}`: 400 invalid input, 401 bad token,
-404 missing resource, 409 stopped session or declined restore, 413 body over
+404 missing resource, 409 stopped session, group conflict, human input control or declined restore, 413 body over
 1 MiB. Paths below use `/terminals/{id}` as `T`.
 
 | Method | Path | Input / result |
 |---|---|---|
 | `GET` | `/healthz`, `/metrics` | Liveness; JSON counters and uptime. No auth. |
-| `GET` | `/terminals` | Optional `?tag=a,b`; oldest first, matching any tag. |
+| `GET`, `POST` | `/groups` | Group summaries, or create with `{"name":"work","cwd":"/path"}`. |
+| `GET`, `PATCH`, `DELETE` | `/groups/{group}` | Read, rename/archive, or remove; deletion with members requires `?force=true`. |
+| `GET` | `/terminals` | Optional `?group=id&tag=a,b`; oldest first, matching any tag. |
 | `GET` | `/agents` | Native sessions, action requirements, discovery issues and truncation. |
 | `POST` | `/agents/import` | Freshly validate a native reference and create a terminal frontend. |
-| `GET` | `/overview` | Compact session summaries; `?limit=50&q=text&tag=a,b`. Counts include all matches. |
+| `GET` | `/overview` | Compact session summaries; `?group=id&limit=50&q=text&tag=a,b`. Counts include all matches. |
 | `POST` | `/terminals` | Create; returns 201 and metadata. |
-| `GET` | `T` | Metadata, status, pid, output position, attention and restore information. |
+| `GET` | `T` | Metadata, group id, status, pid, output position, attention and restore information. |
+| `PATCH` | `T` | `{"name":"reviewer","group_id":"group-..."}`; either field can be omitted. |
 | `GET` | `T/output` | `?since=N&tail=N`; retained lines newer than `since`. |
 | `GET` | `T/stream` | `?since=N`; SSE `line` events, then `end` on exit. |
 | `GET` | `T/screen` | JSON window; `?scrollback=1` adds history, `?format=ansi` returns repaint bytes. |
-| `GET` | `T/attach` | `?cols=&rows=&readonly=1`; upgraded interactive connection. |
+| `GET` | `T/attach` | `?cols=&rows=&readonly=1&human=1`; upgraded interactive connection. |
 | `POST` | `T/write` | `{"data":"ls","submit":true}`; optional Enter after input. |
 | `POST` | `T/keys` | `{"keys":["ctrl+c","up","enter"]}`. |
 | `POST` | `T/wait` | `{"pattern":"ready","timeout_seconds":30,"since":-1,"before_context":3}`. |
@@ -51,6 +73,7 @@ are JSON. Errors are `{"error":"..."}`: 400 invalid input, 401 bad token,
 | `POST` | `T/signal` | `{"signal":"int"}`; also term, kill, hup, quit, usr1, usr2, winch. |
 | `POST` | `T/restart` | Kill and spawn again with the same config; 201, **new id**. |
 | `POST` | `T/restore` | Optional `{"policy":"rerun"}`; 201, **same id**, or 409 with the reason. |
+| `POST` | `T/relaunch` | Optional restore policy; ghost restore or exited-terminal restart. Refuses running terminals. |
 | `DELETE` | `T` | Terminate and forget; also deletes a stopped session. |
 | `GET` | `/search` | `?q=regex&within_seconds=N&limit=N&tag=a,b`; retained output of non-ghost sessions. |
 
@@ -85,23 +108,35 @@ that the daemon applied it; `history_hidden` counts matching records omitted
 by this filter. Counts describe the remaining matches. The default API and
 `ptyd status --json` include history.
 
-The live picker requests this filter and groups shown rows by open terminals,
-agents, handoff needs and history. `h` toggles history; `--history` includes
-it at startup. `ptyd ui` defaults to a 500-row limit; `status` keeps its
-50-row default. Filtering and hiding history never delete a session.
+The workspace shows all members of an opened group by default; `h` hides or
+shows finished members. The group list hides archived work and saved-only Inbox
+until `h`. It never hides a running group. Filtering never deletes records.
+The workspace requests at most 500 rows and shows a notice when more exist.
+It keeps the last successful view with a stale/error notice on refresh failure.
+Opening or changing a selected item waits for a matching successful snapshot.
+`ptyd status --json` returns the overview directly and fails nonzero on error.
 
-`ptyd status --json` returns this same result. On failure it exits nonzero
-and writes an error to stderr. The live `--watch` view keeps the last
-successful snapshot with a visible stale/error notice if refresh fails.
-Enter attaches to the selected exact id; detaching returns to the view.
-Stopped sessions stay open read-only in the picker until `jk`. Restarting
-them still requires an explicit `ptyd restore`.
+## Groups
+
+A group is a persistent name, default directory and archive state. Its summary
+adds `terminals`, `running`, `attention`, `viewing` (attached clients) and
+`last_output_at`. It has no manager process or required task lifecycle.
+Group metadata persists independently of terminals; membership lives on each
+terminal. Removing the last member does not remove the group.
+
+Create terminals with `group_id`; omitting it uses Inbox (`default`). An omitted
+`cwd` uses the group's directory. CLI `term new` uses the caller's directory.
+Unknown group ids fail with 404; archived groups refuse creation, move-in and
+relaunch. A group can be archived only when its members have stopped. Inbox
+cannot be removed or archived. Names and ids are separate: renaming either a
+group or terminal does not restart a process or alter its id.
 
 ## Create a session
 
 ```json
 {
   "name": "worker",
+  "group_id": "group-...",
   "command": "bash",
   "args": ["-l"],
   "cwd": "/tmp",
@@ -116,7 +151,7 @@ them still requires an explicit `ptyd restore`.
 ```
 
 Only `name` is required. Defaults: the daemon's shell (`SHELL`, else
-`/bin/sh`), working directory and environment; 80x24; restore `none`.
+`/bin/sh`), group's working directory and daemon environment; 80x24; restore `none`.
 Display settings from the daemon are excluded. `TERM` defaults to
 `xterm-256color`; explicit display settings in `env` win. The CLI forwards
 the viewing terminal's `TERM`, `COLORTERM`, `TERM_PROGRAM`, `NO_COLOR`,
@@ -186,9 +221,9 @@ write can submit a command twice.
 
 ## Attach
 
-Type `j` then `k` within 200 ms to detach. In `ptyd ui` (or
-`status --watch`), this returns to the picker. Standalone `attach`, `new`
-and `import` return to your shell. A lone `j` waits up to 200 ms for `k`;
+Type `j` then `k` within 200 ms to return from a terminal. Inside a workspace,
+this returns to its group. Standalone `term attach`, `term new` and `term import`
+return to your shell. A lone `j` waits up to 200 ms for `k`;
 to send literal `jk`, pause between the letters or use bracketed paste.
 Bracketed-paste frames pass through unchanged. Unframed pasted input is
 indistinguishable from typing and follows the same shortcut rule. Piped
@@ -200,48 +235,65 @@ kitty and modifyOtherKeys encodings do. On detach, terminal modes reset and
 the attached window moves into local scrollback. Connection loss exits the
 client with code 1; a normal program exit uses its exit code. Stopped sessions
 attach read-only and return immediately from the standalone command. In the
-picker, saved screens and newly exited frontends stay open until `jk`. Further
+workspace, saved screens and newly exited frontends stay open until `jk`. Further
 keystrokes stay local after output ends; the footer changes to “finished.”
 
 Human TTY attachments reserve the bottom row for the session name and
-`jk: sessions`. The app receives one fewer PTY row and cannot draw over this
+`jk: return`. The app receives one fewer PTY row and cannot draw over this
 indicator by clearing, scrolling or switching screens. The client draws cells
 and preserves the app's cursor, keyboard modes, colors and links. Mouse events
 for the status row do not reach the app. The window/tab title identifies the
 view too. App title updates retain the ptyd prefix and hint;
-the previous title is restored on return. `ptyd attach --raw` forwards terminal
+the previous title is restored on return. `ptyd term attach --raw` forwards terminal
 output directly without reserving a row; piped output remains raw too. The title is a view label; it does not verify
 the current conversation after navigation inside an agent.
 
-### Picker controls
+### Workspace controls
 
 | Key or command | Action |
 |---|---|
-| `j` / `k`, arrows | Next / previous session. |
-| `gg` / `G` | First / last session. |
-| `i`, Enter | Attach to the selected session. |
-| `/` | Search; Enter applies, Escape returns to normal mode. |
-| `:b name` | Attach by exact name, id, unique id prefix or terminal number within shown rows. Ambiguous names are refused. |
-| `:bn` / `:bp` | Attach to the next / previous shown session, wrapping at the ends. |
-| `:ls` | Clear search and refresh the session list. |
-| `h`, `:history` / `:active` | Show history or return to live sessions. |
-| `:info` | Show the selected window id. |
-| `r` | Refresh. |
-| `?`, `:help` | Show controls; `q`, `?` or Escape returns. |
-| `q`, `:q` | Leave the picker; sessions keep running. |
+| `j/k`, arrows; `0/G` | Move; first/last item. |
+| Enter, `i` | Open a group or take keyboard control of a terminal. |
+| `v` | Watch a terminal read-only. An occupied human view also opens read-only. |
+| `n` | Create a group, or launch Codex (`c`), Claude (`a`), shell (`s`) or a custom command (`r`). |
+| `r` | Rename the selected group or terminal. |
+| `m` | Move a terminal to another unarchived group. |
+| `x` | Close/remove; requires typing `close` to confirm. |
+| `R` | Relaunch an ended terminal; imported views undergo fresh native validation. |
+| `a` | Archive/unarchive a group, or toggle outside-agent discovery inside a group. |
+| `h` | Show archived/saved-only groups; inside a group, toggle finished terminals. |
+| `g`, `:groups` | Return to your groups. |
+| `/` | Search as you type; Enter or Escape leaves the search field. |
+| `:b name`, `:open name` | Open by id, unique name, number or prefix within the shown rows; ambiguous names are refused. |
+| `:run command` | Run a custom command through your shell in the current group. |
+| `:new`, `:ls` | Open creation controls; clear search. |
+| `?` | Show controls; `q`, `?` or Escape returns. |
+| `q`, `:q`, `:detach` | Leave the workspace; work keeps running. |
 
-Escape cancels an unfinished `:` command. Pasted text can edit search and
-command prompts, but cannot execute commands or move the selection. At a
-row limit, `:b` only resolves shown rows; clear the filter or raise `--limit`
-for a target outside that snapshot. Native session handoff still follows the
-[import rules](#import-native-agent-sessions).
+Escape cancels a prompt. Pasted text can edit prompts but cannot execute
+commands or move the selection. Custom commands run through the caller's shell
+with `-lc`; they use restore `none`. Built-in agent and shell launches use
+restore `auto`. Native stopped conversations require typing `resume` before
+launch. Views require at least 40 columns and 16 rows for workspace controls.
 
-Attaching resizes the PTY. Several clients can type; the latest one to type
-wins its window size. `/resize` wins until the next client resize or input.
-A slow client's 1 MiB queue overflows into a fresh snapshot for a framed view,
-or a repaint for a raw viewer. Continuous
-output flushes at most every 4 ms; small echoes and output after quiet flush
-immediately.
+### Human input control
+
+CLI human views request `human=1`. One writable human attachment owns keyboard
+input until it detaches or disconnects. `/write`, `/keys` and other writable
+attachments return 409 while it owns control; read-only viewers, screen reads
+and output reads continue. The daemon does not queue or retry rejected agent
+input. Automation should observe `human_control` and retry only after checking
+the current state. This coordinates input; the shared token still permits
+other operations such as stopping a process. If a prior write has blocked,
+a human claim returns 409 with an input-busy message instead of hanging;
+read-only viewing stays available.
+
+Without a human owner, writable automation clients retain the existing behavior:
+the last client to type supplies its window size. Read-only clients never resize
+the process. A rejected second human cannot resize it either. A slow client's
+1 MiB queue overflows into an exact snapshot for a framed view or an ANSI
+repaint for raw output. Bulk output coalesces for up to 4 ms; small echoes and
+output after quiet flush immediately.
 
 For custom clients, request `Connection: Upgrade` and `Upgrade: ptyd-attach`
 on `T/attach`, with authentication. After 101, the server sends raw output.
@@ -278,8 +330,7 @@ Discovery also returns a separate `processes` list for same-user foreground
 Codex and Claude terminal processes not identified by their native APIs. These
 are observations of original tabs, not conversation references. Rows include
 provider, PID, process generation, terminal path, directory and parent PIDs;
-arguments, prompts and environment values are omitted. The picker groups them
-under Original tabs. They cannot authorize import or input. A standalone Codex
+arguments, prompts and environment values are omitted. The outside-agent view labels them as original tabs. They cannot authorize import or input. A standalone Codex
 process must keep using its original terminal; Claude can register its handoff
 with `/bg` there.
 
@@ -303,6 +354,7 @@ To import through HTTP, send the exact reference from discovery:
 
 ```json
 {
+  "group_id": "group-...",
   "ref": {"provider": "codex", "id": "11111111-1111-4111-8111-111111111111"},
   "name": "review",
   "cols": 120,
@@ -318,27 +370,29 @@ Credentials and agent profile selection are never forwarded through this map.
 Imports also accept the optional `terminal_colors` pair described above.
 
 Replace the example UUID with the discovered id. A stopped Claude conversation
-also needs `"resume": true`; the CLI equivalent is `ptyd import --resume`
+also needs `"resume": true`; the CLI equivalent is `ptyd term import --resume`
 followed by its `claude:UUID` reference. The response contains `terminal`,
 `session` and `reused`. An existing normal ptyd terminal whose current agent
 hook reports that exact conversation may be reused. Otherwise the server
-creates a temporary frontend and checks the native reference, directory and
+creates a frontend and checks the native reference, directory and
 hosting process generation again. Codex connects to the specific daemon
 socket observed during validation, not a newly selected server.
 
-Use the returned terminal id for the normal attach/screen/input routes. Claim
-the view with an attachment within one minute; an unclaimed view expires.
-Last detach closes a running temporary frontend. After a frontend exits, its
-exit status remains readable for one minute before cleanup. Closing, killing or expiring that
-frontend does not stop the native worker. Native conversations appear in the
-combined picker. Temporary frontends appear separately under Open terminals,
-so you can reopen that exact window without treating its launch reference
-as its current conversation.
+Use the returned terminal id for normal attach/screen/input routes. Add
+`group_id` to retain this frontend in a named group after detach. It stays
+available until it exits or you close it. Moving it into a named group cancels
+the Inbox expiry; moving it back restores temporary-view behavior.
+
+Imports in Inbox preserve the temporary contract: an unclaimed view expires
+in one minute and last detach closes a running frontend. A frontend's exit
+status remains readable for one minute. Closing a frontend never stops its
+native worker. Outside rows are discovery results, not members of the opened
+group, until an import succeeds.
 
 An imported window can navigate to another conversation. Its `source` is
 launch provenance, not proof of its current input target. Another import of
 the original reference conflicts while that window is open; attach it by its
-explicit terminal id or close it first. The picker never silently reuses a
+explicit terminal id or close it first. The workspace never silently reuses a
 window based on launch provenance. Native view input typed before import
 finishes is discarded, including queued cancellation keys.
 

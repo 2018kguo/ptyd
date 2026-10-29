@@ -51,7 +51,7 @@ func (w *queryReplies) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	for a := range t.attachers {
-		if a.rawResponder {
+		if a.rawResponder && (a.human || t.humans.Load() == 0) {
 			return len(p), nil
 		}
 	}

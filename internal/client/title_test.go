@@ -9,10 +9,10 @@ import (
 func TestAttachedTitlePreservesNativeTerminalOutput(t *testing.T) {
 	for _, tc := range []struct{ name, input, want string }{
 		{"text", "hello 雪\r\n\x1b[38;2;13;22;31mcolor\x1b[0m", "hello 雪\r\n\x1b[38;2;13;22;31mcolor\x1b[0m"},
-		{"title BEL", "before\x1b]2;Editor\aafter", "before\x1b]2;ptyd · Editor · jk: sessions\aafter"},
-		{"title ST", "\x1b]0;Codex\x1b\\", "\x1b]0;ptyd · Codex · jk: sessions\x1b\\"},
-		{"repeated Escape", "\x1b\x1b]2;Codex\a", "\x1b\x1b]2;ptyd · Codex · jk: sessions\a"},
-		{"restarted OSC", "\x1b]8;;old\x1b]2;Codex\a", "\x1b]8;;old\x1b]2;ptyd · Codex · jk: sessions\a"},
+		{"title BEL", "before\x1b]2;Editor\aafter", "before\x1b]2;ptyd · Editor · jk: return\aafter"},
+		{"title ST", "\x1b]0;Codex\x1b\\", "\x1b]0;ptyd · Codex · jk: return\x1b\\"},
+		{"repeated Escape", "\x1b\x1b]2;Codex\a", "\x1b\x1b]2;ptyd · Codex · jk: return\a"},
+		{"restarted OSC", "\x1b]8;;old\x1b]2;Codex\a", "\x1b]8;;old\x1b]2;ptyd · Codex · jk: return\a"},
 		{"clipboard", "\x1b]52;c;clipboard\x1b\\", "\x1b]52;c;clipboard\x1b\\"},
 		{"link", "\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\", "\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\"},
 		{"DCS", "\x1bPpayload\x1b]2;literal\a\x1b\\", "\x1bPpayload\x1b]2;literal\a\x1b\\"},
@@ -41,7 +41,7 @@ func TestAttachedTitlePreservesNativeTerminalOutput(t *testing.T) {
 }
 func TestWindowLabelCannotInjectTerminalControls(t *testing.T) {
 	title := windowTitle("Editor\x1b]52;c;bad\a\nname")
-	if strings.ContainsAny(title, "\x1b\a\n") || !strings.HasPrefix(title, "ptyd · ") || !strings.Contains(title, "jk: sessions") {
+	if strings.ContainsAny(title, "\x1b\a\n") || !strings.HasPrefix(title, "ptyd · ") || !strings.Contains(title, "jk: return") {
 		t.Fatalf("invalid title%q", title)
 	}
 }

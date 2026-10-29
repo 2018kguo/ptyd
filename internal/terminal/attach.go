@@ -36,6 +36,7 @@ const (
 // feeds the screen), so a repaint taken under scrMu is exactly in step
 // with the queue.
 type attacher struct {
+	human        bool
 	renderedView bool
 	rawResponder bool // writable raw viewer supplies terminal replies
 	mu           sync.Mutex
@@ -110,6 +111,7 @@ type AttachOptions struct {
 	Cols, Rows uint16
 	ReadOnly   bool
 	Rendered   bool
+	Human      bool
 }
 
 func (m *Manager) Attach(id ID, options AttachOptions) (*Attachment, error) {
@@ -121,11 +123,25 @@ func (m *Manager) Attach(id ID, options AttachOptions) (*Attachment, error) {
 		}
 		return nil, err
 	}
-	if cols > 0 && rows > 0 && !readOnly && t.running() {
-		_ = t.resize(cols, rows)
+	if !readOnly {
+		if options.Human {
+			if !t.inputMu.TryLock() {
+				return nil, ErrInputBusy
+			}
+		} else {
+			t.inputMu.Lock()
+		}
+		defer t.inputMu.Unlock()
 	}
-	a := &attacher{wake: make(chan struct{}, 1), renderedView: options.Rendered, rawResponder: !options.Rendered && !options.ReadOnly}
+	a := &attacher{human: options.Human && !readOnly, wake: make(chan struct{}, 1), renderedView: options.Rendered, rawResponder: !options.Rendered && !options.ReadOnly}
 	t.scrMu.Lock()
+	if !readOnly && t.humans.Load() > 0 {
+		t.scrMu.Unlock()
+		return nil, ErrHumanControl
+	}
+	if cols > 0 && rows > 0 && !readOnly && t.running() {
+		_ = t.resizeLocked(cols, rows)
+	}
 	if readOnly && t.outputEnded {
 		// A static view neither claims a native frontend nor changes its lifetime.
 		at, err := staticAttachment(t.screen, options)
@@ -152,6 +168,13 @@ func (m *Manager) Attach(id ID, options AttachOptions) (*Attachment, error) {
 	} else {
 		if t.attachers == nil {
 			t.attachers = map[*attacher]struct{}{}
+		}
+		if a.human {
+			if t.humans.Load() > 0 {
+				t.scrMu.Unlock()
+				return nil, ErrHumanControl
+			}
+			t.humans.Add(1)
 		}
 		t.attachers[a] = struct{}{}
 		t.attached.Store(int32(len(t.attachers)))
@@ -285,18 +308,30 @@ func (at *Attachment) Write(p []byte) error {
 	if at.readOnly || at.t == nil {
 		return nil
 	}
-	if !at.t.running() {
+	t := at.t
+	t.inputMu.Lock()
+	defer t.inputMu.Unlock()
+	t.scrMu.Lock()
+	_, active := t.attachers[at.a]
+	if !active {
+		t.scrMu.Unlock()
 		return ErrNotRunning
 	}
+	if !at.a.human && t.humans.Load() > 0 {
+		t.scrMu.Unlock()
+		return ErrHumanControl
+	}
 	if at.cols > 0 && at.rows > 0 {
-		at.t.scrMu.Lock()
-		cols, rows := at.t.screen.Size()
-		at.t.scrMu.Unlock()
+		cols, rows := t.screen.Size()
 		if cols != int(at.cols) || rows != int(at.rows) {
-			_ = at.t.resize(at.cols, at.rows)
+			_ = t.resizeLocked(at.cols, at.rows)
 		}
 	}
-	_, err := at.t.ptmx.Write(p)
+	t.scrMu.Unlock()
+	if !t.running() {
+		return ErrNotRunning
+	}
+	_, err := t.ptmx.Write(p)
 	return err
 }
 
@@ -305,11 +340,22 @@ func (at *Attachment) Resize(cols, rows uint16) error {
 	if at.readOnly || at.t == nil || cols == 0 || rows == 0 {
 		return nil
 	}
-	if !at.t.running() {
+	t := at.t
+	t.inputMu.Lock()
+	defer t.inputMu.Unlock()
+	t.scrMu.Lock()
+	defer t.scrMu.Unlock()
+	if _, active := t.attachers[at.a]; !active {
+		return ErrNotRunning
+	}
+	if !at.a.human && t.humans.Load() > 0 {
+		return ErrHumanControl
+	}
+	if !t.running() {
 		return ErrNotRunning
 	}
 	at.cols, at.rows = cols, rows
-	return at.t.resize(cols, rows)
+	return t.resizeLocked(cols, rows)
 }
 
 // Close detaches the client.
@@ -318,27 +364,24 @@ func (at *Attachment) Close() {
 		if at.t == nil {
 			return
 		}
+		if !at.readOnly {
+			at.t.inputMu.Lock()
+		}
 		at.t.scrMu.Lock()
+		if _, present := at.t.attachers[at.a]; present && at.a.human {
+			at.t.humans.Add(-1)
+		}
 		delete(at.t.attachers, at.a)
 		at.t.attached.Store(int32(len(at.t.attachers)))
-		closeNative := at.t.cfg.source.Provider != "" && len(at.t.attachers) == 0
-		if closeNative {
-			at.t.nativeClosing = true
-			if at.t.outputEnded && at.t.mgr != nil {
-				// EOF reaches the CLI before it reads the process exit status.
-				// Keep that result briefly instead of racing its GET with 404.
-				if at.t.nativeDeadline != nil {
-					at.t.nativeDeadline.Stop()
-				}
-				at.t.nativeDeadline = time.AfterFunc(time.Minute, func() { _ = at.t.mgr.Close(at.t.info.ID) })
-				closeNative = false
-			}
-		}
+		nativeView := at.t.cfg.source.Provider != ""
 		at.t.scrMu.Unlock()
+		if !at.readOnly {
+			at.t.inputMu.Unlock()
+		}
 		if at.t.mgr != nil {
 			at.t.mgr.activeSubs.Add(-1)
-			if closeNative {
-				_ = at.t.mgr.Close(at.t.info.ID)
+			if nativeView {
+				at.t.mgr.releaseNativeView(at.t.info.ID)
 			}
 		}
 	})
@@ -360,12 +403,14 @@ func (t *terminal) endAttachers() {
 		a.end()
 	}
 	t.attachers = nil
+	t.humans.Store(0)
 	t.attached.Store(0)
 	t.scrMu.Unlock()
 }
 
-// An abandoned import request must not leave a native frontend running forever.
-// The deadline ends once an attachment claims the view; last detach closes it.
+// Inbox imports are temporary views. Named groups retain their frontends.
+// The workspace lock orders expiry with moves so a promoted view cannot be
+// removed by a timer or last-detach decision taken in its old group.
 func (m *Manager) expireNativeView(id ID) {
 	t, err := m.get(id)
 	if err != nil {
@@ -373,20 +418,60 @@ func (m *Manager) expireNativeView(id ID) {
 	}
 	t.scrMu.Lock()
 	defer t.scrMu.Unlock()
+	if t.nativeDeadline != nil {
+		t.nativeDeadline.Stop()
+		t.nativeDeadline = nil
+	}
+	if t.snapshot().GroupID != DefaultGroup {
+		t.nativeClosing = false
+		return
+	}
 	if t.cfg.source.Provider == "" || len(t.attachers) > 0 || t.nativeClosing {
 		return
 	}
-	t.nativeDeadline = time.AfterFunc(time.Minute, func() {
-		t.scrMu.Lock()
-		closeView := len(t.attachers) == 0 && !t.nativeClosing
-		if closeView {
-			t.nativeClosing = true
+	t.nativeDeadline = time.AfterFunc(time.Minute, func() { m.closeUnusedNativeView(id) })
+}
+func (m *Manager) releaseNativeView(id ID) {
+	m.workspaceMu.Lock()
+	defer m.workspaceMu.Unlock()
+	t, err := m.get(id)
+	if err != nil {
+		return
+	}
+	t.scrMu.Lock()
+	closeView := t.cfg.source.Provider != "" && t.snapshot().GroupID == DefaultGroup && len(t.attachers) == 0
+	if closeView {
+		t.nativeClosing = true
+		if t.outputEnded {
+			// Let standalone clients retrieve the frontend's exit status.
+			if t.nativeDeadline != nil {
+				t.nativeDeadline.Stop()
+			}
+			t.nativeDeadline = time.AfterFunc(time.Minute, func() { m.closeUnusedNativeView(id) })
+			closeView = false
 		}
-		t.scrMu.Unlock()
-		if closeView {
-			_ = m.Close(id)
-		}
-	})
+	}
+	t.scrMu.Unlock()
+	if closeView {
+		_ = m.closeTerminal(id)
+	}
+}
+func (m *Manager) closeUnusedNativeView(id ID) {
+	m.workspaceMu.Lock()
+	defer m.workspaceMu.Unlock()
+	t, err := m.get(id)
+	if err != nil {
+		return
+	}
+	t.scrMu.Lock()
+	closeView := t.cfg.source.Provider != "" && t.snapshot().GroupID == DefaultGroup && len(t.attachers) == 0
+	if closeView {
+		t.nativeClosing = true
+	}
+	t.scrMu.Unlock()
+	if closeView {
+		_ = m.closeTerminal(id)
+	}
 }
 
 func staticAttachment(scr *phosphor.Terminal, options AttachOptions) (*Attachment, error) {

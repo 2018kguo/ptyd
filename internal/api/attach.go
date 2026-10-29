@@ -44,7 +44,7 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	cols, _ := strconv.ParseUint(q.Get("cols"), 10, 16)
 	rows, _ := strconv.ParseUint(q.Get("rows"), 10, 16)
-	at, err := s.mgr.Attach(terminal.ID(r.PathValue("id")), terminal.AttachOptions{Cols: uint16(cols), Rows: uint16(rows), ReadOnly: q.Get("readonly") == "1", Rendered: q.Get("rendered") == "1"})
+	at, err := s.mgr.Attach(terminal.ID(r.PathValue("id")), terminal.AttachOptions{Cols: uint16(cols), Rows: uint16(rows), ReadOnly: q.Get("readonly") == "1", Rendered: q.Get("rendered") == "1", Human: q.Get("human") == "1"})
 	if err != nil {
 		writeErr(w, err)
 		return

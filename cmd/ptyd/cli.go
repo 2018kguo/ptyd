@@ -20,29 +20,27 @@ import (
 	"github.com/2018kguo/ptyd/internal/terminal"
 )
 
-const usage = `ptyd runs terminals in the background, like tmux, with a local HTTP API.
+const usage = `ptyd keeps groups of terminals running while agents and people come and go.
 
 Usage:
-  ptyd [flags]                     run the daemon (flags: ptyd -h)
-  ptyd new [-n name] [-d] [--restore auto|none|rerun|agent] [command [args...]]
-                                   start a terminal ($SHELL by default) and attach
-  ptyd ls                          list terminals
-  ptyd ui                          open the session picker (j/k, /, : commands)
-  ptyd status [--json | --watch] [--discover]
-                                   attention-first session overview
-  ptyd agents [--json]              discover native Codex and Claude sessions
-  ptyd import [-d] [-n name] [--resume] <codex:UUID|claude:UUID>
-                                   import an existing agent conversation
-  ptyd attach [--readonly] [--raw] <terminal>
-  ptyd restore [--policy auto|rerun|agent] <terminal>
-                                   start a stopped or exited terminal again and attach
-  ptyd kill <terminal>...
-  ptyd token                       print the token, for curl -H "X-Ptyd-Token: $(ptyd token)"
+  ptyd                            open your groups (starts the local daemon if needed)
+  ptyd new [-d] name [-- command]  create a group and enter its workspace
+  ptyd ls [--json] [--all]         list groups and their running work
+  ptyd attach [group]             enter a group or choose one
+  ptyd rename group name          rename a group
+  ptyd archive [--undo] group      hide or return finished work
+  ptyd remove [--force] group      remove a group; --force stops its terminals
+  ptyd term new|ls|attach|rename|move|restore|kill|import
+                                  operate on individual terminals
+  ptyd status [--json] [--group group] [--discover]
+                                  structured terminal overview for agents
+  ptyd agents [--json]             discover agents in original terminals
+  ptyd serve [flags]              run the daemon in the foreground
+  ptyd token                      print the local API token
 
-<terminal> is an id, its number (3 for term-3-ab12), a name or a unique id
-prefix. Type jk quickly to detach. Commands reach the daemon at $PTYD_ADDR
-(default 127.0.0.1:4242) with $PTYD_TOKEN, or the token the daemon saved
-in ~/.local/state/ptyd.
+Inside a terminal, quick jk returns to its group. From a workspace, q detaches
+and g opens your groups. Work keeps running. Commands use PTYD_ADDR and the
+local daemon's saved token. Use ptyd COMMAND --help for options.
 `
 
 func defaultAddr() string {
@@ -54,16 +52,19 @@ func defaultAddr() string {
 
 // commands are the subcommands; anything else runs the daemon.
 var commands = map[string]func(args []string) int{
-	"new":     runNew,
-	"ls":      runLs,
-	"status":  runStatus,
-	"ui":      runUI,
-	"agents":  runAgents,
-	"import":  runImport,
-	"attach":  runAttach,
-	"kill":    runKill,
-	"restore": runRestore,
-	"token":   runToken,
+	"new":    runGroupNew,
+	"ls":     runGroupList,
+	"status": runStatus,
+	"ui":     runUI,
+	"agents": runAgents,
+
+	"attach":  runGroupAttach,
+	"term":    runTerm,
+	"rename":  runGroupRename,
+	"archive": runGroupArchive,
+	"remove":  runGroupRemove,
+
+	"token": runToken,
 	"help": func([]string) int {
 		fmt.Print(usage)
 		return 0
@@ -101,12 +102,13 @@ func label(t terminal.Info) string {
 var envPassed = []string{"TERM", "COLORTERM", "LANG", "LC_ALL", "LC_CTYPE"}
 
 func runNew(args []string) int {
-	fs, addr := newFlags("new", "[-n name] [-d] [--restore auto|none|rerun|agent] [command [args...]]",
+	fs, addr := newFlags("term new", "[-n name] [-d] [--restore auto|none|rerun|agent] [command [args...]]",
 		"Start a terminal running command ($SHELL by default) in the current directory and\n"+
 			"attach to it. With -d, or when stdout is not a terminal, print its id instead.")
 	var name string
 	fs.StringVar(&name, "n", "", "Name (default: the command, or the directory for a shell)")
 	fs.StringVar(&name, "name", "", "Same as -n")
+	group := fs.String("group", "", "Group name or id (default: inherited group, otherwise Inbox)")
 	detach := fs.Bool("d", false, "Do not attach; print the new terminal's id")
 	restore := fs.String("restore", "auto", "What to do after a daemon restart: rerun the command, resume the exact\nagent session (claude, codex), or none. auto picks agent for a supported agent, else rerun")
 	_ = fs.Parse(args)
@@ -148,6 +150,15 @@ func runNew(args []string) int {
 		cfg.TerminalColors, initial = client.ProbeColors(context.Background(), os.Stdin, os.Stdout)
 	}
 	c := apiAt(*addr)
+	if err := ensureDaemon(c); err != nil {
+		return fail(err)
+	}
+	c = apiAt(*addr)
+	g, err := groupContext(c, *group)
+	if err != nil {
+		return fail(err)
+	}
+	cfg.GroupID = g.ID
 	var info terminal.Info
 	if err := c.Do("POST", "/terminals", cfg, &info); err != nil {
 		return fail(err)
@@ -156,15 +167,16 @@ func runNew(args []string) int {
 		fmt.Println(info.ID)
 		return 0
 	}
-	code, _ := attach(context.Background(), c, info, client.Options{InitialInput: initial})
+	code, _ := attach(context.Background(), c, info, client.Options{InitialInput: initial, Human: true})
 	return code
 }
 
 func runAttach(args []string) int {
-	fs, addr := newFlags("attach", "[--readonly] <terminal>",
+	fs, addr := newFlags("term attach", "[--readonly] <terminal>",
 		"Attach this terminal to a ptyd terminal. Detach with "+client.DetachKeyHelp+".\n"+
 			"<terminal> is an id, its number, a name or a unique id prefix.")
 	readOnly := fs.Bool("readonly", false, "Watch without sending input or resizing")
+	group := fs.String("group", "", "Resolve terminal names inside this group")
 	raw := fs.Bool("raw", false, "Pass terminal output through without a status row")
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
@@ -172,11 +184,11 @@ func runAttach(args []string) int {
 		return 2
 	}
 	c := apiAt(*addr)
-	info, err := c.Find(fs.Arg(0))
+	info, err := findTerminal(c, fs.Arg(0), *group)
 	if err != nil {
 		return fail(err)
 	}
-	code, _ := attach(context.Background(), c, info, client.Options{ReadOnly: *readOnly, Raw: *raw})
+	code, _ := attach(context.Background(), c, info, client.Options{ReadOnly: *readOnly, Raw: *raw, Human: true})
 	return code
 }
 
@@ -190,6 +202,12 @@ func attach(parent context.Context, c client.API, t terminal.Info, opts client.O
 	defer stop()
 	opts.Addr, opts.Token, opts.ID = c.Addr, c.Token, string(t.ID)
 	opts.Label = t.Name
+	if t.GroupID != "" {
+		var g terminal.Group
+		if err := c.Do("GET", "/groups/"+string(t.GroupID), nil, &g); err == nil {
+			opts.Label = g.Name + " / " + t.Name
+		}
+	}
 	result, err := client.Attach(ctx, opts, os.Stdin, os.Stdout, winch)
 	var pending []byte
 	if result.Detached && err == nil {
@@ -219,7 +237,7 @@ func attach(parent context.Context, c client.API, t terminal.Info, opts client.O
 		if info.Notice != "" {
 			msg += "\n[" + info.Notice + "]"
 		}
-		msg += fmt.Sprintf("\n[start it again: ptyd restore %s]", t.ID)
+		msg += fmt.Sprintf("\n[start it again: ptyd term restore %s]", t.ID)
 		fmt.Fprintln(os.Stderr, msg)
 		return 1, pending
 	case *info.ExitCode < 0:
@@ -245,14 +263,37 @@ func waitExited(c client.API, id terminal.ID) (terminal.Info, error) {
 }
 
 func runLs(args []string) int {
-	fs, addr := newFlags("ls", "", "List terminals, oldest first.")
+	fs, addr := newFlags("term ls", "[--json] [--group name]", "List terminals. Inside a ptyd terminal, the inherited group is the default.")
+	json := fs.Bool("json", false, "Return terminal metadata as JSON")
+	group := fs.String("group", "", "Group name or id; omit outside ptyd to list all terminals")
 	_ = fs.Parse(args)
-	list, err := apiAt(*addr).List()
+	if fs.NArg() != 0 {
+		fs.Usage()
+		return 2
+	}
+	c := apiAt(*addr)
+	list, err := c.List()
 	if err != nil {
 		return fail(err)
 	}
+	if *group != "" || os.Getenv("PTYD_GROUP_ID") != "" || os.Getenv("PTYD_TERMINAL_ID") != "" {
+		g, err := groupContext(c, *group)
+		if err != nil {
+			return fail(err)
+		}
+		rows := list[:0]
+		for _, t := range list {
+			if t.GroupID == g.ID {
+				rows = append(rows, t)
+			}
+		}
+		list = rows
+	}
+	if *json {
+		return encodeJSON(os.Stdout, list)
+	}
 	if len(list) == 0 {
-		fmt.Fprintln(os.Stderr, "no terminals (start one with `ptyd new`)")
+		fmt.Fprintln(os.Stderr, "no terminals (start one with ptyd term new)")
 		return 0
 	}
 	printList(os.Stdout, list)
@@ -303,7 +344,8 @@ func shortDuration(d time.Duration) string {
 }
 
 func runKill(args []string) int {
-	fs, addr := newFlags("kill", "<terminal>...", "Stop terminals (SIGTERM, then SIGKILL after 2s) and forget them.")
+	fs, addr := newFlags("term kill", "[--group name] <terminal>...", "Stop terminals (SIGTERM, then SIGKILL after 2s) and forget them.")
+	group := fs.String("group", "", "Resolve names within this group")
 	_ = fs.Parse(args)
 	if fs.NArg() == 0 {
 		fs.Usage()
@@ -312,7 +354,7 @@ func runKill(args []string) int {
 	c := apiAt(*addr)
 	code := 0
 	for _, target := range fs.Args() {
-		info, err := c.Find(target)
+		info, err := findTerminal(c, target, *group)
 		if err == nil {
 			err = c.Do("DELETE", "/terminals/"+string(info.ID), nil, nil)
 		}
@@ -338,10 +380,11 @@ func runToken(args []string) int {
 }
 
 func runRestore(args []string) int {
-	fs, addr := newFlags("restore", "[--policy auto|rerun|agent] <terminal>",
+	fs, addr := newFlags("term restore", "[--policy auto|rerun|agent] <terminal>",
 		"Start a stopped terminal (a ghost) again under the same id, below its last window,\n"+
 			"and attach. The policy defaults to the terminal's own, else auto. An exited\n"+
 			"terminal is replaced by a new one running the same command.")
+	group := fs.String("group", "", "Resolve names within this group")
 	policy := fs.String("policy", "", "rerun the command, agent to resume the exact agent session, or auto")
 	detach := fs.Bool("d", false, "Do not attach")
 	_ = fs.Parse(args)
@@ -350,7 +393,7 @@ func runRestore(args []string) int {
 		return 2
 	}
 	c := apiAt(*addr)
-	t, err := c.Find(fs.Arg(0))
+	t, err := findTerminal(c, fs.Arg(0), *group)
 	if err != nil {
 		return fail(err)
 	}
@@ -359,11 +402,7 @@ func runRestore(args []string) int {
 		p = terminal.RestoreAuto
 	}
 	var info terminal.Info
-	err = c.Do("POST", "/terminals/"+string(t.ID)+"/restore", map[string]any{"policy": p}, &info)
-	if err != nil && t.ExitCode != nil {
-		// Not a ghost but a command that finished: run it again.
-		err = c.Do("POST", "/terminals/"+string(t.ID)+"/restart", nil, &info)
-	}
+	err = c.Do("POST", "/terminals/"+string(t.ID)+"/relaunch", map[string]any{"policy": p}, &info)
 	if err != nil {
 		return fail(err)
 	}
@@ -371,6 +410,6 @@ func runRestore(args []string) int {
 		fmt.Println(info.ID)
 		return 0
 	}
-	code, _ := attach(context.Background(), c, info, client.Options{})
+	code, _ := attach(context.Background(), c, info, client.Options{Human: true})
 	return code
 }
