@@ -63,8 +63,8 @@ their own line, with the app and status below.
 
 Press **/** to find text in terminal screens and retained scrollback, including
 wrapped lines. Search works across groups from the home view, or within an open
-group. Matches show a short excerpt and where it was found. Use **h** to include
-finished work; incomplete searches say what could not be checked.
+group. Matches show a short excerpt and where it was found. In the group list,
+**h** includes archived groups; incomplete searches say what could not be checked.
 
 Use `ptyd ls --plain` for a table that exits, or `--json` for structured output.
 Piped output stays plain text. Older ungrouped terminals live in
@@ -72,17 +72,17 @@ Piped output stays plain text. Older ungrouped terminals live in
 
 | Where | Keys |
 |---|---|
-| Groups | `j/k` select · Enter open · `n` create · `h` history |
-| Inside a group | `j/k` select · Enter take control · `v` pin/unpin · `c` captain · `n` launch |
+| Groups | `j/k` select · Enter open · `n` create · `r` rename · `a` archive · `x` close · `h` show archived |
+| Inside a group | `j/k` select · Enter take control · `n` launch · `v` pin · `c` captain · `r` rename · `m` move · `x` close · `a` outside agents |
 | Finished terminal | `R` launch again · Enter view history |
 | Anywhere | Quick `jk` goes back: terminal → group → groups → shell |
-| Workspace | `/` search · `?` help · `q` quit |
+| Workspace | `/` search · `q` quit · the bottom dock lists every control that works right now |
 
 `jk` also dismisses menus and cancels prompts. Use slower `j` and `k` to move
 down and up; pasted text stays literal. **●** running, **◉** human control,
 **!** attention and **◆** pinned give each view a quick visual cue. A small
-ASCII cube rotates in the header; use `:motion` or set `PTYD_REDUCED_MOTION=1`
-for a still header.
+ASCII cube rotates in the header; set `PTYD_REDUCED_MOTION=1` for a still
+header.
 
 An attached terminal keeps **group / terminal** and the return hint in its
 bottom row, including when an app clears the screen. The app keeps its colors,

@@ -22,10 +22,20 @@ func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
 	if cols < 40 || rows < 16 {
 		return workspaceScene{ANSI: "\x1b[?2026h\x1b[H\x1b[2J\x1b[0m" + clipStatus("ptyd · enlarge to 40×16", cols) + "\r\n" + clipStatus("q detaches · work keeps running", cols) + "\x1b[?2026l"}
 	}
+	// A dock that wraps takes its extra rows from the layout above it.
+	full := rows
+	// Dialogs keep the normal dock's height so the view behind them stays put.
+	dock := workspaceDock(v, cols)
+	normal := v
+	normal.mode = wsNormal
+	for len(dock) < len(workspaceDock(normal, cols)) {
+		dock = append([][]workspaceKeyHint{nil}, dock...)
+	}
+	rows -= len(dock) - 1
 	var out, preview strings.Builder
 	const start = "\x1b[?2026h\x1b[?25l\x1b[?7l\x1b[0m\x1b[H\x1b[2J"
 	put := func(x, y int, text, style string) {
-		if x < 0 || y < 0 || x >= cols || y >= rows {
+		if x < 0 || y < 0 || x >= cols || y >= full {
 			return
 		}
 		fmt.Fprintf(&out, "\x1b[%d;%dH", y+1, x+1)
@@ -148,8 +158,6 @@ func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
 				}
 			} else if v.outside {
 				heading = "No terminals received in this view."
-			} else if !v.history && v.snapshot.Overview.HistoryHidden > 0 {
-				heading = "Press h to see finished terminals."
 			}
 			leftPut := func(y int, text, style string) {
 				if y < rows-5 {
@@ -176,9 +184,6 @@ func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
 		if row, ok := v.row(); ok {
 			detail := v.sessionCaption(row).Label(v.titles[row.ID]) + " · " + workspaceTerminalState(row)
 			hint := detail
-			if row.State != terminal.OverviewRunning && row.External == nil {
-				hint = detail + " · R relaunches"
-			}
 			if row.HumanControl {
 				hint = "Another human has control · v pins its live pane"
 			}
@@ -230,12 +235,12 @@ func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
 		put(2, max(rows-5, 3), clipStatus(notice, cols-4), style)
 	}
 	line(rows - 3)
-	workspaceKeys(v, cols, rows-2, put, func(h workspaceHit) {
-		if v.mode != wsSearch && v.mode != wsCommand {
+	workspaceKeys(dock, rows-2, put, func(h workspaceHit) {
+		if v.mode != wsSearch {
 			hit(h)
 		}
 	})
-	if v.mode != wsNormal && v.mode != wsSearch && v.mode != wsCommand {
+	if v.mode != wsNormal && v.mode != wsSearch {
 		x, y := max((cols-min(cols-4, 70))/2, 1), max((rows-14)/2, 2)
 		width := max(min(cols-4, 70), 1)
 		for i := 0; i < 12 && y+i < rows-2; i++ {
@@ -306,13 +311,6 @@ func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
 				put(x+3, y+4, "Create another group first.", "")
 			}
 			hint = "j/k choose · Enter moves it · jk / Esc goes back"
-		case wsHelp:
-			label = "Your workspace"
-			help := []string{"j/k  Move       Enter  Open", "jk   Back       v      Pin / unpin", "n    New        c      Captain", "r/m  Rename/move  x    Close", "h    Finished   a      Outside / archive", "/    Search screens and scrollback", "Click selects; double-click opens", "q    Quit; work keeps running"}
-			for i, text := range help {
-				put(x+2, y+2+i, text, "")
-			}
-			hint = "jk, Esc, q or ? returns"
 		}
 		if v.mode == wsLaunch {
 			for _, choice := range []struct {
@@ -329,15 +327,11 @@ func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
 			put(x+2, y+7, "› "+text, "1")
 			fmt.Fprintf(&out, "\x1b[%d;%dH\x1b[?25h", y+8, x+5+textWidth(text))
 		}
-	} else if v.mode == wsSearch || v.mode == wsCommand {
+	} else if v.mode == wsSearch {
 		prefix := "/ "
 		hint := "Enter applies · jk cancels"
 		if cols >= 80 {
 			hint += " · screens + scrollback"
-		}
-		if v.mode == wsCommand {
-			prefix = ": "
-			hint = "Enter runs the command · jk cancels"
 		}
 		put(2, rows-4, clipStatus(hint, cols-4), "2")
 		enterWidth := textWidth(strings.Split(hint, " · ")[0])

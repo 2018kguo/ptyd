@@ -8,6 +8,7 @@ import (
 
 	"github.com/2018kguo/phosphor"
 	"github.com/2018kguo/ptyd/internal/client"
+	"github.com/2018kguo/ptyd/internal/native"
 	"github.com/2018kguo/ptyd/internal/terminal"
 )
 
@@ -67,74 +68,148 @@ type workspaceKeyHint struct{ key, label string }
 
 func workspaceSidebarWidth(cols int) int { return min(max(cols/5, 26), 32) }
 
-func workspaceKeys(v workspaceView, cols, y int, put func(int, int, string, string), hit func(workspaceHit)) {
-	hints := []workspaceKeyHint{{"j/k", "move"}, {"Enter", "open"}, {"n", "new"}, {"/", "search"}, {"jk", "back"}, {"?", "help"}, {"q", "quit"}}
-	if v.group != "" {
-		hints = slices.Insert(hints, 2, workspaceKeyHint{"v", "pin"}, workspaceKeyHint{"c", "captain"})
-	}
-	optional := []string{"c", "/", "n", "j/k", "v"}
-	if row, ok := v.row(); v.group != "" && ok && row.Local == nil && row.External == nil && row.State != terminal.OverviewRunning {
-		hints[1].label = "history"
-		hints = slices.Insert(hints, 1, workspaceKeyHint{"R", "relaunch"})
-		optional = append(optional, "Enter")
-	}
+// workspaceDock lists every control that works in the current view and for the
+// current selection, wrapped into as many rows as cols needs.
+func workspaceDock(v workspaceView, cols int) [][]workspaceKeyHint {
+	var hints []workspaceKeyHint
+	add := func(key, label string) { hints = append(hints, workspaceKeyHint{key, label}) }
 	switch v.mode {
-	case wsHelp:
-		hints = []workspaceKeyHint{{"jk", "back"}, {"q", "close"}}
+	case wsSearch:
+		return [][]workspaceKeyHint{nil}
 	case wsLaunch:
-		hints = []workspaceKeyHint{{"c/a/s/r", "choose"}, {"f", "access"}, {"jk", "back"}}
+		add("c/a/s/r", "choose")
+		add("f", "access")
+		add("jk", "back")
 	case wsMove:
-		hints = []workspaceKeyHint{{"j/k", "choose"}, {"Enter", "move"}, {"jk", "back"}}
+		add("j/k", "choose")
+		add("Enter", "move")
+		add("jk", "back")
 	case wsNewGroup:
-		hints = []workspaceKeyHint{{"Enter", "create"}, {"jk", "cancel"}}
+		add("Enter", "create")
+		add("jk", "cancel")
 	case wsRun:
-		hints = []workspaceKeyHint{{"Enter", "start"}, {"jk", "cancel"}}
+		add("Enter", "start")
+		add("jk", "cancel")
 	case wsRename:
-		hints = []workspaceKeyHint{{"Enter", "save"}, {"jk", "cancel"}}
+		add("Enter", "save")
+		add("jk", "cancel")
 	case wsConfirm, wsResume:
-		hints = []workspaceKeyHint{{"Enter", "confirm"}, {"jk", "cancel"}}
-	}
-	width := func() int {
-		n := 0
-		for _, h := range hints {
-			n += textWidth(h.key) + 1 + textWidth(h.label) + 2
-		}
-		return max(n-2, 0)
-	}
-	for _, key := range optional {
-		if width() <= cols-4 {
-			break
-		}
-		for i, h := range hints {
-			if h.key == key {
-				hints = append(hints[:i], hints[i+1:]...)
-				break
+		add("Enter", "confirm")
+		add("jk", "cancel")
+	default:
+		add("j/k", "move")
+		if v.group == "" {
+			selected := false
+			archived := false
+			for _, g := range v.groups {
+				if string(g.ID) == v.selected {
+					selected, archived = true, g.Archived
+				}
 			}
-		}
-	}
-	x := 2
-	for _, h := range hints {
-		var key workspaceKey
-		valid := true
-		switch h.key {
-		case "jk":
-			key.Back = true
-		case "Enter":
-			key.Rune = '\r'
-		default:
-			if len([]rune(h.key)) == 1 {
-				key.Rune = []rune(h.key)[0]
+			if selected {
+				add("Enter", "open")
+			}
+			add("n", "new group")
+			if selected {
+				add("r", "rename")
+				if archived {
+					add("a", "unarchive")
+				} else {
+					add("a", "archive")
+				}
+				add("x", "close")
+			}
+			if v.history {
+				add("h", "hide archived")
 			} else {
-				valid = false
+				add("h", "show archived")
+			}
+		} else {
+			row, ok := v.row()
+			managed := ok && row.External == nil && row.Local == nil
+			switch {
+			case ok && row.External != nil && row.External.Action == native.Attach:
+				add("Enter", "import")
+			case ok && row.External != nil && row.External.Action == native.Resume:
+				add("Enter", "resume")
+			case managed && row.State != terminal.OverviewRunning:
+				add("Enter", "history")
+				add("R", "relaunch")
+			case managed:
+				add("Enter", "open")
+			}
+			add("n", "new")
+			if managed {
+				if slices.Contains(v.watched(), row.ID) {
+					add("v", "unpin")
+				} else {
+					add("v", "pin")
+				}
+				if v.isCaptain(row) {
+					add("c", "clear captain")
+				} else {
+					add("c", "captain")
+				}
+				add("r", "rename")
+				add("m", "move")
+				add("x", "close")
+			}
+			if v.outside {
+				add("a", "hide outside")
+			} else {
+				add("a", "outside agents")
 			}
 		}
-		if valid {
-			hit(workspaceHit{Rect: workspaceRect{x, y, textWidth(h.key) + 1 + textWidth(h.label), 1}, Kind: workspaceHitKey, Key: key})
+		add("/", "search")
+		if v.group != "" {
+			add("jk", "back")
 		}
-		put(x, y, h.key, "1;36")
-		x += textWidth(h.key) + 1
-		put(x, y, h.label, "2")
-		x += textWidth(h.label) + 2
+		add("q", "quit")
+	}
+	lines := [][]workspaceKeyHint{nil}
+	width := 0
+	for _, h := range hints {
+		w := textWidth(h.key) + 1 + textWidth(h.label)
+		if width > 0 && width+2+w > cols-4 {
+			lines = append(lines, nil)
+			width = 0
+		}
+		if width > 0 {
+			width += 2
+		}
+		width += w
+		lines[len(lines)-1] = append(lines[len(lines)-1], h)
+	}
+	return lines
+}
+
+// workspaceKeys draws dock (from workspaceDock) from row y down; each hint is clickable.
+func workspaceKeys(dock [][]workspaceKeyHint, y int, put func(int, int, string, string), hit func(workspaceHit)) {
+	for i, hints := range dock {
+		x := 2
+		for _, h := range hints {
+			var key workspaceKey
+			valid := true
+			switch h.key {
+			case "jk":
+				key.Back = true
+			case "Enter":
+				key.Rune = '\r'
+			default:
+				if len([]rune(h.key)) == 1 {
+					key.Rune = []rune(h.key)[0]
+				} else {
+					valid = false
+				}
+			}
+			if valid {
+				hit(workspaceHit{Rect: workspaceRect{x, y + i, textWidth(h.key) + 1 + textWidth(h.label), 1}, Kind: workspaceHitKey, Key: key})
+			}
+			put(x, y+i, h.key, "1;36")
+			x += textWidth(h.key) + 1
+			put(x, y+i, h.label, "2")
+			x += textWidth(h.label) + 2
+		}
 	}
 }
 

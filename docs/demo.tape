@@ -23,7 +23,9 @@ Type "k"
 Sleep 1400ms
 Type "/Requests served" Enter
 Sleep 1500ms
-Type ":ls" Enter
+Type "/"
+Backspace 15
+Enter
 Sleep 900ms
 Type "q"
 Sleep 600ms

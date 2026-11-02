@@ -91,27 +91,27 @@ func TestWorkspaceMouseSelectOpenAndBack(t *testing.T) {
 
 func TestWorkspaceMouseSceneRespectsDialogsAndInput(t *testing.T) {
 	v := workspaceView{group: "work", selected: "one", color: true, groups: []terminal.GroupSummary{{Group: terminal.Group{ID: "work", Name: "work"}}}, rows: []terminal.SessionSummary{{ID: "one", GroupID: "work", Name: "codex", State: terminal.OverviewRunning}}, snapshot: &workspaceSnapshot{Query: workspaceQuery{Group: "work"}, Panes: []workspacePane{{Row: terminal.SessionSummary{ID: "one", GroupID: "work", Name: "codex"}, Screen: phosphor.New(80, 24)}}}}
-	for _, mode := range []workspaceMode{wsNormal, wsHelp, wsLaunch, wsSearch, wsCommand} {
+	for _, mode := range []workspaceMode{wsNormal, wsLaunch, wsSearch} {
 		v.mode = mode
 		scene := renderWorkspace(v, 120, 30)
 		for _, h := range scene.Hits {
 			if h.Rect.x < 0 || h.Rect.y < 0 || h.Rect.x+h.Rect.w > 120 || h.Rect.y+h.Rect.h > 30 {
 				t.Fatal("hit outside frame", h)
 			}
-			if (mode == wsSearch || mode == wsCommand) && h.Rect.y == 28 {
+			if mode == wsSearch && h.Rect.y == 28-workspaceDockExtra(v, 120) {
 				t.Fatal("input field covers an active footer button")
 			}
-			if (mode == wsHelp || mode == wsLaunch) && h.Kind != workspaceHitKey {
+			if mode == wsLaunch && h.Kind != workspaceHitKey {
 				t.Fatal("dialog left underlying content clickable")
 			}
 		}
 	}
 	for _, group := range []terminal.GroupID{"", "work"} {
-		for _, mode := range []workspaceMode{wsSearch, wsCommand} {
+		for _, mode := range []workspaceMode{wsSearch} {
 			v.group, v.mode = group, mode
 			enter, back := false, false
 			for _, h := range renderWorkspace(v, 120, 30).Hits {
-				if h.Rect.y == 26 && h.Kind == workspaceHitKey {
+				if h.Rect.y == 26-workspaceDockExtra(v, 120) && h.Kind == workspaceHitKey {
 					enter = enter || h.Key.Rune == '\r'
 					back = back || h.Key.Back
 				}
@@ -130,4 +130,10 @@ func TestWorkspaceMouseSceneRespectsDialogsAndInput(t *testing.T) {
 	if _, double, ok := mouse.click(client.MouseEvent{X: 1, Y: 1}, []workspaceHit{h}, now.Add(100*time.Millisecond)); !ok || !double {
 		t.Fatal("second click did not open")
 	}
+}
+
+// workspaceDockExtra is how many rows the normal dock wraps onto past its first.
+func workspaceDockExtra(v workspaceView, cols int) int {
+	v.mode = wsNormal
+	return len(workspaceDock(v, cols)) - 1
 }
