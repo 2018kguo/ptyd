@@ -246,27 +246,6 @@ func TestWorkspaceRejectsStaleSnapshotsAndScrollsMoveMenu(t *testing.T) {
 	}
 }
 
-func TestWorkspaceCommandsResolveNamesWithoutGuessing(t *testing.T) {
-	d := startDaemon(t, freeAddr(t))
-	_, stderr, code := d.cli(nil, "new", "-d", "work")
-	if code != 0 {
-		t.Fatal(stderr)
-	}
-	for range 2 {
-		if _, stderr, code = d.cli(nil, "term", "new", "-d", "--group", "work", "-n", "duplicate", "--", "cat"); code != 0 {
-			t.Fatal(stderr)
-		}
-	}
-	w := d.open(100, 26, "attach", "work")
-	w.waitText("duplicate")
-	w.keys(":b duplicate\r")
-	w.waitText("matches 2 terminals")
-	w.keys("q")
-	if code = w.waitExit(); code != 0 {
-		t.Fatal(code)
-	}
-}
-
 func TestWorkspaceShowsIncompleteOutsideDiscovery(t *testing.T) {
 	v := workspaceView{group: "work", outside: true, snapshot: &workspaceSnapshot{Overview: terminal.Overview{
 		DiscoveryIssues: []native.Issue{{Provider: native.Claude, Message: "provider failed"}}, DiscoveryTruncated: true,

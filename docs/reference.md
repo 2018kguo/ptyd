@@ -90,7 +90,7 @@ finished and saved terminals.
 
 The workspace's `/` uses the same search. At home it finds matching groups;
 inside a group it finds matching terminals. Enter keeps the filter, and opening
-a content-matched group keeps that search. `:ls` clears it. Matches identify
+a content-matched group keeps that search. Submitting an empty `/` clears it. Matches identify
 `screen`, `scrollback` or `session` and show a short excerpt. A visible match
 is brought into the preview; a history match appears above the live screen.
 
@@ -151,9 +151,9 @@ and historical Unicode modes. These features require the exact-snapshot protocol
 updating the client can leave a compatible daemon running. Oversized or unavailable previews show a reason while navigation
 remains available.
 
-The workspace shows all members of an opened group by default; `h` hides or
-shows finished members. The group list hides archived work and saved-only Inbox
-until `h`. It never hides a running group. Filtering never deletes records.
+An opened group always shows all its members, finished ones included; `x`
+closes those you no longer need. The group list hides archived groups and a
+saved-only Inbox until `h`. It never hides a running group. Filtering never deletes records.
 The workspace requests at most 500 rows and shows a notice when more exist.
 It keeps the last successful view with a stale/error notice on refresh failure.
 Opening or changing a selected item waits for a matching successful snapshot.
@@ -323,10 +323,13 @@ the current conversation after navigation inside an agent.
 
 ### Workspace controls
 
-| Key or command | Action |
+The dock at the bottom lists every control that works for the current view and
+selection, wrapping onto more rows in narrow windows. Each entry is clickable.
+
+| Key | Action |
 |---|---|
-| `j/k`, arrows; `0/G` | Move; first/last item. |
-| Enter, `i` | Open a group or take keyboard control of a terminal. |
+| `j/k`, arrows | Move. |
+| Enter | Open a group, take keyboard control of a terminal, or view a finished one's history. |
 | `v` | Pin/unpin a live terminal pane beside the group list; up to seven pins per group. |
 | `c` | Designate the selected managed terminal as captain; press again on the captain to clear it. |
 | `n` | Create a group, or launch Codex (`c`), Claude (`a`), shell (`s`) or a custom command (`r`). In the launch menu, `f` toggles agent access. |
@@ -334,17 +337,13 @@ the current conversation after navigation inside an agent.
 | `m` | Move a terminal to another unarchived group. |
 | `x` | Close/remove; requires typing `close` to confirm. |
 | `R` | Relaunch an ended terminal; imported views undergo fresh native validation. |
-| `a` | Archive/unarchive a group, or toggle outside-agent discovery inside a group. |
-| `h` | Show archived/saved-only groups; inside a group, toggle finished terminals. |
+| `a` | In the group list, archive/unarchive the selected group. Inside a group, show/hide outside agents to import. |
+| `h` | In the group list, show/hide archived groups and a saved-only Inbox. |
 | Quick `jk`, Escape | Go back one level; dismiss a menu or cancel a prompt first. |
-| `:groups` | Return directly to your groups. |
-| `/` | Search screens and retained scrollback as you type; Enter keeps the filter, `jk` or Escape restores the previous filter. |
-| `:b name`, `:open name` | Open by id, unique name, number or prefix within the shown rows; ambiguous names are refused. |
-| `:run command` | Run a custom command through your shell in the current group. |
-| `:new`, `:ls` | Open creation controls; clear search. |
-| `:motion` | Toggle the decorative header animation. `PTYD_REDUCED_MOTION=1` starts with it off. |
-| `?` | Show controls; `jk`, Escape, `q` or `?` returns. |
-| `q`, `:q`, `:detach` | Leave the workspace; work keeps running. |
+| `/` | Search screens and retained scrollback as you type; Enter keeps the filter, an empty search clears it, `jk` or Escape restores the previous filter. |
+| `q` | Leave the workspace; work keeps running. |
+
+`PTYD_REDUCED_MOTION=1` keeps the decorative header still.
 
 Pinned panes keep refreshing while selection and search change. Pin up to seven;
 the selected terminal gets the eighth slot unless it is already pinned. Wide

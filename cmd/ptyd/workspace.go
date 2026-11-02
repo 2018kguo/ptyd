@@ -25,7 +25,6 @@ type workspaceMode uint8
 const (
 	wsNormal workspaceMode = iota
 	wsSearch
-	wsCommand
 	wsNewGroup
 	wsLaunch
 	wsRun
@@ -33,7 +32,6 @@ const (
 	wsMove
 	wsConfirm
 	wsResume
-	wsHelp
 )
 
 type workspaceQuery struct {
@@ -583,7 +581,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		mouse.last = workspaceClick{}
 		if k.Paste {
 			switch v.mode {
-			case wsSearch, wsCommand, wsNewGroup, wsRun, wsRename, wsConfirm, wsResume:
+			case wsSearch, wsNewGroup, wsRun, wsRename, wsConfirm, wsResume:
 				if utf8.RuneCountInString(v.text) < 4096 {
 					v.text += string(k.Rune)
 				}
@@ -612,12 +610,6 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		}
 		if k.Rune == 3 {
 			return true, nil
-		}
-		if v.mode == wsHelp {
-			if k.Rune == 'q' || k.Rune == '?' || k.Rune == '\r' {
-				v.mode = wsNormal
-			}
-			return false, nil
 		}
 		if v.mode == wsLaunch {
 			switch k.Rune {
@@ -753,56 +745,6 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 					e := c.DoContext(ctx, "DELETE", path, nil, nil)
 					return workspaceOperation{Notice: "Closed.", Err: e}
 				})
-			case wsCommand:
-				command, arg, _ := strings.Cut(text, " ")
-				arg = strings.TrimSpace(arg)
-				switch command {
-				case "q", "quit", "detach":
-					return true, nil
-				case "groups":
-					v.toGroups()
-					queueWorkspace(queries, v)
-				case "new":
-					if v.group == "" {
-						v.mode = wsNewGroup
-					} else {
-						v.mode = wsLaunch
-					}
-				case "run":
-					if v.group == "" {
-						v.notice = "Open a group before starting a terminal."
-					} else if arg != "" {
-						createTerminal(workspaceCustomLaunch(arg, shell))
-					} else {
-						v.mode = wsRun
-					}
-				case "b", "open":
-					shown := make([]terminal.Info, 0, len(v.rows))
-					for _, r := range v.rows {
-						shown = append(shown, terminal.Info{ID: r.ID, Name: r.Name})
-					}
-					selected, e := client.Find(shown, arg)
-					if e != nil {
-						v.notice = e.Error()
-					} else {
-						v.selected = string(selected.ID)
-						return handle(workspaceKey{Rune: '\r'})
-					}
-				case "motion":
-					v.motion = !v.motion
-					if !v.motion {
-						v.brandPhase = 0
-					}
-					v.notice = "Motion on."
-					if !v.motion {
-						v.notice = "Motion off."
-					}
-				case "ls":
-					v.query = ""
-					queueWorkspace(queries, v)
-				default:
-					v.notice = "Commands: groups, new, run command, b name, ls, motion, q."
-				}
 			}
 			return false, nil
 		}
@@ -824,27 +766,19 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		case 'k':
 			v.move(-1)
 			queueWorkspace(queries, v)
-		case 'G':
-			v.move(1 << 30)
-			queueWorkspace(queries, v)
-		case '0':
-			v.move(-1 << 30)
-			queueWorkspace(queries, v)
 		case '/':
 			v.searchBefore = v.query
 			v.mode = wsSearch
 			v.text = v.query
-		case ':':
-			v.mode = wsCommand
-			v.text = ""
-		case '?':
-			v.mode = wsHelp
 		case 'q':
 			return true, nil
 
 		case 'h':
-			v.history = !v.history
-			queueWorkspace(queries, v)
+			// Archived groups and an idle Inbox; a group always shows all its members.
+			if v.group == "" {
+				v.history = !v.history
+				queueWorkspace(queries, v)
+			}
 		case 'n':
 			if v.group == "" {
 				v.mode = wsNewGroup
@@ -929,7 +863,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 					return workspaceOperation{Notice: notice, Err: chooseCaptain(ctx, c, group, id)}
 				})
 			}
-		case '\r', '\n', 'i':
+		case '\r', '\n':
 			if v.err != nil || v.snapshot == nil || !v.snapshot.Query.matches(v) {
 				v.notice = "Wait for this view to refresh before opening it."
 				return false, nil

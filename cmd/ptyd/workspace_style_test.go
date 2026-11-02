@@ -11,7 +11,7 @@ import (
 func TestWorkspacePromptsStayInsideTheirFrame(t *testing.T) {
 	for _, size := range [][2]int{{40, 16}, {80, 24}, {120, 30}, {200, 60}} {
 		cols, rows := size[0], size[1]
-		for _, mode := range []workspaceMode{wsRename, wsRun, wsNewGroup, wsConfirm, wsResume, wsMove, wsLaunch, wsHelp} {
+		for _, mode := range []workspaceMode{wsRename, wsRun, wsNewGroup, wsConfirm, wsResume, wsMove, wsLaunch} {
 			v := workspaceView{color: true, text: strings.Repeat("very-long-雪-name-", 30), groups: []terminal.GroupSummary{{Group: terminal.Group{ID: "work", Name: strings.Repeat("long-name", 20)}}}}
 			base := phosphor.New(cols, rows)
 			base.Write([]byte(workspaceFrame(v, cols, rows)))
@@ -23,7 +23,7 @@ func TestWorkspacePromptsStayInsideTheirFrame(t *testing.T) {
 			for sy := 0; sy < rows; sy++ {
 				for sx := 0; sx < cols; sx++ {
 					// The action bar follows the open dialog's controls.
-					if sy == rows-2 && sx >= 2 && sx < cols-2 {
+					if sy >= rows-2-workspaceDockExtra(v, cols) && sy < rows-1 && sx >= 2 && sx < cols-2 {
 						continue
 					}
 					if sx >= x && sx < x+width && sy >= y && sy < y+12 {
@@ -34,7 +34,7 @@ func TestWorkspacePromptsStayInsideTheirFrame(t *testing.T) {
 					}
 				}
 			}
-			if mode != wsHelp && strings.Contains(host.Line(rows-2), "q quit") {
+			if strings.Contains(host.Line(rows-2), "q quit") {
 				t.Fatal("dialog advertised a quit key that edits its field")
 			}
 			if mode == wsRename || mode == wsRun || mode == wsNewGroup || mode == wsConfirm || mode == wsResume {
@@ -72,7 +72,8 @@ func TestWorkspaceLongListsKeepTheirBottomBorders(t *testing.T) {
 				if x == left {
 					want = '╯'
 				}
-				if got := host.Cell(x, rows-6).Rune; got != want {
+				// A wrapped dock lifts the layout by its extra rows.
+				if got := host.Cell(x, rows-5-len(workspaceDock(v, cols))).Rune; got != want {
 					t.Fatalf("group=%q %dx%d list painted over border at %d: %c", group, cols, rows, x, got)
 				}
 			}
@@ -82,15 +83,21 @@ func TestWorkspaceLongListsKeepTheirBottomBorders(t *testing.T) {
 func TestWorkspaceFooterHasBreathingRoom(t *testing.T) {
 	for _, cols := range []int{40, 60, 80, 120, 200} {
 		for _, group := range []terminal.GroupID{"", "work"} {
+			v := workspaceView{group: group}
 			host := phosphor.New(cols, 24)
-			host.Write([]byte(workspaceFrame(workspaceView{group: group}, cols, 24)))
+			host.Write([]byte(workspaceFrame(v, cols, 24)))
 			if strings.TrimSpace(host.Line(23)) != "" {
 				t.Fatal("controls occupy the terminal's clipped bottom edge")
 			}
-			bar := host.Line(22)
-			for _, hint := range []string{"Enter open", "jk back", "? help", "q quit"} {
-				if !strings.Contains(bar, hint) {
-					t.Fatalf("%d columns lost %q: %s", cols, hint, bar)
+			dock := workspaceDock(v, cols)
+			if !strings.Contains(host.Line(22-len(dock)), "───") {
+				t.Fatalf("%d columns: no rule above the dock", cols)
+			}
+			for i, line := range dock {
+				for _, h := range line {
+					if bar := host.Line(23 - len(dock) + i); !strings.Contains(bar, h.key+" "+h.label) {
+						t.Fatalf("%d columns lost %q: %s", cols, h.key+" "+h.label, bar)
+					}
 				}
 			}
 		}

@@ -126,30 +126,24 @@ func TestWorkspaceCustomAgentCommandsKeepTheirArguments(t *testing.T) {
 	}
 	w := d.open(120, 32, "attach", "custom")
 	w.waitText("This group is ready.")
-	for _, entry := range []string{"menu", "command"} {
-		for _, command := range []string{"codex", "claude"} {
-			if entry == "menu" {
-				w.keys("n")
-				w.waitText("Access: Full (YOLO)")
-				w.keys("r")
-				w.waitText("Run a command")
-				w.keys(command + "\r")
-			} else {
-				w.keys(":run " + command + "\r")
-			}
-			w.waitText("jk: back")
-			w.waitText("SHELL-" + command + "-READY")
-			raw, err := os.ReadFile(record)
-			if err != nil {
-				t.Fatal(err)
-			}
-			args := strings.Split(strings.TrimSpace(string(raw)), "\n")
-			if !slices.Equal(args, []string{"-lc", command}) {
-				t.Fatalf("%s custom %q was rewritten: %q", entry, command, args)
-			}
-			w.keys("jk")
-			w.waitText("Returned to your workspace.")
+	for _, command := range []string{"codex", "claude"} {
+		w.keys("n")
+		w.waitText("Access: Full (YOLO)")
+		w.keys("r")
+		w.waitText("Run a command")
+		w.keys(command + "\r")
+		w.waitText("jk: back")
+		w.waitText("SHELL-" + command + "-READY")
+		raw, err := os.ReadFile(record)
+		if err != nil {
+			t.Fatal(err)
 		}
+		args := strings.Split(strings.TrimSpace(string(raw)), "\n")
+		if !slices.Equal(args, []string{"-lc", command}) {
+			t.Fatalf("custom %q was rewritten: %q", command, args)
+		}
+		w.keys("jk")
+		w.waitText("Returned to your workspace.")
 	}
 	w.keys("q")
 	if code := w.waitExit(); code != 0 {

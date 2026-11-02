@@ -131,8 +131,9 @@ func TestWorkspaceFinishedTerminalStaysActionable(t *testing.T) {
 		}
 		host := phosphor.New(40, 16)
 		host.Write([]byte(workspaceFrame(v, 40, 16)))
-		if !strings.Contains(host.Line(14), "R relaunch") || !strings.Contains(host.Line(14), "jk back") {
-			t.Fatalf("small window hid relaunch: %s", host.Line(14))
+		dock := strings.Join(host.Lines()[16-1-len(workspaceDock(v, 40)):], "\n")
+		if !strings.Contains(dock, "R relaunch") || !strings.Contains(dock, "jk back") {
+			t.Fatalf("small window hid relaunch: %s", dock)
 		}
 		v.refresh(workspaceSnapshot{Query: workspaceQuery{Group: group, History: true}, Overview: terminal.Overview{Sessions: []terminal.SessionSummary{{ID: "done", State: terminal.OverviewRunning}}}})
 		if row, ok := v.row(); !ok || row.State != terminal.OverviewExited {
