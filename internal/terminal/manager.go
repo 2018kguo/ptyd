@@ -1457,6 +1457,7 @@ func (t *terminal) processPending() time.Duration {
 // fireLocked records an attention event for every watch matching line,
 // keeping only the newest maxAttention events. Caller holds t.mu.
 func (t *terminal) fireLocked(line Line) {
+	cloned := false
 	for _, w := range t.watches {
 		if w.spec.Once && w.fired {
 			continue
@@ -1465,6 +1466,11 @@ func (t *terminal) fireLocked(line Line) {
 			continue
 		}
 		w.fired = true
+		if !cloned {
+			// Ring lines alias a shared text arena; an event can
+			// outlive the line, so it keeps only its own text.
+			line.Text, cloned = strings.Clone(line.Text), true
+		}
 		t.attention = append(t.attention, AttentionEvent{Watch: w.spec.Name, Line: line, At: time.Now()})
 		if n := len(t.attention); n > maxAttention {
 			t.attention = append(t.attention[:0], t.attention[n-maxAttention:]...)

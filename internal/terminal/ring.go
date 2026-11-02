@@ -2,9 +2,11 @@ package terminal
 
 import (
 	"bytes"
+	"math/bits"
 	"sync"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 )
 
 // maxLineBytes caps a single line. Output with no newline (a spinner drawn
@@ -46,6 +48,13 @@ type Ring struct {
 	// now is the commit time of the lines of the current Write: read
 	// once, at its first line (zero outside Write).
 	now time.Time
+
+	// text is the arena committed lines' stripped text is appended to.
+	// Line.Text aliases it: bytes below len are written once and never
+	// changed, so only text[len:cap] is writable, and a full arena is
+	// replaced rather than reused. The garbage collector frees an old
+	// arena once no retained or handed-out line refers to it.
+	text []byte
 
 	pending   []byte // partial line being built (no newline yet)
 	pendingCR bool   // last byte was a bare '\r' awaiting disambiguation
@@ -262,7 +271,7 @@ func (r *Ring) commitLocked(text []byte) {
 		at = time.Now()
 		r.now = at
 	}
-	line := Line{Seq: r.nextSeq, Text: stripANSIBytes(text), At: at}
+	line := Line{Seq: r.nextSeq, Text: r.internLocked(text), At: at}
 	r.nextSeq++
 
 	cost := len(line.Text) + lineOverhead
@@ -281,6 +290,40 @@ func (r *Ring) commitLocked(text []byte) {
 	r.lines[(r.head+r.n)%len(r.lines)] = line
 	r.n++
 	r.bytes += cost
+}
+
+// Arena sizing: a new arena holds about 1/16 of the retained bytes,
+// rounded down to a power of two within these bounds, so its unused tail and a partly evicted oldest arena
+// stay small next to the retained text while a busy ring allocates once
+// per many lines rather than once per line.
+const (
+	minTextArena = 256
+	maxTextArena = 32 << 10
+)
+
+// internLocked returns text with ANSI escape sequences stripped, as a
+// string in the arena.
+func (r *Ring) internLocked(text []byte) string {
+	if len(text) == 0 {
+		return ""
+	}
+	// Power-of-two sizes match the allocator's size classes, so arenas
+	// share spans instead of each leaving one mostly empty.
+	size := min(max(minTextArena, 1<<(bits.Len(uint(r.bytes/16)|1)-1)), maxTextArena)
+	if len(text) > size/4 {
+		// A long line gets its own allocation so it never strands a
+		// large unused arena tail.
+		return stripANSIBytes(text)
+	}
+	if cap(r.text)-len(r.text) < len(text) {
+		r.text = make([]byte, 0, size)
+	}
+	start := len(r.text)
+	r.text = appendStripANSI(r.text, text)
+	if len(r.text) == start {
+		return ""
+	}
+	return unsafe.String(&r.text[start], len(r.text)-start)
 }
 
 // indexAfterLocked returns the position (0 = oldest retained) of the first

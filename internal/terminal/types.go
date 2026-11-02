@@ -55,6 +55,25 @@ func stripANSIBytes(p []byte) string {
 	return stripANSI(unsafe.String(unsafe.SliceData(p), len(p)))
 }
 
+// appendStripANSI appends p with stripANSI's escape sequences removed to
+// dst. It never appends more than len(p) bytes.
+func appendStripANSI(dst, p []byte) []byte {
+	for {
+		i := bytes.IndexByte(p, 0x1b)
+		if i < 0 {
+			return append(dst, p...)
+		}
+		dst = append(dst, p[:i]...)
+		p = p[i:]
+		n := escapeLen(unsafe.String(unsafe.SliceData(p), len(p)))
+		if n == 0 {
+			dst = append(dst, p[0]) // not a sequence: keep the ESC
+			n = 1
+		}
+		p = p[n:]
+	}
+}
+
 // escapeLen returns the length of the escape sequence at the start of s
 // (s[0] is ESC), or 0 if s does not start with one.
 func escapeLen(s string) int {
