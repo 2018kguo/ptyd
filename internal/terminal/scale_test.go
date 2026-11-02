@@ -250,6 +250,10 @@ func FuzzStripANSI(f *testing.F) {
 		if got != want {
 			t.Fatalf("stripANSIBytes(%q) = %q, regexp gives %q", in, got, want)
 		}
+		// The arena form appends the same text after what dst holds.
+		if got := appendStripANSI([]byte("dst"), []byte(in)); string(got) != "dst"+want {
+			t.Fatalf("appendStripANSI(%q) = %q, regexp gives %q", in, got[3:], want)
+		}
 	})
 }
 
