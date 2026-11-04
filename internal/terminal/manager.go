@@ -1209,7 +1209,7 @@ func (m *Manager) Search(pattern string, within time.Duration, limit int, tagFil
 func (t *terminal) snapshot() Info {
 	info := t.memorySnapshot()
 	if t.cfg.Restore == RestoreAgent && t.persist != nil {
-		if st, err := readAgentState(agentStateFile(t.mgr.opts.PersistDir, info.ID)); err == nil {
+		if st, err := sessionState(t.cfg.Agent, agentStateFile(t.mgr.opts.PersistDir, info.ID)); err == nil {
 			info.AgentSession = st.SessionID
 		}
 	}

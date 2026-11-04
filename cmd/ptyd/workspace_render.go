@@ -277,14 +277,15 @@ func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
 			label = "Start a terminal"
 			put(x+3, y+3, "c   Codex", "1")
 			put(x+3, y+4, "a   Claude", "1")
-			put(x+3, y+5, "s   Shell", "1")
-			put(x+3, y+6, "r   Custom command", "1")
+			put(x+3, y+5, "p   Prime Agent", "1")
+			put(x+3, y+6, "s   Shell", "1")
+			put(x+3, y+7, "r   Custom command", "1")
 			access, detail := "Full (YOLO)", "Codex + Claude: skip approvals"
 			if v.agentAccess == workspaceCLISettings {
 				access, detail = "CLI settings", "Uses your CLI permission settings"
 			}
-			put(x+3, y+8, "f   Access: "+access, "1;36")
-			put(x+3, y+9, detail, "2")
+			put(x+3, y+9, "f   Access: "+access, "1;36")
+			put(x+3, y+10, detail, "2")
 			hint = "Choose a letter · jk / Esc goes back"
 		case wsMove:
 			label = "Move to another group"
