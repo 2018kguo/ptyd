@@ -128,7 +128,7 @@ not inferred agent activity.
   stay on the detail route. This is a row limit, not a total byte budget.
   Use a narrower filter or `GET /terminals` when you need the complete list.
 - Each row keeps its exact `id`, observed `state` (`running`, `stopped`
-  or `exited`), exit code, idle time,
+  or `exited`), `created_at` (when the session started), exit code, idle time,
   attached-client count and `latest_seq` for incremental output reads.
   `idle_seconds` is null when the process has not produced observed output;
   the human view shows a dash.
@@ -328,8 +328,8 @@ selection, wrapping onto more rows in narrow windows. Each entry is clickable.
 
 | Key | Action |
 |---|---|
-| `j/k`, arrows | Move. |
-| Enter | Open a group, take keyboard control of a terminal, or view a finished one's history. |
+| `j/k`, ↑/↓ | Move. |
+| Enter, → | Open a group, take keyboard control of a terminal, or view a finished one's history. → also confirms the move menu; in text prompts it does nothing. |
 | `v` | Pin/unpin a live terminal pane beside the group list; up to seven pins per group. |
 | `c` | Designate the selected managed terminal as captain; press again on the captain to clear it. |
 | `n` | Create a group, or launch Codex (`c`), Claude (`a`), shell (`s`) or a custom command (`r`). In the launch menu, `f` toggles agent access. |
@@ -340,10 +340,15 @@ selection, wrapping onto more rows in narrow windows. Each entry is clickable.
 | `a` | In the group list, archive/unarchive the selected group. Inside a group, show/hide outside agents to import. |
 | `h` | In the group list, show/hide archived groups and a saved-only Inbox. |
 | Quick `jk`, Escape | Go back one level; dismiss a menu or cancel a prompt first. |
+| Quick ←← | Same as `jk` within the workspace, but it stops at the group list instead of leaving, so a held ← cannot drop you to the shell. Attached programs keep their arrow keys. |
 | `/` | Search screens and retained scrollback as you type; Enter keeps the filter, an empty search clears it, `jk` or Escape restores the previous filter. |
 | `q` | Leave the workspace; work keeps running. |
 
 `PTYD_REDUCED_MOTION=1` keeps the decorative header still.
+
+Each terminal row shows how long ago it started, when the sidebar has room.
+The line above the dock gives the start time: the clock for today, otherwise
+the date. `ptyd term ls` and `ptyd status` print a STARTED column.
 
 Pinned panes keep refreshing while selection and search change. Pin up to seven;
 the selected terminal gets the eighth slot unless it is already pinned. Wide

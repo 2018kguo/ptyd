@@ -78,6 +78,7 @@ type workspaceView struct {
 	brandPhase              int
 	theme                   workspaceTheme
 	agentAccess             workspaceAgentAccess
+	now                     time.Time // render clock for start times; zero hides them
 }
 
 func (v workspaceView) groupInfo() (terminal.GroupSummary, bool) {
@@ -190,13 +191,16 @@ type workspaceKey struct {
 	Escape    bool
 	Paste     bool
 	Back      bool
+	Arrow     bool // Back came from a quick ←←; it stops at the group list instead of leaving
+	Open      bool // →; acts as Enter only where a list selection is active
 	Mouse     *client.MouseEvent
 }
 type workspaceInput struct {
-	pending []byte
-	paste   bool
-	since   time.Time
-	lastJ   time.Time
+	pending  []byte
+	paste    bool
+	since    time.Time
+	lastJ    time.Time
+	lastLeft time.Time
 }
 
 func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
@@ -206,6 +210,7 @@ func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
 		p.pending = nil
 		p.paste = false
 		p.lastJ = time.Time{}
+		p.lastLeft = time.Time{}
 		return out
 	}
 	for len(p.pending) > 0 {
@@ -240,7 +245,7 @@ func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
 				}
 				break
 			}
-			n, d := statusEscape(p.pending)
+			n, arrow := statusEscape(p.pending)
 			if n == 0 {
 				break
 			}
@@ -248,13 +253,24 @@ func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
 			paste := bytes.Equal(p.pending[:n], []byte("\x1b[200~"))
 			p.pending = p.pending[n:]
 			p.since = time.Time{}
-			if isMouse {
+			quickLeft := arrow == arrowLeft && !p.lastLeft.IsZero() && now.Sub(p.lastLeft) < client.BackKeyWindow
+			p.lastLeft = time.Time{}
+			switch {
+			case isMouse:
 				out = append(out, workspaceKey{Mouse: &mouse})
-			} else if paste {
+			case paste:
 				p.paste = true
-			} else if d != 0 {
-				out = append(out, workspaceKey{Direction: d})
-			} else if n == 1 {
+			case quickLeft:
+				out = append(out, workspaceKey{Back: true, Arrow: true})
+			case arrow == arrowLeft:
+				p.lastLeft = now
+			case arrow == arrowRight:
+				out = append(out, workspaceKey{Open: true})
+			case arrow == arrowUp:
+				out = append(out, workspaceKey{Direction: -1})
+			case arrow == arrowDown:
+				out = append(out, workspaceKey{Direction: 1})
+			case n == 1:
 				out = append(out, workspaceKey{Escape: true})
 			}
 			continue
@@ -264,6 +280,7 @@ func (p *workspaceInput) feed(chunk []byte, now time.Time) []workspaceKey {
 		}
 		r, n := utf8.DecodeRune(p.pending)
 		p.pending = p.pending[n:]
+		p.lastLeft = time.Time{}
 		if r == 'k' && !p.lastJ.IsZero() && now.Sub(p.lastJ) < client.BackKeyWindow {
 			out = append(out, workspaceKey{Back: true})
 			p.lastJ = time.Time{}
@@ -367,6 +384,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 		frameCols, frameRows = cols, rows
 		stable := v
 		stable.brandPhase = 0
+		stable.now = time.Now()
 		scene := renderWorkspace(stable, cols, rows)
 		frame := scene.ANSI
 		sceneHits = scene.Hits
@@ -598,9 +616,19 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 				v.busy = false
 				v.notice = "Stopped waiting. Started work stays in its group."
 			}
+			if k.Arrow && v.mode == wsNormal && v.group == "" {
+				// A held ← repeats; it must not drop the person out to the shell.
+				return false, nil
+			}
 			quit := v.back()
 			queueWorkspace(queries, v)
 			return quit, nil
+		}
+		if k.Open {
+			if v.mode != wsNormal && v.mode != wsMove {
+				return false, nil
+			}
+			k = workspaceKey{Rune: '\r'}
 		}
 		if cols, rows, e := term.GetSize(int(out.Fd())); e == nil && (cols < 40 || rows < 16) {
 			return k.Rune == 'q' || k.Rune == 3, nil
@@ -1028,7 +1056,7 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			}
 			if group != v.group {
 				if !k.Back && !k.Escape {
-					parser.lastJ = time.Time{}
+					parser.lastJ, parser.lastLeft = time.Time{}, time.Time{}
 					break
 				}
 			}

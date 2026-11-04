@@ -10,51 +10,91 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+)
+
+type statusArrow uint8
+
+const (
+	arrowNone statusArrow = iota
+	arrowUp
+	arrowDown
+	arrowRight
+	arrowLeft
 )
 
 // statusEscape consumes one CSI/SS3 key sequence, including split writes.
 // Unknown keys are ignored as a whole rather than leaking into the filter.
-func statusEscape(p []byte) (consumed, direction int) {
+func statusEscape(p []byte) (consumed int, arrow statusArrow) {
 	if len(p) < 2 {
-		return 0, 0
+		return 0, arrowNone
 	}
 	if strings.ContainsRune("]P_^X", rune(p[1])) {
 		for i := 2; i < len(p); i++ {
 			if p[i] == 7 && p[1] == ']' || i > 2 && p[i] == '\\' && p[i-1] == 0x1b {
-				return i + 1, 0
+				return i + 1, arrowNone
 			}
 		}
-		return 0, 0
+		return 0, arrowNone
 	}
 	if p[1] != '[' && p[1] != 'O' {
-		return 1, 0
+		return 1, arrowNone
 	}
 	if len(p) >= 3 && bytes.Equal(p[:3], []byte("\x1b[M")) {
 		n, complete := client.MouseReportLength(p)
 		if !complete {
-			return 0, 0
+			return 0, arrowNone
 		}
-		return n, 0
+		return n, arrowNone
 	}
 	for i := 2; i < len(p); i++ {
 		if i >= 128 {
-			return i, 0
+			return i, arrowNone
 		}
 		if p[i] >= 0x40 && p[i] <= 0x7e {
 			switch p[i] {
 			case 'A':
-				return i + 1, -1
+				return i + 1, arrowUp
 			case 'B':
-				return i + 1, 1
+				return i + 1, arrowDown
+			case 'C':
+				return i + 1, arrowRight
+			case 'D':
+				return i + 1, arrowLeft
 			}
-			return i + 1, 0
+			return i + 1, arrowNone
 		}
 		if p[i] < 0x20 || p[i] > 0x3f {
-			return i + 1, 0
+			return i + 1, arrowNone
 		}
 	}
-	return 0, 0
+	return 0, arrowNone
 }
+
+// startedClock is when a session started in local time: the clock alone for
+// today, with the date otherwise.
+func startedClock(created, now time.Time) string {
+	if created.IsZero() {
+		return ""
+	}
+	local := created.Local()
+	y, m, d := local.Date()
+	if ny, nm, nd := now.Local().Date(); y == ny && m == nm && d == nd {
+		return local.Format("15:04")
+	}
+	if y == now.Local().Year() {
+		return local.Format("Jan 2 15:04")
+	}
+	return local.Format("Jan 2 2006")
+}
+
+func startedAgo(created, now time.Time) string {
+	if created.IsZero() {
+		return ""
+	}
+	return shortDuration(max(now.Sub(created), 0)) + " ago"
+}
+
 func textWidth(s string) int {
 	n := 0
 	for _, r := range s {

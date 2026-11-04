@@ -72,11 +72,14 @@ Piped output stays plain text. Older ungrouped terminals live in
 
 | Where | Keys |
 |---|---|
-| Groups | `j/k` select · Enter open · `n` create · `r` rename · `a` archive · `x` close · `h` show archived |
-| Inside a group | `j/k` select · Enter take control · `n` launch · `v` pin · `c` captain · `r` rename · `m` move · `x` close · `a` outside agents |
+| Groups | `j/k` select · Enter or → open · `n` create · `r` rename · `a` archive · `x` close · `h` show archived |
+| Inside a group | `j/k` select · Enter or → take control · `n` launch · `v` pin · `c` captain · `r` rename · `m` move · `x` close · `a` outside agents |
 | Finished terminal | `R` launch again · Enter view history |
-| Anywhere | Quick `jk` goes back: terminal → group → groups → shell |
+| Anywhere | Quick `jk` goes back: terminal → group → groups → shell · quick ←← goes back in the workspace and stops at the group list |
 | Workspace | `/` search · `q` quit · the bottom dock lists every control that works right now |
+
+Each terminal shows when it started: its age in the list, and the start time
+on the selected row's detail line.
 
 `jk` also dismisses menus and cancels prompts. Use slower `j` and `k` to move
 down and up; pasted text stays literal. **●** running, **◉** human control,

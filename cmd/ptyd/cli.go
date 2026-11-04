@@ -41,7 +41,8 @@ Usage:
   ptyd serve [flags]              run the daemon in the foreground
   ptyd token                      print the local API token
 
-Quick jk goes back one level: terminal, group, groups, shell. In a group,
+Quick jk goes back one level: terminal, group, groups, shell. In the
+workspace, quick ←← goes back too and → opens like Enter. In a group,
 v pins a live pane; Enter takes control. Work keeps running. Commands use PTYD_ADDR and the
 local daemon's saved token. Use ptyd COMMAND --help for options.
 `
@@ -327,7 +328,8 @@ func runLs(args []string) int {
 
 func printList(w io.Writer, list []terminal.Info) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tIDLE\tATTACHED\tCOMMAND")
+	fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tSTARTED\tIDLE\tATTACHED\tCOMMAND")
+	now := time.Now()
 	for _, t := range list {
 		status := string(t.Status)
 		switch {
@@ -351,9 +353,16 @@ func printList(w io.Writer, list []terminal.Info) {
 		if r := []rune(cmd); len(r) > 50 {
 			cmd = string(r[:49]) + "…"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", t.ID, t.Name, status, idle, attached, cmd)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", t.ID, t.Name, status, startedCell(t.CreatedAt, now), idle, attached, cmd)
 	}
 	_ = tw.Flush()
+}
+
+func startedCell(created, now time.Time) string {
+	if created.IsZero() {
+		return "-"
+	}
+	return startedClock(created, now)
 }
 
 func shortDuration(d time.Duration) string {
