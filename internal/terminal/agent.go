@@ -1,9 +1,11 @@
 package terminal
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Agent adapters let the agent restore policy bring back the exact
@@ -46,8 +49,9 @@ type agentAdapter interface {
 }
 
 var agents = map[string]agentAdapter{
-	"claude": claudeAgent{},
-	"codex":  codexAgent{},
+	"claude":      claudeAgent{},
+	"codex":       codexAgent{},
+	"prime-agent": primeAgent{},
 }
 
 func supportedAgents() string {
@@ -201,12 +205,93 @@ func (c codexAgent) resume(args []string, stateFile, id string) []string {
 	return append(out, "--", id)
 }
 
+// --- Prime Agent ---
+
+// Prime Agent has no lifecycle hooks, so ptyd gives each terminal its own
+// session directory and reads the session from the transcript itself:
+// the newest root (rlmDepth 0) <id>.jsonl there, whose first line is the
+// session header with its id and cwd. No transcript means no message was
+// sent, so there is nothing to resume.
+type primeAgent struct{}
+
+var errNoSession = errors.New("no session yet")
+
+func primeSessionDir(stateFile string) string {
+	return filepath.Join(filepath.Dir(stateFile), "prime-sessions")
+}
+
+func (primeAgent) validate(args []string) error {
+	return checkLongOptions(args, "--continue", "--resume", "--fork", "--session-dir", "--no-session",
+		"--print", "--mode", "--cwd", "--autonomous", "--goal")
+}
+
+// primeArgs splits --name=value, which Prime Agent rejects, into --name value.
+func primeArgs(args []string) []string {
+	var out []string
+	for _, a := range args {
+		if name, value, ok := strings.Cut(a, "="); ok && strings.HasPrefix(name, "--") {
+			out = append(out, name, value)
+		} else {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func (primeAgent) launch(args []string, stateFile string) []string {
+	return append(primeArgs(args), "--session-dir", primeSessionDir(stateFile))
+}
+
+func (primeAgent) resume(args []string, stateFile, id string) []string {
+	return append(primeArgs(args), "--session-dir", primeSessionDir(stateFile), "--resume", id)
+}
+
+func (primeAgent) state(stateFile string) (agentState, error) {
+	paths, _ := filepath.Glob(filepath.Join(primeSessionDir(stateFile), "*.jsonl"))
+	var best agentState
+	var newest time.Time
+	for _, p := range paths {
+		fi, err := os.Stat(p)
+		if err != nil || !fi.ModTime().After(newest) {
+			continue
+		}
+		f, err := os.Open(p)
+		if err != nil {
+			continue
+		}
+		var h struct {
+			Type, ID, CWD string
+			RLMDepth      int `json:"rlmDepth"`
+		}
+		line, _ := bufio.NewReader(f).ReadBytes('\n')
+		f.Close()
+		if json.Unmarshal(line, &h) == nil && h.Type == "session" && h.RLMDepth == 0 {
+			best, newest = agentState{SessionID: h.ID, TranscriptPath: p, CWD: h.CWD}, fi.ModTime()
+		}
+	}
+	if best.SessionID == "" {
+		return best, errNoSession
+	}
+	return best, nil
+}
+
 // --- session state written by the hooks ---
 
 type agentState struct {
 	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
 	CWD            string `json:"cwd"`
+}
+
+// sessionState reads the current session of agent name: from the hook
+// file, or from the adapter itself when it has no hooks.
+func sessionState(name, stateFile string) (agentState, error) {
+	if r, ok := agents[name].(interface {
+		state(string) (agentState, error)
+	}); ok {
+		return r.state(stateFile)
+	}
+	return readAgentState(stateFile)
 }
 
 func readAgentState(stateFile string) (agentState, error) {
@@ -242,7 +327,10 @@ func sameDir(a, b string) bool {
 // agentPlan decides how to restore an agent terminal: the arguments to
 // launch it with, or ok=false and a notice when it must not be launched.
 func agentPlan(name string, a agentAdapter, cfg CreateConfig, stateFile string) (args []string, notice string, ok bool) {
-	st, err := readAgentState(stateFile)
+	st, err := sessionState(name, stateFile)
+	if errors.Is(err, errNoSession) {
+		return a.launch(cfg.Args, stateFile), fmt.Sprintf("ptyd: %s had no messages yet; started a new session", name), true
+	}
 	if err != nil {
 		return nil, fmt.Sprintf("ptyd: could not identify the %s session to resume; showing last screen", name), false
 	}

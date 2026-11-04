@@ -625,6 +625,9 @@ func workspace(c client.API, start terminal.GroupID, initial terminal.ID, in, ou
 			case 'a':
 				v.mode = wsNormal
 				createTerminal(v.agentAccess.launch("claude"))
+			case 'p':
+				v.mode = wsNormal
+				createTerminal(v.agentAccess.launch("prime-agent"))
 			case 's':
 				v.mode = wsNormal
 				createTerminal(terminal.CreateConfig{Command: shell, Name: "shell", Restore: terminal.RestoreAuto})

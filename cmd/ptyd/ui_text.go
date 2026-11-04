@@ -82,6 +82,8 @@ func sessionApp(row terminal.SessionSummary) string {
 		return "Codex"
 	case "claude":
 		return "Claude"
+	case "prime-agent":
+		return "Prime Agent"
 	}
 	return "Terminal"
 }
@@ -97,7 +99,7 @@ func sessionProvider(row terminal.SessionSummary) string {
 	}
 	if provider == "" {
 		command := filepath.Base(row.Command)
-		if command == "codex" || command == "claude" {
+		if command == "codex" || command == "claude" || command == "prime-agent" {
 			provider = command
 		}
 	}

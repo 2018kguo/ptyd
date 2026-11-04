@@ -115,7 +115,7 @@ func runNew(args []string) int {
 	fs.StringVar(&name, "name", "", "Same as -n")
 	group := fs.String("group", "", "Group name or id (default: inherited group, otherwise Inbox)")
 	detach := fs.Bool("d", false, "Do not attach; print the new terminal's id")
-	restore := fs.String("restore", "auto", "What to do after a daemon restart: rerun the command, resume the exact\nagent session (claude, codex), or none. auto picks agent for a supported agent, else rerun")
+	restore := fs.String("restore", "auto", "What to do after a daemon restart: rerun the command, resume the exact\nagent session (claude, codex, prime-agent), or none. auto picks agent for a supported agent, else rerun")
 	_ = fs.Parse(args)
 
 	cwd, err := os.Getwd()

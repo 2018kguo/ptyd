@@ -14,7 +14,7 @@ type SessionCaption struct {
 }
 
 func UsesTerminalTitle(name, provider string) bool {
-	if provider != "codex" && provider != "claude" {
+	if provider != "codex" && provider != "claude" && provider != "prime-agent" {
 		return false
 	}
 	parts := strings.Fields(strings.ToLower(name))
@@ -65,6 +65,8 @@ func (c SessionCaption) Session(title string) string {
 		app = "Codex"
 	case "claude":
 		app = "Claude"
+	case "prime-agent":
+		app = "Prime Agent"
 	}
 	if app == "" {
 		return name
