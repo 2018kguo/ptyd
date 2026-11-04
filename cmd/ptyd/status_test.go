@@ -22,8 +22,8 @@ import (
 func TestStatusEscapeChunkingAndControls(t *testing.T) {
 	for _, tc := range []struct {
 		key  string
-		move int
-	}{{"\x1b[A", -1}, {"\x1b[B", 1}, {"\x1bOA", -1}, {"\x1b[1;5B", 1}, {"\x1b[3~", 0}} {
+		move statusArrow
+	}{{"\x1b[A", arrowUp}, {"\x1b[B", arrowDown}, {"\x1bOA", arrowUp}, {"\x1b[1;5B", arrowDown}, {"\x1b[C", arrowRight}, {"\x1bOD", arrowLeft}, {"\x1b[3~", arrowNone}} {
 		for i := 1; i < len(tc.key); i++ {
 			if n, _ := statusEscape([]byte(tc.key[:i])); n != 0 {
 				t.Fatalf("partial %q consumed %d", tc.key[:i], n)

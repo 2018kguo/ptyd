@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/2018kguo/ptyd/internal/native"
@@ -65,6 +66,7 @@ type SessionSummary struct {
 	CWD          string               `json:"cwd"`
 	Command      string               `json:"command"`
 	Agent        string               `json:"agent,omitempty"`
+	CreatedAt    time.Time            `json:"created_at,omitzero"`
 	State        OverviewState        `json:"state"`
 	ExitCode     *int                 `json:"exit_code,omitempty"`
 	IdleSeconds  *float64             `json:"idle_seconds"`
@@ -164,7 +166,7 @@ func BuildOverview(infos []Info, options OverviewOptions) Overview {
 		out.Sessions = append(out.Sessions, SessionSummary{
 			HumanControl: info.HumanControl, GroupID: info.GroupID, Source: info.Source, External: info.external, Local: info.local,
 			ID: info.ID, Name: info.Name, CWD: info.CWD,
-			Command: filepath.Base(info.Command), Agent: info.Agent,
+			Command: filepath.Base(info.Command), Agent: info.Agent, CreatedAt: info.CreatedAt,
 			State: overviewState(info), ExitCode: info.ExitCode, IdleSeconds: idle,
 			Attached: info.Attached, LatestSeq: info.LatestSeq, Attention: len(info.Attention),
 			Preview: overviewPreview(info),

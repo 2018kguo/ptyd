@@ -97,7 +97,8 @@ func overviewIdle(row terminal.SessionSummary) string {
 func printStatus(w io.Writer, view terminal.Overview) {
 	fmt.Fprintln(w, overviewCounts(view))
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tIDLE\tATTENTION\tATTACHED\tDIRECTORY\tPREVIEW")
+	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tSTARTED\tIDLE\tATTENTION\tATTACHED\tDIRECTORY\tPREVIEW")
+	now := time.Now()
 	for _, row := range view.Sessions {
 		preview := ""
 		if row.Preview != nil {
@@ -106,7 +107,7 @@ func printStatus(w io.Writer, view terminal.Overview) {
 				preview += "…"
 			}
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n", displayText(string(row.ID), 80), displayText(row.Name, 64), overviewState(row), overviewIdle(row), row.Attention, row.Attached, displayText(row.CWD, 60), displayText(preview, 80))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n", displayText(string(row.ID), 80), displayText(row.Name, 64), overviewState(row), startedCell(row.CreatedAt, now), overviewIdle(row), row.Attention, row.Attached, displayText(row.CWD, 60), displayText(preview, 80))
 	}
 	_ = tw.Flush()
 	for _, issue := range view.DiscoveryIssues {

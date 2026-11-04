@@ -41,6 +41,72 @@ func TestWorkspaceBackSequenceFraming(t *testing.T) {
 	}
 }
 
+func TestWorkspaceArrowKeyFraming(t *testing.T) {
+	now := time.Unix(100, 0)
+	const left, right = "\x1b[D", "\x1b[C"
+	var p workspaceInput
+	if keys := p.feed([]byte(left), now); len(keys) != 0 {
+		t.Fatalf("a single left arrow acted: %+v", keys)
+	}
+	keys := p.feed([]byte(left), now.Add(50*time.Millisecond))
+	if len(keys) != 1 || !keys[0].Back || !keys[0].Arrow {
+		t.Fatalf("quick double left did not go back: %+v", keys)
+	}
+	p.feed([]byte(left), now)
+	if keys := p.feed([]byte(left), now.Add(client.BackKeyWindow)); len(keys) != 0 {
+		t.Fatalf("slow left arrows became back: %+v", keys)
+	}
+	for _, raw := range []string{left + "j" + left, left + "\x1b[A" + left, left + "\x1b[200~x\x1b[201~" + left} {
+		p = workspaceInput{}
+		for _, key := range p.feed([]byte(raw), now) {
+			if key.Back {
+				t.Fatalf("interrupted left arrows became back: %q", raw)
+			}
+		}
+	}
+	p = workspaceInput{}
+	if keys := p.feed([]byte(right), now); len(keys) != 1 || !keys[0].Open {
+		t.Fatalf("right arrow did not open: %+v", keys)
+	}
+}
+
+func TestWorkspaceArrowsOpenAndGoBack(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("SHELL", "/bin/sh")
+	t.Setenv("PTYD_REDUCED_MOTION", "1")
+	d := startDaemon(t, freeAddr(t))
+	if _, err, code := d.cli(nil, "new", "-d", "project"); code != 0 {
+		t.Fatal(err)
+	}
+	if _, err, code := d.cli(nil, "term", "new", "-d", "--group", "project", "-n", "agent", "--", "cat"); code != 0 {
+		t.Fatal(err)
+	}
+	const left, right = "\x1b[D", "\x1b[C"
+	w := d.open(120, 30, "ls")
+	w.waitText("project")
+	w.keys(right)
+	w.waitText("TERMINALS")
+	w.waitText("started ")
+	w.keys("r")
+	w.waitText("Choose a new name")
+	w.keys(right)
+	w.keys(left + left)
+	w.waitNoText("Choose a new name")
+	w.keys(right)
+	w.waitText("project / agent")
+	w.keys("jk")
+	w.waitText("Returned to your workspace.")
+	w.keys(left + left)
+	w.waitText("Your groups")
+	w.keys(left + left)
+	w.keys("h")
+	w.waitText("hide archived")
+	w.keys("q")
+	if code := w.waitExit(); code != 0 {
+		t.Fatal(code)
+	}
+}
+
 func TestWorkspaceBackWhileLaunchResponseIsDelayed(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	d := startDaemon(t, freeAddr(t))

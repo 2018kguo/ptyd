@@ -116,6 +116,10 @@ func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
 				mark = "› "
 			}
 			status := sessionApp(r) + " · " + workspaceTerminalIcon(r) + " " + workspaceTerminalState(r)
+			// The age is extra; it never crowds out the state.
+			if ago := startedAgo(r.CreatedAt, v.now); ago != "" && !v.now.IsZero() && textWidth(status+" · "+ago) <= left-7 {
+				status += " · " + ago
+			}
 			name := v.sessionTitle(r)
 			if v.isCaptain(r) {
 				name = "★ " + name
@@ -183,6 +187,9 @@ func renderWorkspace(v workspaceView, cols, rows int) workspaceScene {
 		}
 		if row, ok := v.row(); ok {
 			detail := v.sessionCaption(row).Label(v.titles[row.ID]) + " · " + workspaceTerminalState(row)
+			if clock := startedClock(row.CreatedAt, v.now); clock != "" && !v.now.IsZero() {
+				detail += " · started " + clock + " (" + startedAgo(row.CreatedAt, v.now) + ")"
+			}
 			hint := detail
 			if row.HumanControl {
 				hint = "Another human has control · v pins its live pane"
